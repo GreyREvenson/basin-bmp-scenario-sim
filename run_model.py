@@ -5,10 +5,15 @@ from pathlib import Path
 
 from src.logging_utils import make_logger
 from src.io_utils import load_and_validate_all
-from src.simulate import Simulator
+from src.scenario import Simulator
 from src.plotting import make_summary_plots
 
-def main():
+def main() -> None:
+    """Entry point for the BMP simulation model.
+
+    Loads the YAML config, sets up output logging, validates input data, runs scenarios,
+    and generates summary plots.
+    """
     if len(sys.argv) != 2:
         print("Usage: python run_model.py path/to/config.yaml")
         sys.exit(1)

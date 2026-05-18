@@ -3,7 +3,12 @@ import pandas as pd
 from shapely.geometry import Polygon, Point
 from pathlib import Path
 
-def make_synthetic_examples(base: Path):
+def make_synthetic_examples(base: Path) -> None:
+    """Generate a small synthetic input dataset for examples and testing.
+
+    This function creates a domain, parcels, outlets, and related CSVs to provide
+    a self-contained dataset for model validation and demonstration.
+    """
     base.mkdir(parents=True, exist_ok=True)
     crs = "EPSG:26917"
     domain = gpd.GeoDataFrame({"id":[1]}, geometry=[Polygon([(0,0),(2000,0),(2000,2000),(0,2000)])], crs=crs)
