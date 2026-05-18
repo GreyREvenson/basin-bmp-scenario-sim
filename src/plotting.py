@@ -9,6 +9,8 @@ from .constants import (
     CFG_OUTLET_MEAN,
     CFG_OUTLET_TARGET,
     COL_OID,
+    DATA_OUTLET_LOC,
+    DATA_POLLUTANTS,
     XAXIS_COUNT,
     XAXIS_COST,
     YAXIS_MEAN,
@@ -28,8 +30,8 @@ def make_summary_plots(
     The plots compare cumulative pollutant reduction across scenarios and outlets,
     using cost or BMP count on the x-axis and absolute/target/mean reductions on the y-axis.
     """
-    pollutants = data["pollutants"]
-    oids = [str(x) for x in data["outlet_loc"][COL_OID].astype(str).tolist()]
+    pollutants = data[DATA_POLLUTANTS]
+    oids = [str(x) for x in data[DATA_OUTLET_LOC][COL_OID].astype(str).tolist()]
 
     x_axes = []
     if cfg.get(CFG_BMP_COST):

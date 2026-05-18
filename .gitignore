@@ -166,6 +166,3 @@ cython_debug/
 .vscode
 __pycache__/
 /outputs
-/examples/eastfork/cache/
-/examples/eastfork/outputs/
-/examples/eastfork/swat/
