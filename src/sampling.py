@@ -1,8 +1,23 @@
+import logging
 import numpy as np
+from numpy.random import Generator
+from typing import Any, Dict, Optional, Sequence
 
-def _trunc_normal(rng, mean, sd, low=None, high=None, size=None):
+def _trunc_normal(
+    rng: Generator,
+    mean: float,
+    sd: float,
+    low: Optional[float] = None,
+    high: Optional[float] = None,
+    size: Optional[int] = None,
+) -> np.ndarray:
+    """Sample from a truncated normal distribution using rejection sampling.
+
+    This helper generates values centered on mean with standard deviation sd,
+    while enforcing optional lower and upper bounds.
+    """
     # simple rejection sampler for truncation
-    out = []
+    out: list[float] = []
     n = size or 1
     if sd <= 0:
         return np.full(n, mean)
@@ -15,7 +30,12 @@ def _trunc_normal(rng, mean, sd, low=None, high=None, size=None):
         out.extend(x.tolist())
     return np.array(out[:n])
 
-def _piecewise_quantile_sample(rng, stats, size=1):
+def _piecewise_quantile_sample(
+    rng: Generator,
+    stats: Dict[str, float],
+    size: int = 1,
+) -> np.ndarray:
+    """Sample from a piecewise linear distribution defined by percentiles."""
     # stats includes min/max and possibly percentiles like p5, p50, p90
     cols = {k.lower(): v for k, v in stats.items()}
     # Collect points (p, q)
@@ -55,10 +75,17 @@ def _piecewise_quantile_sample(rng, stats, size=1):
                 break
     return samples
 
-def sample_from_stats(rng, stats, kind=None, verbose_logger=None):
-    """
-    stats: dict with any of mean/sd/min/max and optional percentiles px
-    kind: "efficiency" (truncate to [0,1] unless negatives indicated), "yield" (min>=0), or None
+def sample_from_stats(
+    rng: Generator,
+    stats: Dict[str, float],
+    kind: Optional[str] = None,
+    verbose_logger: Optional[logging.Logger] = None,
+) -> float:
+    """Sample a value from distribution statistics provided by the input data.
+
+    The algorithm chooses the strongest available representation: piecewise
+    quantiles if percentiles exist, otherwise truncated normal when mean/sd are
+    available, or uniform sampling when only min/max are provided.
     """
     cols = {k.lower(): v for k, v in stats.items()}
     # Prefer piecewise if min/max with any percentiles are provided

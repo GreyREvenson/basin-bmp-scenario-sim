@@ -3,19 +3,31 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon, Point
 from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
 from .utils import normalize_columns, ci_get
 
 
-def _require_cols(df, required, label, logger):
+def _require_cols(df: Any, required: Sequence[str], label: str, logger: Any) -> None:
+    """Ensure a dataframe contains required columns and raise if any are missing."""
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns in {label}: {missing}")
 
 
-def _merge_csvs(paths, required_cols, label, logger):
+def _merge_csvs(
+    paths: Union[str, Path, Sequence[Union[str, Path]]],
+    required_cols: Sequence[str],
+    label: str,
+    logger: Any,
+) -> pd.DataFrame:
+    """Read one or more CSV inputs, normalize their columns, and merge them.
+
+    Duplicate rows are detected using the required column subset and de-duplicated
+    so later validation and joins operate on a consistent dataset.
+    """
     paths = [paths] if isinstance(paths, (str, Path)) else list(paths)
-    frames = []
+    frames: List[pd.DataFrame] = []
     for p in paths:
         df = pd.read_csv(p)
         df = normalize_columns(df)
@@ -30,7 +42,11 @@ def _merge_csvs(paths, required_cols, label, logger):
     return out
 
 
-def _ensure_projected(gdf, logger):
+def _ensure_projected(gdf: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
+    """Ensure a GeoDataFrame is in a projected CRS for area/length calculations.
+
+    If the input is not projected, estimate a suitable UTM CRS and reproject it.
+    """
     if gdf.crs is None or not gdf.crs.is_projected:
         est = gdf.estimate_utm_crs()
         logger.info(f"Reprojecting to projected CRS: {est}")
@@ -38,7 +54,12 @@ def _ensure_projected(gdf, logger):
     return gdf
 
 
-def load_and_validate_all(cfg: dict, logger):
+def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
+    """Load all configured inputs, validate them, and build the shared model dataset.
+
+    This function performs schema validation, projection normalization, ID
+    normalization, and default handling for optional inputs.
+    """
     # domain
     domain_path = Path(ci_get(cfg, "domain"))
     if not domain_path.exists():

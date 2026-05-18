@@ -1,7 +1,21 @@
+import logging
 import matplotlib.pyplot as plt
 from collections import defaultdict
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
-def make_summary_plots(cfg, data, scenario_records, outputs_dir, logger):
+def make_summary_plots(
+    cfg: Dict[str, Any],
+    data: Dict[str, Any],
+    scenario_records: Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]],
+    outputs_dir: Path,
+    logger: logging.Logger,
+) -> None:
+    """Generate summary plots for scenario outcomes.
+
+    The plots compare cumulative pollutant reduction across scenarios and outlets,
+    using cost or BMP count on the x-axis and absolute/target/mean reductions on the y-axis.
+    """
     pollutants = data["pollutants"]
     oids = [str(x) for x in data["outlet_loc"]["oid"].astype(str).tolist()]
 

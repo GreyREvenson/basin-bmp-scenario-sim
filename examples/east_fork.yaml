@@ -15,7 +15,7 @@ parcel_up: ./examples/inputs/parcel_up.csv
 parcel_p: ./examples/inputs/parcel_p.csv
 
 # Pollutants and BMPs
-pollutants: ["nitrogen","phosphorus","sediment"]
+pollutants: ["TN","TP","TSS"]
 cps: [340,329,590,412,656]
 
 # Required distributions

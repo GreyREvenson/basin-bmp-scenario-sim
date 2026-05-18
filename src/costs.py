@@ -1,8 +1,23 @@
+import logging
+import pandas as pd
+from numpy.random import Generator
+
 from .sampling import sample_from_stats
 
-def compute_bmp_cost_usd(rng, bmp_type_cps, unit_row, quantity, logger):
-    """
-    quantity: number in units matching 'unit' (e.g., ha, m, project)
+from typing import Optional, Union
+
+def compute_bmp_cost_usd(
+    rng: Generator,
+    bmp_type_cps: Union[int, str],
+    unit_row: Optional[pd.Series],
+    quantity: float,
+    logger: logging.Logger,
+) -> float:
+    """Compute total BMP cost in USD from sampled unit cost and quantity.
+
+    The function samples a cost rate based on the provided statistics, validates
+    that the sampled rate and resulting total are non-negative, and returns the
+    USD cost for the given BMP quantity.
     """
     if unit_row is None:
         return 0.0

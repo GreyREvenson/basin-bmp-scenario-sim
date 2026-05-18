@@ -1,16 +1,39 @@
 import numpy as np
 import pandas as pd
+from numpy.random import Generator
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
+
 from .sampling import sample_from_stats
 
-def _select_cost_rate_median(rng, row):
-    stats = {k: row[k] for k in row.index if k in ("mean","sd","min","max") or (str(k).startswith("p") and str(k)[1:].isdigit())}
+def _select_cost_rate_median(rng: Generator, row: pd.Series) -> float:
+    """Select a representative BMP cost rate for probability estimation.
+
+    If a median percentile exists, use it directly; otherwise sample from stats.
+    """
+    stats: Dict[str, float] = {
+        k: row[k]
+        for k in row.index
+        if k in ("mean", "sd", "min", "max") or (str(k).startswith("p") and str(k)[1:].isdigit())
+    }
     if "p50" in {k.lower():v for k,v in stats.items()}:
         return float(stats.get("p50") or stats.get("P50"))
     return sample_from_stats(rng, stats, kind=None)
 
-def estimate_costs_for_probabilities(rng, bmp_cost_df, cps_list, avg_area_ha, avg_perim_m, overrides=None):
+def estimate_costs_for_probabilities(
+    rng: Generator,
+    bmp_cost_df: pd.DataFrame,
+    cps_list: Sequence[Union[int, str]],
+    avg_area_ha: float,
+    avg_perim_m: float,
+    overrides: Optional[Dict[str, float]] = None,
+) -> pd.DataFrame:
+    """Estimate BMP selection probabilities using inverse expected cost.
+
+    This heuristic transforms cost estimates into selection probability weights,
+    favoring lower-cost BMP types when explicit probabilities are not provided.
+    """
     overrides = overrides or {}
-    rows = []
+    rows: list[Dict[str, float]] = []
     for cps in cps_list:
         sub = bmp_cost_df[bmp_cost_df["cps"].astype(int) == int(cps)]
         if sub.empty:

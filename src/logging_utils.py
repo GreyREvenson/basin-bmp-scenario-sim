@@ -1,8 +1,14 @@
 import logging
 from pathlib import Path
 from datetime import datetime
+from typing import Tuple
 
-def make_logger(outputs_dir: Path, verbose: bool = True):
+def make_logger(outputs_dir: Path, verbose: bool = True) -> Tuple[logging.Logger, Path]:
+    """Create a logger that writes to a timestamped file and optionally stdout.
+
+    The logger always records DEBUG-level detail to a file. If verbose is enabled,
+    an INFO-level stream handler is also attached for console visibility.
+    """
     outputs_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = outputs_dir / f"log_{ts}.txt"
