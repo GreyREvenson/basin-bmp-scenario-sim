@@ -10,6 +10,8 @@ def _trunc_normal(
     low: Optional[float] = None,
     high: Optional[float] = None,
     size: Optional[int] = None,
+    verbose_logger: Optional[logging.Logger] = None,
+    ctx: Optional[str] = None,
 ) -> np.ndarray:
     """Sample from a truncated normal distribution using rejection sampling.
 
@@ -20,26 +22,35 @@ def _trunc_normal(
     out: list[float] = []
     n = size or 1
     if sd <= 0:
-        return np.full(n, mean)
+        arr = np.full(n, mean)
+        if verbose_logger:
+            verbose_logger.debug(f"Trunc_normal (sd<=0) returning {arr} mean={mean} ctx={ctx}")
+        return arr
     while len(out) < n:
+        if verbose_logger:
+            verbose_logger.debug(f"Drawing normal samples mean={mean} sd={sd} size={n} ctx={ctx}")
         x = rng.normal(mean, sd, size=n)
         if low is not None:
             x = x[x >= low]
         if high is not None:
             x = x[x <= high]
         out.extend(x.tolist())
-    return np.array(out[:n])
+    arr = np.array(out[:n])
+    if verbose_logger:
+        verbose_logger.debug(f"Trunc_normal samples {arr} mean={mean} sd={sd} low={low} high={high} ctx={ctx}")
+    return arr
 
 def _piecewise_quantile_sample(
     rng: Generator,
     stats: Dict[str, float],
     size: int = 1,
     verbose_logger: Optional[logging.Logger] = None,
+    ctx: Optional[str] = None,
 ) -> np.ndarray:
     """Sample from a piecewise linear distribution defined by percentiles."""
 
     if verbose_logger:
-        verbose_logger.debug(f"calling _piecewise_quantile_sample with stats={stats} size={size}")
+        verbose_logger.debug(f"calling _piecewise_quantile_sample with stats={stats} size={size} ctx={ctx}")
     # stats includes min/max and possibly percentiles like p5, p50, p90
     cols = {k.lower(): v for k, v in stats.items()}
     # Collect points (p, q)
@@ -67,6 +78,8 @@ def _piecewise_quantile_sample(
     pts = sorted(pts, key=lambda t: t[0])
 
     u = rng.uniform(0.0, 1.0, size=size)
+    if verbose_logger:
+        verbose_logger.debug(f"Uniform draws for piecewise quantile: {u} ctx={ctx}")
     samples = np.empty(size, dtype=float)
     for i, ui in enumerate(u):
         for (p0, q0), (p1, q1) in zip(pts[:-1], pts[1:]):
@@ -78,7 +91,7 @@ def _piecewise_quantile_sample(
                     samples[i] = q0 + t * (q1 - q0)
                 break
     if verbose_logger:
-        verbose_logger.debug(f"Sampled values {samples} from piecewise quantiles with stats={stats}")
+        verbose_logger.debug(f"Sampled values {samples} from piecewise quantiles with stats={stats} ctx={ctx}")
     return samples
 
 def sample_from_stats(
@@ -86,6 +99,7 @@ def sample_from_stats(
     stats: Dict[str, float],
     kind: Optional[str] = None,
     verbose_logger: Optional[logging.Logger] = None,
+    ctx: Optional[str] = None,
 ) -> float:
     """Sample a value from distribution statistics provided by the input data.
 
@@ -94,7 +108,7 @@ def sample_from_stats(
     available, or uniform sampling when only min/max are provided.
     """
     if verbose_logger:
-        verbose_logger.debug(f"calling sample_from_stats with stats={stats} kind={kind}")
+        verbose_logger.debug(f"calling sample_from_stats with stats={stats} kind={kind} ctx={ctx}")
 
     cols = {k.lower(): v for k, v in stats.items()}
     # Prefer piecewise if min/max with any percentiles are provided
@@ -114,27 +128,37 @@ def sample_from_stats(
         low = 0.0
 
     if has_min and has_max and has_percentiles:
-        s = _piecewise_quantile_sample(rng, cols, size=1, verbose_logger=verbose_logger)[0]
+        s = _piecewise_quantile_sample(rng, cols, size=1, verbose_logger=verbose_logger, ctx=ctx)[0]
     elif has_min and has_max and has_mean and not has_sd:
         mn = float(cols.get("mean", cols.get("average", cols.get("avg"))))
         lo = float(cols.get("min", cols.get("minimum", cols.get("p0"))))
         hi = float(cols.get("max", cols.get("maximum", cols.get("p100"))))
         sd = (hi - lo) / 4.0
-        s = _trunc_normal(rng, mn, sd, low=lo if low is None else max(low, lo), high=hi if high is None else min(high, hi))[0]
+        s = _trunc_normal(
+            rng,
+            mn,
+            sd,
+            low=lo if low is None else max(low, lo),
+            high=hi if high is None else min(high, hi),
+            verbose_logger=verbose_logger,
+            ctx=ctx,
+        )[0]
     elif has_min and has_max and not has_mean and not has_sd and not has_percentiles:
         lo = float(cols.get("min", cols.get("minimum", cols.get("p0"))))
         hi = float(cols.get("max", cols.get("maximum", cols.get("p100"))))
         lo = max(lo, low) if low is not None else lo
         hi = min(hi, high) if high is not None else hi
         s = rng.uniform(lo, hi)
+        if verbose_logger:
+            verbose_logger.debug(f"Uniform draw {s} from [{lo},{hi}] ctx={ctx}")
     elif has_mean and has_sd:
         mn = float(cols.get("mean", cols.get("average", cols.get("avg"))))
         sd = float(cols.get("sd", cols.get("std")))
-        s = _trunc_normal(rng, mn, sd, low=low, high=high)[0]
+        s = _trunc_normal(rng, mn, sd, low=low, high=high, verbose_logger=verbose_logger, ctx=ctx)[0]
     else:
         raise ValueError("Insufficient distribution statistics to sample")
     if verbose_logger:
-        verbose_logger.debug(f"Sampled value {s:.6g} from stats={stats} kind={kind}")
+        verbose_logger.debug(f"Sampled value {s:.6g} from stats={stats} kind={kind} ctx={ctx}")
 
     if low is not None and s < low:
         if verbose_logger:

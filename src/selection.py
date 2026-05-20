@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 from .constants import COL_CPS, COL_UNIT, COL_PROBABILITY
 from .sampling import sample_from_stats
 
-def _select_cost_rate_median(rng: Generator, row: pd.Series) -> float:
+def _select_cost_rate_median(rng: Generator, row: pd.Series, cps: Optional[Union[int, str]] = None) -> float:
     """Select a representative BMP cost rate for probability estimation.
 
     If a median percentile exists, use it directly; otherwise sample from stats.
@@ -18,7 +18,9 @@ def _select_cost_rate_median(rng: Generator, row: pd.Series) -> float:
     }
     if "p50" in {k.lower():v for k,v in stats.items()}:
         return float(stats.get("p50") or stats.get("P50"))
-    return sample_from_stats(rng, stats, kind=None)
+    ctx = f"cps={cps}" if cps is not None else None
+    import logging
+    return sample_from_stats(rng, stats, kind=None, verbose_logger=logging.getLogger(__name__), ctx=ctx)
 
 def estimate_costs_for_probabilities(
     rng: Generator,
@@ -41,7 +43,7 @@ def estimate_costs_for_probabilities(
             continue
         r = sub.iloc[0]
         unit = str(r[COL_UNIT]).lower().strip()
-        rate = _select_cost_rate_median(rng, r)
+        rate = _select_cost_rate_median(rng, r, cps)
         if rate < 0:
             raise ValueError(f"Negative cost-rate for cps {cps}")
 
