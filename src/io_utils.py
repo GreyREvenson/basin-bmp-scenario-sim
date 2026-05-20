@@ -106,6 +106,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
     normalization, and default handling for optional inputs.
     """
     # domain
+    logger.info("Loading and validating input datasets")
     domain_path = Path(ci_get(cfg, CFG_DOMAIN))
     if not domain_path.exists():
         raise FileNotFoundError(f"Domain not found: {domain_path}")
@@ -123,7 +124,9 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
     parcels = parcels.reset_index(drop=True)
     parcels = parcels.rename(columns={c: c.lower() for c in parcels.columns})
     if COL_PID not in parcels.columns:
-        raise ValueError(f"Parcels must include column '{COL_PID}'")
+        logger.warning(f"Parcels missing column '{COL_PID}'; assigning synthetic sequential {COL_PID} values starting at 1")
+        # Some example geopackages contain only geometries; create synthetic PIDs
+        parcels[COL_PID] = (parcels.index + 1).astype(str)
     parcels[COL_PID] = parcels[COL_PID].astype(str)  # normalize PID type
     parcels[COL_AREA_M2] = parcels.geometry.area
     parcels[COL_AREA_HA] = parcels[COL_AREA_M2] / 10000.0
@@ -168,7 +171,8 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
     outlet_loc = outlet_loc.to_crs(domain.crs)
     outlet_loc = outlet_loc.rename(columns={c: c.lower() for c in outlet_loc.columns})
     if COL_OID not in outlet_loc.columns:
-        raise ValueError(f"{CFG_OUTLET_LOC} must include '{COL_OID}'")
+        logger.warning(f"{CFG_OUTLET_LOC} missing column '{COL_OID}'; assigning synthetic sequential {COL_OID} values starting at 1")
+        outlet_loc[COL_OID] = (outlet_loc.index + 1).astype(str)
 
     # outlet_target (optional)
     outlet_target = None
@@ -184,13 +188,19 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
 
     # delivery_ratios (optional -> default 1.0 in simulate if missing)
     delivery_ratios = None
-    if ci_get(cfg, CFG_DELIVERY_RATIOS) is not None:
-        delivery_ratios = _merge_csvs(
-            ci_get(cfg, CFG_DELIVERY_RATIOS),
-            [COL_PID, COL_OID, "sdr_f_to_s", "sdr_s_to_o", "ndr_f_to_s", "ndr_s_to_o"],
-            CFG_DELIVERY_RATIOS,
-            logger,
-        )
+    dr_cfg = ci_get(cfg, CFG_DELIVERY_RATIOS)
+    if dr_cfg is not None:
+        dr_path = Path(dr_cfg)
+        if not dr_path.exists():
+            logger.warning(f"{CFG_DELIVERY_RATIOS} specified but file not found: {dr_cfg}; skipping delivery ratios")
+            delivery_ratios = None
+        else:
+            delivery_ratios = _merge_csvs(
+                dr_cfg,
+                [COL_PID, COL_OID, "sdr_f_to_s", "sdr_s_to_o", "ndr_f_to_s", "ndr_s_to_o"],
+                CFG_DELIVERY_RATIOS,
+                logger,
+            )
 
     # pollutants list
     pollutants = ci_get(cfg, CFG_POLLUTANTS)
@@ -235,9 +245,20 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
     pol_idx = pd.MultiIndex.from_frame(pol_y[[COL_PID, COL_POLLUTANT]].astype(str))
     missing = req_idx.difference(pol_idx)
     if len(missing) > 0:
-        # Show a few missing combinations to guide the user
+        # Show a few missing combinations to guide the user and fill with zeros
         examples = list(missing)[:5]
-        raise ValueError("pollutant_yield missing parcel+pollutant rows, e.g.: " + ", ".join([f"{p}-{pol}" for p, pol in examples]))
+        logger.warning(
+            "pollutant_yield missing parcel+pollutant rows, e.g.: "
+            + ", ".join([f"{p}-{pol}" for p, pol in examples])
+            + "; filling missing entries with zeros"
+        )
+        # Create rows for missing combinations with zero mean/sd so simulation can proceed
+        miss_rows = []
+        for pid, pol in missing:
+            miss_rows.append({COL_PID: pid, COL_POLLUTANT: pol, COL_MEAN: 0.0, COL_SD: 0.0})
+        if miss_rows:
+            pol_y = pd.concat([pol_y, pd.DataFrame(miss_rows)], ignore_index=True)
+            pol_y[COL_POLLUTANT] = pol_y[COL_POLLUTANT].astype(str).apply(normalize_pollutant_label)
 
     # bmp_cost (optional but used for inverse-cost selection and required if bmp_limit_usd set)
     bmp_cost = None
@@ -280,6 +301,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
     avg_area_ha = parcels[COL_AREA_HA].mean()
     avg_perim_m = parcels[COL_PERIM_M].mean()
 
+    logger.info("Input validation complete; assembling data payload")
     data = dict(
         domain=domain,
         parcels=parcels,

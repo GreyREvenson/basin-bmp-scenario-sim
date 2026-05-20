@@ -131,13 +131,17 @@ class Simulator:
         df = self.data[DATA_PARCEL_P]
         probs = df[COL_PROBABILITY].values
         idx = self.rng.choice(len(df), p=probs)
-        return str(df.iloc[idx][COL_PID])
+        pid = str(df.iloc[idx][COL_PID])
+        self.logger.debug(f"Random parcel selection idx={idx} pid={pid} probs_sample={probs} ctx=parcel_selection")
+        return pid
 
     def _select_bmp_type(self, bmp_probs: pd.DataFrame) -> int:
         """Choose a BMP type code from the probability distribution."""
         probs = bmp_probs[COL_PROBABILITY].values
         idx = self.rng.choice(len(bmp_probs), p=probs)
-        return int(bmp_probs.iloc[idx][COL_CPS])
+        cps = int(bmp_probs.iloc[idx][COL_CPS])
+        self.logger.debug(f"Random BMP type selection idx={idx} cps={cps} probs_sample={probs} ctx=bmp_selection")
+        return cps
 
     def _parcel_record(self, pid: Union[int, str]) -> pd.Series:
         """Return parcel metadata for a given parcel ID, raising if missing."""
@@ -200,6 +204,7 @@ class Simulator:
             self._parcel_record,
             self._parcel_up_list,
             self.data[DATA_POLLUTANTS],
+            logger=self.logger,
         )
 
     def _simulate_grassed(
@@ -221,6 +226,7 @@ class Simulator:
             self._parcel_record,
             self.cfg,
             self.data[DATA_POLLUTANTS],
+            logger=self.logger,
         )
 
     def _simulate_infield(
