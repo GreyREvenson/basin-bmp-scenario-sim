@@ -1,21 +1,93 @@
-# EPA Open Source Reference
+# basin-bmp-sim
 
-## Brief Project Description
+`basin-bmp-sim` is a watershed BMP scenario simulator for analyzing parcel-level pollutant yields, BMP efficiencies, and outlet delivery outcomes.
 
-This repository contains files for teams to reuse when working in and with EPA Open Source projects.
+## Overview
 
-Also, this repository contains the link to [EPA's System Lifecycle Management Policy and Procedure](https://www.epa.gov/irmpoli8/policy-procedures-and-guidance-system-life-cycle-management-slcm) which lays out EPA's Open Source Software Policy and [EPA's Open Source Code Guidance](https://www.epa.gov/developers/open-source-software-and-epa-code-repository-requirements). 
+This model loads geospatial watershed inputs, pollutant yield distributions, BMP efficiency and cost statistics, and optional delivery or target metrics. It then runs configurable stochastic scenarios and exports per-scenario BMP and parcel outputs.
 
-## For EPA Teams
+## Features
 
-For EPA Teams, we have guidance on how EPA puts our open source software policies into practice on GitHub. Read [EPA's GitHub Guidance.](https://www.epa.gov/webguide/github-guidance)
+- Geospatial input handling with `geopandas`
+- Configurable BMP selection by probability or cost-weighted heuristics
+- Scenario limits by BMP count or total cost
+- Optional delivery-ratio, target, and mean outlet metrics
+- Automatic pollutant label normalization for `TN`, `TP`, and `TSS`
+- CSV outputs and summary plots per scenario
 
-[EPA's Open Source Project repo](https://github.com/USEPA/open-source-projects) is for EPA teams to reuse file for properly maintaining their open source project. All projects must include a readme.md, license.md, contributing.md file and the disclaimer below.   
+## Installation
 
-### Credits
+Recommended Python version: `>=3.10`
 
-This repository reused material from [GSA](https://www.gsa.gov/), [18F](https://18f.gsa.gov/) , [Lawrence Livermore National Lab](https://www.llnl.gov/), and from the [Consumer Financial Protection Bureau's policy](https://github.com/cfpb/source-code-policy).
+Create and activate a virtual environment:
 
-### Disclaimer
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
 
-The United States Environmental Protection Agency (EPA) GitHub project code is provided on an "as is" basis and the user assumes responsibility for its use.  EPA has relinquished control of the information and no longer has responsibility to protect the integrity , confidentiality, or availability of the information.  Any reference to specific commercial products, processes, or services by service mark, trademark, manufacturer, or otherwise, does not constitute or imply their endorsement, recommendation or favoring by EPA.  The EPA seal and logo shall not be used in any manner to imply endorsement of any commercial product or activity by EPA or the United States Government.
+Install runtime dependencies:
+
+```powershell
+pip install -r requirements.txt
+```
+
+Install development dependencies for testing:
+
+```powershell
+pip install -r requirements-dev.txt
+```
+
+## Running the model
+
+Run the model using a YAML configuration file:
+
+```powershell
+python run_model.py examples/east_fork/east_fork.yaml
+```
+
+Additional CLI options:
+
+- `--outputs PATH` to override outputs directory
+- `--seed INT` to override random seed
+- `--quiet` to disable console logging
+
+## Configuration
+
+Required configuration keys:
+
+- `domain`: watershed boundary file (`.gpkg`, `.shp`, etc.)
+- `parcels`: parcel polygons file
+- `outlet_loc`: outlet location file
+- `parcel_out`: CSV mapping parcels to outlet IDs
+- `pollutants`: list of pollutant labels
+- `cps`: list of BMP CPS codes
+- `pollutant_yield`: CSV of pollutant yield statistics per parcel
+- `bmp_efficiency`: CSV of BMP efficiency statistics per BMP type and pollutant
+- `n_scenarios`: number of scenarios to produce
+- one of `bmp_limit_n` or `bmp_limit_usd`
+
+Optional configuration keys:
+
+- `parcel_up`: CSV of parcel upstream connectivity
+- `parcel_p`: parcel selection probability weights
+- `bmp_cost`: CSV of BMP cost statistics
+- `delivery_ratios`: CSV of parcel-to-outlet delivery ratios
+- `outlet_target`: CSV of outlet pollutant reduction targets
+- `outlet_mean`: CSV of outlet mean load metrics
+- `buffer_depth_ft`: buffer depth in feet for grassed BMPs
+
+## Outputs
+
+The model writes results to the configured `outputs` directory:
+
+- `bmps.csv` (aggregated across all scenarios, includes `scenario` and `cps_name`)
+- `parcels.csv` (aggregated across all scenarios, includes `scenario`)
+- `plot_*` files for summary visualizations
+- `log_*.txt`
+
+## Notes
+
+- Pollutant labels are normalized from aliases such as `nitrogen`, `phosphorus`, and `sediment`.
+- `parcel_out` outlet IDs must exist in `outlet_loc`.
+- If both `bmp_limit_n` and `bmp_limit_usd` are specified, the simulation stops when either limit is reached.
