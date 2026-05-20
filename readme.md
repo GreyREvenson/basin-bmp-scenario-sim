@@ -6,38 +6,6 @@
 
 This model loads geospatial watershed inputs, pollutant yield distributions, BMP efficiency and cost statistics, and optional delivery or target metrics. It then runs configurable stochastic scenarios and exports per-scenario BMP and parcel outputs.
 
-## Features
-
-- Geospatial input handling with `geopandas`
-- Configurable BMP selection by probability or cost-weighted heuristics
-- Scenario limits by BMP count or total cost
-- Optional delivery-ratio, target, and mean outlet metrics
-- Automatic pollutant label normalization for `TN`, `TP`, and `TSS`
-- CSV outputs and summary plots per scenario
-
-## Installation
-
-Recommended Python version: `>=3.10`
-
-Create and activate a virtual environment:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-Install runtime dependencies:
-
-```powershell
-pip install -r requirements.txt
-```
-
-Install development dependencies for testing:
-
-```powershell
-pip install -r requirements-dev.txt
-```
-
 ## Running the model
 
 Run the model using a YAML configuration file:
