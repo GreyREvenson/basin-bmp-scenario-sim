@@ -1,24 +1,12 @@
-# basin-bmp-sim
+# BASIN-BMP-SIMulator 
 
 `basin-bmp-sim` is a watershed BMP scenario simulator for analyzing parcel-level pollutant yields, BMP efficiencies, and outlet delivery outcomes.
 
-## Overview
+This repository contains code for a probabilistic model of best management practice (BMP) (alternatively, 'conservation practices') impacts on basin-scale pollutant loads.
 
-This model loads geospatial watershed inputs, pollutant yield distributions, BMP efficiency and cost statistics, and optional delivery or target metrics. It then runs configurable stochastic scenarios and exports per-scenario BMP and parcel outputs.
+### Contact
 
-## Running the model
-
-Run the model using a YAML configuration file:
-
-```powershell
-python run_model.py examples/east_fork/east_fork.yaml
-```
-
-Additional CLI options:
-
-- `--outputs PATH` to override outputs directory
-- `--seed INT` to override random seed
-- `--quiet` to disable console logging
+evenson.grey@epa.gov
 
 ## Configuration
 
