@@ -1,4 +1,5 @@
 #from __future__ import annotations # Allows using class names as hints before they are defined
+import numpy as np
 import pandas as pd
 from typing import Dict, Optional, Union, TYPE_CHECKING
 if TYPE_CHECKING: from model import Model
@@ -70,15 +71,20 @@ def _select_cost_rate_median(
         if k in ("mean", "sd", "min", "max") or (str(k).startswith("p") and str(k)[1:].isdigit())
     }
     rate_value = None
-    if "p50" in {k.lower():v for k,v in stats.items()} or 'median' in {k.lower():v for k,v in stats.items()}:
-        median = float(stats.get("p50") or stats.get("P50") or stats.get("median"))
-        rate_value = median
-    elif "mean" in stats in stats:
-        mean = float(stats.get("mean") or stats.get("average") or stats.get("avg"))
-        rate_value = mean
+    lower_stats = {str(k).lower(): v for k, v in stats.items()}
+    if "p50" in lower_stats or "median" in lower_stats:
+        rate_value = float(lower_stats.get("p50") or lower_stats.get("median"))
+    elif "mean" in lower_stats or "average" in lower_stats or "avg" in lower_stats:
+        rate_value = float(
+            lower_stats.get("mean") or lower_stats.get("average") or lower_stats.get("avg")
+        )
     else:
-        rate_min = float(stats.get("min") or stats.get("minimum") or stats.get("p0"))
-        rate_max = float(stats.get("max") or stats.get("maximum") or stats.get("p100"))
+        rate_min = float(
+            lower_stats.get("min") or lower_stats.get("minimum") or lower_stats.get("p0")
+        )
+        rate_max = float(
+            lower_stats.get("max") or lower_stats.get("maximum") or lower_stats.get("p100")
+        )
         rate_value = (rate_min + rate_max) / 2.0
     self.logger.debug(f"  selected cost rate {rate_value:.4f}")
     if rate_value is None:
@@ -143,6 +149,8 @@ def _estimate_costs_for_probabilities(
         rows.append({"cps": int(cps), "est_total_cost": float(total)})
 
     df = pd.DataFrame(rows)
+    df["est_total_cost"] = df["est_total_cost"].clip(lower=0.01)
+    df['est_total_cost'] = df['est_total_cost'].replace(np.nan, 0.01)
     if df.empty:
         raise ValueError("Could not estimate costs for probability computation")
     inv = 1.0 / df["est_total_cost"].values

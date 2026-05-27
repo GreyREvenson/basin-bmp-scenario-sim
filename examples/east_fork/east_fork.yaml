@@ -16,7 +16,7 @@ parcel_p: ./examples/east_fork/inputs/parcel_p.csv
 
 # Pollutants and BMPs
 pollutants: ["TN","TP"]
-cps: [340,329,590,393,656]
+cps: [340,329,590,412,656]
 
 # Required distributions
 pollutant_yield: ./examples/east_fork/inputs/pollutant_yield.csv
