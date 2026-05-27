@@ -1,11 +1,11 @@
 import logging
-import os, sys
+import os
 import numpy as np
 import pandas as pd
 import types
 from pathlib import Path
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 
 from .bmp import (
@@ -104,6 +104,7 @@ from .constants import (
 
 
 class Model:
+    
     def __init__(self, cfg: Dict[str, Any], data: Dict[str, Any], logger: logging.Logger) -> None:
         """Create a simulation instance with config, validated inputs, and logging."""
         

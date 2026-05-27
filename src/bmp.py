@@ -1,12 +1,8 @@
-from __future__ import annotations # Allows using class names as hints before they are defined
+#from __future__ import annotations # Allows using class names as hints before they are defined
 import pandas as pd
 import numpy as np
-import logging
-from numpy.random import Generator
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from scenario import Model
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union, TYPE_CHECKING
+if TYPE_CHECKING: from model import Model
 
 
 from .constants import (
@@ -23,8 +19,6 @@ from .constants import (
     OUTPUT_REMOVED,
     OUTPUT_TREATED,
     OUTPUT_WETLAND_AREA,
-    DATA_AVG_AREA_HA,
-    DATA_AVG_PERIM_M,
     DATA_BMP_COST,
     DATA_CPS,
 )
@@ -84,15 +78,15 @@ def _simulate_wetland(
     wet_area_stats = {"min": 0.1, "p25": 0.4, "p50": 0.81, "p75": 2.0, "max": 4.0} # TODO - make these configurable or based on field area 
     wet_area = self._sample_from_stats(stats=wet_area_stats, kind=None)
     wet_area = min(wet_area, area_field_ha)
-    self.logger.debug(f" selected wetland area of {wet_area:.2f} ha in parcel idx = {parcel_idx} of area = {area_field_ha:.2f} ha")
+    self.logger.debug(f"  selected wetland area of {wet_area:.2f} ha in parcel idx = {parcel_idx} of area = {area_field_ha:.2f} ha")
 
     # catchment area ratio
     ratio_stats = {"min": 1.0, "p25": 2.0, "p50": 5.0, "p75": 10.0, "max": 100.0} # TODO - make these configurable
     cat_ratio = self._sample_from_stats(stats=ratio_stats, kind=None)
     catchment_area_ha = cat_ratio * wet_area
     impacted_area_ha = wet_area + catchment_area_ha
-    self.logger.debug(f" selected catchment:wetland area ratio = {cat_ratio:.2f}")
-    self.logger.debug(f" computed catchment area = {catchment_area_ha:.2f} ha, total wetland-impacted area (wetland + catchment) = {impacted_area_ha:.2f} ha")
+    self.logger.debug(f"  selected catchment:wetland area ratio = {cat_ratio:.2f}")
+    self.logger.debug(f"  computed catchment area = {catchment_area_ha:.2f} ha, total wetland-impacted area (wetland + catchment) = {impacted_area_ha:.2f} ha")
 
     up_list = self.parcel_up_idxs[parcel_idx]
     impacted_idxs = [parcel_idx]
@@ -100,31 +94,32 @@ def _simulate_wetland(
 
     # if the impacted area exceeds the field area, add upgradient parcels until we meet the impacted area or run out of parcels
     if impacted_area_ha > total_available_ha:
-        self.logger.debug(f" impacted area (wetland + catchment) ({impacted_area_ha:.2f} ha) > field area ({total_available_ha:.2f} ha)") # here, total_available_ha = area_field_ha
+        self.logger.debug(f"  impacted area (wetland + catchment) ({impacted_area_ha:.2f} ha) > field area ({total_available_ha:.2f} ha)") # here, total_available_ha = area_field_ha
         if len(up_list) == 0:
-            self.logger.debug(f" parcel (pid={self.parcel_ids[parcel_idx]}) has no upgradient parcels")
+            self.logger.debug(f"  parcel (pid={self.parcel_ids[parcel_idx]}) has no upgradient parcels")
         else:
-            self.logger.debug(f" parcel (pid={self.parcel_ids[parcel_idx]}) has {len(up_list)} upgradient parcels "
+            self.logger.debug(f"  parcel (pid={self.parcel_ids[parcel_idx]}) has {len(up_list)} upgradient parcels "
                               f"with pid(s) = {", ".join(str(pid_up) for pid_up in up_list)} "
                               f"and area(s) = {", ".join(f'{self.parcel_area_ha[up_idx]:.2f}' for up_idx in up_list)} ha")
             for up_idx in up_list:
                 impacted_idxs.append(up_idx)
                 total_available_ha += float(self.parcel_area_ha[up_idx])
-                self.logger.debug(f" added upgradient parcel (pid={self.parcel_ids[up_idx]}) with area {self.parcel_area_ha[up_idx]:.2f} ha to wetland-impacted parcels")
+                self.logger.debug(f"  added upgradient parcel (pid={self.parcel_ids[up_idx]}) with area {self.parcel_area_ha[up_idx]:.2f} ha to wetland-impacted parcels")
                 if total_available_ha >= impacted_area_ha:
                     break
 
     # reduce catchment area and ratio if total available area from field and upgradient parcels is less than the selected ratio's resultant impacted area (wetland + catchment)
     if impacted_area_ha > total_available_ha:
-        self.logger.debug(f" total available area from field and upgradient parcels ({total_available_ha:.2f} ha) < is less than the selected ratio's resultant impacted area (wetland + catchment) ({impacted_area_ha:.2f} ha)")
+        self.logger.debug(f"  total available area from field and upgradient parcels ({total_available_ha:.2f} ha) < is less than the selected ratio's resultant impacted area (wetland + catchment) ({impacted_area_ha:.2f} ha)")
         impacted_area_ha = total_available_ha
         cat_ratio = max(0.0, (impacted_area_ha - wet_area) / max(wet_area, 1e-9))
-        self.logger.debug(f" reduced wetland impacted area (wetland + catchment) to {impacted_area_ha:.2f} ha and reduced catchment ratio to {cat_ratio:.2f}")
+        self.logger.debug(f"  reduced wetland impacted area (wetland + catchment) to {impacted_area_ha:.2f} ha and reduced catchment ratio to {cat_ratio:.2f}")
 
     # add wetland area, catchment ratio, and impacted pids to bmp record
     bmp_rec[OUTPUT_WETLAND_AREA] = wet_area
     bmp_rec[OUTPUT_CATCHMENT_RATIO] = cat_ratio
-    # If only one parcel is impacted, OUTPUT_IMPACTED_PIDS will be an empty string.
+
+    # if only one parcel (the parcel in which the wetland is located) is impacted, OUTPUT_IMPACTED_PIDS will be an empty string
     bmp_rec[OUTPUT_IMPACTED_PIDS] = ",".join(
         [self.parcel_ids[idx] for idx in impacted_idxs] if len(impacted_idxs) > 1 else []
     )
@@ -141,7 +136,7 @@ def _simulate_wetland(
             frac = remaining / A
         else:
             frac = 1.0
-        self.logger.debug(f" processing wetland-impacted parcel (pid = {self.parcel_ids[p_idx]}, area = {A:.2f} ha, fraction of parcel draining to wetland = {frac:.2f})")
+        self.logger.debug(f"  processing wetland-impacted parcel (pid = {self.parcel_ids[p_idx]}, area = {A:.2f} ha, fraction of parcel draining to wetland = {frac:.2f})")
 
         # apply reductions to each pollutant yield for this parcel based on the impacted fraction and effectiveness
         for pol_idx, pollutant in enumerate(self.pollutants):
@@ -174,7 +169,7 @@ def _simulate_grassed(
     yields: np.ndarray,
     bmp_rec: Dict[str, Any],
     bmp_outputs: Dict[str, np.ndarray],
- ) -> None:
+    ) -> None:
     """Simulate a grassed waterway or buffer BMP and update yield reductions."""
     self.logger.debug(f" calling simulate_grassed")
     
@@ -216,7 +211,7 @@ def _simulate_infield(
     yields: np.ndarray,
     bmp_rec: Dict[str, Any],
     bmp_outputs: Dict[str, np.ndarray],
-) -> None:
+    ) -> None:
     """Simulate an in-field BMP and update the parcel yield state."""
     self.logger.debug(f" calling _simulate_infield")
     

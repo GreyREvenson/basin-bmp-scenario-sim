@@ -1,7 +1,6 @@
 import numpy as np
 from typing import Dict, Optional, TYPE_CHECKING
-if TYPE_CHECKING:
-    from scenario import Model
+if TYPE_CHECKING: from model import Model
 
 
 def _trunc_normal(

@@ -1,10 +1,7 @@
-from __future__ import annotations # Allows using class names as hints before they are defined
+#from __future__ import annotations # Allows using class names as hints before they are defined
 import pandas as pd
-import numpy as np
-import logging
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, TYPE_CHECKING
-if TYPE_CHECKING:
-    from scenario import Model
+from typing import Dict, Optional, Union, TYPE_CHECKING
+if TYPE_CHECKING: from model import Model
 
 
 from .constants import (
@@ -13,13 +10,6 @@ from .constants import (
     DATA_AVG_AREA_HA,
     DATA_BMP_COST,
     DATA_CPS,
-    DATA_DELIVERY_RATIOS,
-    DATA_OUTLET_MEAN,
-    DATA_OUTLET_TARGET,
-    DATA_POLLUTANT_YIELD,
-    DATA_POLLUTANTS,
-    DATA_RANDOM_SEED,
-    DATA_BMP_EFFICIENCY,
     COL_PROBABILITY,
     COL_UNIT,
 )

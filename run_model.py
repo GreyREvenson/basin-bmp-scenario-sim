@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 from pathlib import Path
 import sys
@@ -7,7 +6,7 @@ import yaml
 from src.constants import CFG_OUTPUTS, CFG_RANDOM_SEED, CFG_VERBOSE
 from src.logging_utils import make_logger
 from src.io_utils import load_and_validate_all
-from src.scenario import Model
+from src.model import Model
 from src.plotting import make_summary_plots
 
 
