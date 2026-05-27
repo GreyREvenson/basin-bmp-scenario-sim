@@ -1,12 +1,6 @@
-import logging
-import numpy as np
 import pandas as pd
-from pathlib import Path
-from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple, Union
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from scenario import Model
+from typing import Dict, List, Union, TYPE_CHECKING
+if TYPE_CHECKING: from model import Model
 
 
 from .constants import (
@@ -42,7 +36,7 @@ def _sample_parcel_index(
     """Choose a parcel index randomly from parcel selection probabilities."""
     idx = self.rng.choice(len(self.parcel_selection_ids), 
                           p=self.parcel_selection_probs)
-    self.logger.debug(f" selected parcel idx={idx} with pid={self.parcel_selection_ids[idx]}")
+    self.logger.debug(f"selected parcel idx={idx} with pid={self.parcel_selection_ids[idx]}")
     return idx
 
 
