@@ -1,10 +1,10 @@
-# BASIN-BMP-SIMulator 
+# BASIN-BMP-SCENARIO-SIMulator 
 
-`basin-bmp-sim` is a probabilistic basin-scale BMP scenario simulator to assess the liklihood of cost-effectively meeting basin-scale pollutant load reduction targets
+`basin-bmp-scenario-sim` is a probabilistic basin-scale BMP scenario simulator to assess the liklihood of cost-effectively meeting basin-scale pollutant load reduction targets
 
 ## Description
 
-`basin-bmp-sim` facilitates Monte-Carlo-based simulation of basin-wide best management practice (BMP) implementation scenarios depciting aggregate costs and impacts on basin-outlet pollutant loads. The model is composed of user-defined statistical distributions depicting:
+`basin-bmp-scenario-sim` facilitates Monte-Carlo-based simulation of basin-wide best management practice (BMP) implementation scenarios depciting aggregate costs and impacts on basin-outlet pollutant loads. The model is composed of user-defined statistical distributions depicting:
 - Parcel selection
   - Describe the relative liklihood of BMP implementation across the basin's parcel / agricultural fields
 - BMP / conservation practice type
