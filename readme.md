@@ -5,20 +5,18 @@
 ## Description
 
 `basin-bmp-scenario-sim` facilitates Monte-Carlo-based simulation of basin-wide best management practice (BMP) implementation scenarios depicting aggregate costs and impacts on basin-outlet pollutant loads. The model is composed of a series of user-defined statistical distributions depicting:
-- Parcel selection
-  - Describe the relative liklihood of BMP implementation across the basin's parcel / agricultural fields
-- BMP / conservation practice type
-  - Describe the relative liklihood that specific types of BMPs or conservation practices will be implemented, including BMP-specific characteristics such as:
+- Parcel selection (i.e., the relative liklihood of BMP implementation across the basin's parcels / agricultural fields)
+- BMP / conservation practice type (i.e., the relative liklihood that specific types of BMPs or conservation practices will be implemented)
+  - BMP-specific characteristics (i.e., the relative likelihood of BMP-specific characteristics where the BMP type is implemented):
     - Wetland area
     - Wetland catchment-to-area ratio
     - Grassed waterway length
     - Portion of parcel draining to the BMP
-- Cost
-  - Describe the likely costs (e.g., annualized USD) (inluding opportunity, construction, maintenance) of implementing individual types BMPs
-- Parcel pollutant yield
-  - Describe the likely yield rates (e.g., kg/ha/yr) for specific pollutant types across basin parcels  
-- BMP efficiency
-  - Describe the likely effectiveness of specific types of BMPs 
+- Cost (i.e., the relative liklihood of BMP implementation costs)
+  - Annualized USD per unit area or length
+  - May inlude opportunity, construction, maintenance
+- Parcel pollutant yield (i.e., the relative liklihood of yield rates (e.g., kg/ha/yr) for specific pollutant types across basin parcels)  
+- BMP efficiency (i.e., the relative liklihood of effectiveness of specific types of BMPs per pollutant type) 
 
 ## Configuration
 
