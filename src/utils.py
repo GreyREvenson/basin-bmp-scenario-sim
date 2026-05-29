@@ -38,7 +38,23 @@ def ci_get(d: Mapping[str, Any], key: str, default: Any = None) -> Any:
 
 
 def normalize_columns(df: Any) -> Any:
-    """Normalize DataFrame column labels to lowercase strings (in place)."""
+    """Normalize DataFrame column labels to lowercase strings (in place).
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input frame; its columns are mutated.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The same frame for chaining.
+
+    Notes
+    -----
+    Used during CSV ingestion to ensure consistent, case-insensitive matching
+    of required columns.
+    """
     df.columns = [str(c).strip().lower() for c in df.columns]
     return df
 
@@ -49,21 +65,17 @@ def normalize_pollutant_label(label: str) -> str:
     Parameters
     ----------
     label : str
-        Arbitrary label (e.g., 'tp', 'TP', 'total phosphorus').
+        Arbitrary label (e.g., 'tp', 'TP', 'phosphorus').
 
     Returns
     -------
     str
-        Canonical label recognized by the model.
+        Canonical label recognized by the model ('TN', 'TP', 'TSS').
 
     Raises
     ------
     ValueError
         If the label cannot be mapped to a known canonical name.
-
-    Notes
-    -----
-    The mapping is defined by constants.POLLUTANT_ALIAS_MAP.
     """
     from .constants import POLLUTANT_ALIAS_MAP
 

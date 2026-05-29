@@ -1,4 +1,11 @@
-"""Central constants for config keys, CSV columns, and axis labels."""
+"""Central constants for configuration keys, validated data payload keys, CSV columns, and output labels.
+
+Conventions
+-----------
+- Units: lengths in meters (m), areas in hectares (ha), costs in USD.
+- Pollutants: canonical labels are defined by POLLUTANT_CANONICAL; aliases map via POLLUTANT_ALIAS_MAP.
+- Outputs: treated_/removed_ prefixes denote per-pollutant loads; cost_usd and total_cost_usd capture costing.
+"""
 
 # Config keys
 CFG_DOMAIN = "domain"

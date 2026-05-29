@@ -1,5 +1,14 @@
-# src/cost.py
-#from __future__ import annotations  # Allows using class names as hints before they are defined
+"""
+Costing helpers.
+
+- _get_bmp_cost computes per-BMP total cost at runtime using realized quantity
+  and a sampled rate from the cost stats table.
+- _estimate_costs_for_probabilities computes selection weights using inverse
+  expected costs based on average quantity heuristics.
+"""
+
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 from typing import Dict, Optional, Union, TYPE_CHECKING
@@ -20,7 +29,6 @@ from .constants import (
 )
 
 # Code-level constants used ONLY for selection-time average-cost heuristics
-# (kept hardcoded by design per user request)
 PROB_EST_WETLAND_MAX_AREA_HA: float = 0.8
 PROB_EST_BUFFER_PERIM_FRACTION: float = 0.2
 
@@ -32,20 +40,20 @@ def _get_bmp_cost(
     cps: Union[int, str],
     quantity: float,
 ) -> float:
-    """Estimate BMP cost (USD) for a realized BMP instance.
+    """Estimate cost (USD) for a realized BMP instance.
 
-    Behavior:
+    Behavior
+    --------
     - USD/ha: use realized area (ha) if provided; otherwise fall back to average-area heuristic.
-    - USD/m: if quantity > 0, interpret quantity as area_ha for buffers and convert to length using depth.
+    - USD/m: interpret quantity as area_ha for buffers and convert to length using depth (m);
              otherwise fall back to average-perimeter heuristic (fraction * avg_perim_m).
     - USD/project: multiply rate by 1 project.
     - Unitless: return rate.
 
     Notes
     -----
-    - This function is used at scenario runtime for costing reported BMPs.
-    - Average-based heuristics remain in the probability estimation path (selection-time),
-      not here.
+    - Used at scenario runtime for costing reported BMPs.
+    - Selection-time heuristics live in _estimate_costs_for_probabilities (not here).
     """
     self.logger.debug("calling _get_bmp_cost")
     bmp_cost_df = self.data[DATA_BMP_COST]
@@ -78,10 +86,8 @@ def _get_bmp_cost(
         cost_total = rate_value * area_ha
 
     elif unit in ("usd/m", "usd per m", "usd_per_m", "usd per unit length"):
-        length_m: float
         if quantity and quantity > 0:
-            # quantity represents area_ha for grassed buffers; convert to length via depth
-            # length_m = area_m2 / depth_m
+            # quantity represents area_ha for grassed buffers; convert to length via depth (m)
             depth_ft = float(self.cfg.get(CFG_BUFFER_DEPTH_FT, DEFAULT_BUFFER_DEPTH_FT))
             depth_m = depth_ft * FT_TO_M
             area_m2 = float(quantity) * 10000.0
@@ -92,8 +98,7 @@ def _get_bmp_cost(
         cost_total = rate_value * length_m
 
     elif unit in ("usd/project", "usd per project", "usd_per_project"):
-        count = 1.0
-        cost_total = rate_value * count
+        cost_total = rate_value * 1.0
     else:
         cost_total = rate_value
 
@@ -111,38 +116,50 @@ def _select_cost_rate_median(
 ) -> float:
     """Select a representative BMP cost rate for probability estimation.
 
-    If a median percentile exists, use it directly; otherwise mean; otherwise mid-point of [min, max].
+    Preference
+    ----------
+    1) p50/median; else 2) mean/average/avg; else 3) mid-point of [min, max].
+
+    Raises
+    ------
+    ValueError
+        If a representative rate could not be determined.
     """
     self.logger.debug("calling _select_cost_rate_median")
-    stats: Dict[str, float] = {
-        k: row[k]
-        for k in row.index
-        if k in ("mean", "sd", "min", "max") or (str(k).startswith("p") and str(k)[1:].isdigit())
-    }
-    stats = {str(k).lower(): v for k, v in stats.items()}
+    cols = {str(k).lower(): v for k, v in row.items()}
 
-    if "p50" in stats or "median" in stats:
-        rate_value = float(stats.get("p50") or stats.get("median"))
-    elif "mean" in stats or "average" in stats or "avg" in stats:
-        rate_value = float(stats.get("mean") or stats.get("average") or stats.get("avg"))
+    if "p50" in cols:
+        rate_value = float(cols["p50"])
+    elif "median" in cols:
+        rate_value = float(cols["median"])
+    elif any(k in cols for k in ("mean", "average", "avg")):
+        rate_value = float(cols.get("mean", cols.get("average", cols.get("avg"))))
     else:
-        rate_min = float(stats.get("min") or stats.get("minimum") or stats.get("p0"))
-        rate_max = float(stats.get("max") or stats.get("maximum") or stats.get("p100"))
+        rate_min = float(cols.get("min", cols.get("minimum", cols.get("p0"))))
+        rate_max = float(cols.get("max", cols.get("maximum", cols.get("p100"))))
         rate_value = (rate_min + rate_max) / 2.0
 
     if rate_value is None:
-        raise ValueError(f"Could not determine cost rate for cps={cps} from stats={stats}")
+        raise ValueError(f"Could not determine cost rate for cps={cps}")
     self.logger.debug(f"selected representative cost rate {rate_value:.4f} for cps={cps}")
     return float(rate_value)
 
 
 def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
-    """Estimate BMP selection probabilities using inverse expected cost.
+    """Estimate BMP selection probabilities via inverse expected cost.
 
-    - Keeps average-cost heuristics hardcoded for selection-time weighting:
-      wetlands cap area at PROB_EST_WETLAND_MAX_AREA_HA; linear BMPs use
-      PROB_EST_BUFFER_PERIM_FRACTION * avg_perim_m; in-field uses avg_area_ha.
-    - Returns a DataFrame with [cps, probability]; probabilities sum to 1.
+    Behavior
+    --------
+    - Samples a representative rate per CPS (median if available; else mean; else mid-range).
+    - Converts rate to an expected total using selection-time heuristics:
+      wetlands cap area at PROB_EST_WETLAND_MAX_AREA_HA, linear BMPs use
+      PROB_EST_BUFFER_PERIM_FRACTION * avg_perim_m, in-field uses avg_area_ha.
+    - Inverts totals and normalizes to probabilities that sum to 1.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: [cps, probability], where 'probability' sums to 1 across CPS.
     """
     self.logger.debug("calling _estimate_costs_for_probabilities")
     rows: list[Dict[str, float]] = []
@@ -191,5 +208,4 @@ def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
         f"PROB_EST_BUFFER_PERIM_FRACTION={PROB_EST_BUFFER_PERIM_FRACTION}"
     )
     self.logger.debug(f"estimated probabilities: {df[[COL_CPS, COL_PROBABILITY]].to_dict(orient='records')}")
-
     return df[[COL_CPS, COL_PROBABILITY]]

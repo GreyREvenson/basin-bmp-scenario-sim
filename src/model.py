@@ -1,10 +1,10 @@
 """
 Scenario orchestration (parallel execution and per-scenario outputs).
 
-This module coordinates:
+Coordinates:
 - Preparing lookup structures for fast scenario execution
 - Running scenarios in parallel
-- Writing per-scenario CSVs to organized subfolders (Option A)
+- Writing per-scenario CSVs and logs
 - Producing transposed per-scenario summaries with an "All CPS" column
 """
 
@@ -97,7 +97,7 @@ class Model:
     cfg : Dict[str, Any]
         User configuration (normalized to lowercase keys).
     data : Dict[str, Any]
-        Validated input payload from io_utils.load_and_validate_all.
+        Validated input payload (see io_utils.load_and_validate_all).
     logger : logging.Logger
         Root logger.
 
@@ -135,7 +135,7 @@ class Model:
         self.bmp_cps: List[int]
         self.bmp_selection_probs: np.ndarray
 
-        # Bind helper functions used by the model instance
+        # Bind helper functions
         self._sample_from_stats = types.MethodType(_sample_from_stats, self)
         self._piecewise_quantile_sample = types.MethodType(_piecewise_quantile_sample, self)
         self._trunc_normal = types.MethodType(_trunc_normal, self)
@@ -166,206 +166,140 @@ class Model:
         parcels = self.data[DATA_PARCELS]
         self.parcel_ids = parcels["pid"].astype(str).tolist()
         self.pid_to_index = {pid: idx for idx, pid in enumerate(self.parcel_ids)}
-
         self.pollutants = list(self.data[DATA_POLLUTANTS])
-        self.pollutant_to_index = {pol: idx for idx, pol in enumerate(self.pollutants)}
-
+        self.pollutant_to_index = {p: i for i, p in enumerate(self.pollutants)}
         self.parcel_area_ha = parcels["area_ha"].astype(float).tolist()
         self.parcel_perim_m = parcels["perim_m"].astype(float).tolist()
 
-        self.parcel_out_oids = [list(self.data[DATA_PARCEL_OUT_MAP].get(pid, [])) for pid in self.parcel_ids]
+        # Parcel outlet and up-gradient mappings
+        po_map = self.data[DATA_PARCEL_OUT_MAP]
+        self.parcel_out_oids = [[str(x) for x in po_map.get(pid, [])] for pid in self.parcel_ids]
+        pu_map = self.data[DATA_PARCEL_UP_MAP]
+        self.parcel_up_idxs = [[self.pid_to_index[u] for u in pu_map.get(pid, []) if u in self.pid_to_index] for pid in self.parcel_ids]
 
-        self.parcel_up_idxs = []
-        for pid in self.parcel_ids:
-            upstream = self.data[DATA_PARCEL_UP_MAP].get(pid, [])
-            self.parcel_up_idxs.append([self.pid_to_index[up_pid] for up_pid in upstream if up_pid in self.pid_to_index])
+        # Parcel selection probabilities
+        sel = self.data["parcel_p"]
+        self.parcel_selection_ids = sel["pid"].astype(str).tolist()
+        self.parcel_selection_probs = sel["probability"].astype(float).values
 
-        parcel_p = self.data[DATA_PARCEL_P]
-        self.parcel_selection_ids = parcel_p["pid"].astype(str).tolist()
-        self.parcel_selection_probs = parcel_p["probability"].astype(float).to_numpy()
-
-        self.outlet_oids = self.data[DATA_OUTLET_LOC]["oid"].astype(str).tolist()
-
+        # Outlet IDs and optional targets/means
+        self.outlet_oids = list(self.data[DATA_OUTLET_LOC]["oid"].astype(str).tolist())
         self.outlet_target_map = {}
         if self.data.get(DATA_OUTLET_TARGET) is not None:
-            for _, row in self.data[DATA_OUTLET_TARGET].iterrows():
-                self.outlet_target_map[(str(row["oid"]), str(row[COL_POLLUTANT]))] = float(row["target"])
-
+            for _, r in self.data[DATA_OUTLET_TARGET].iterrows():
+                self.outlet_target_map[(str(r["oid"]), str(r[COL_POLLUTANT]))] = float(r["target"])
         self.outlet_mean_map = {}
         if self.data.get(DATA_OUTLET_MEAN) is not None:
-            for _, row in self.data[DATA_OUTLET_MEAN].iterrows():
-                self.outlet_mean_map[(str(row["oid"]), str(row[COL_POLLUTANT]))] = float(row["mean"])
+            for _, r in self.data[DATA_OUTLET_MEAN].iterrows():
+                self.outlet_mean_map[(str(r["oid"]), str(r[COL_POLLUTANT]))] = float(r["mean"])
 
+        # Delivery coeffs
         self.delivery_coeffs = {}
-        if self.data.get(DATA_DELIVERY_RATIOS) is not None:
-            for _, row in self.data[DATA_DELIVERY_RATIOS].iterrows():
-                self.delivery_coeffs[(str(row["pid"]), str(row["oid"]))] = dict(
-                    sdr_f_to_s=float(row[COL_SDR_F_TO_S]),
-                    sdr_s_to_o=float(row[COL_SDR_S_TO_O]),
-                    ndr_f_to_s=float(row[COL_NDR_F_TO_S]),
-                    ndr_s_to_o=float(row[COL_NDR_S_TO_O]),
+        if self.data.get("delivery_ratios") is not None:
+            for _, r in self.data["delivery_ratios"].iterrows():
+                self.delivery_coeffs[(str(r["pid"]), str(r["oid"]))] = dict(
+                    sdr_f_to_s=float(r["sdr_f_to_s"]),
+                    sdr_s_to_o=float(r["sdr_s_to_o"]),
+                    ndr_f_to_s=float(r["ndr_f_to_s"]),
+                    ndr_s_to_o=float(r["ndr_s_to_o"]),
                 )
 
-        # Efficiency stats lookup per CPS x pollutant
-        self.bmp_efficiency_stats = {}
-        n_pol = len(self.pollutants)
-        for cps in self.data[DATA_CPS]:
-            self.bmp_efficiency_stats[int(cps)] = [None] * n_pol
-        for _, row in self.data[DATA_BMP_EFFICIENCY].iterrows():
-            cps = int(row["cps"])
-            pol = str(row[COL_POLLUTANT])
-            if pol not in self.pollutant_to_index:
-                continue
-            pol_idx = self.pollutant_to_index[pol]
-            stats = {k: row[k] for k in row.index if k in ("mean", "sd", "min", "max") or (str(k).startswith("p") and str(k)[1:].isdigit())}
-            self.bmp_efficiency_stats[cps][pol_idx] = stats
+        # Efficiency stats by CPS x pollutant
+        self.bmp_cps = sorted(int(c) for c in self.data[DATA_CPS])
+        self.bmp_efficiency_stats = {int(c): [None] * len(self.pollutants) for c in self.bmp_cps}
+        eff = self.data[DATA_BMP_EFFICIENCY]
+        for _, row in eff.iterrows():
+            self.bmp_efficiency_stats[int(row["cps"])][self.pollutant_to_index[str(row[COL_POLLUTANT])]] = {k: row[k] for k in row.index if k not in ("cps", COL_POLLUTANT)}
 
-        # Parcel pollutant yield stats lookup per parcel x pollutant
-        self.pollutant_yield_stats = [[None] * n_pol for _ in range(len(self.parcel_ids))]
-        for _, row in self.data[DATA_POLLUTANT_YIELD].iterrows():
-            pid = str(row["pid"])
-            pol = str(row[COL_POLLUTANT])
-            if pid not in self.pid_to_index or pol not in self.pollutant_to_index:
-                continue
-            pidx = self.pid_to_index[pid]
-            pol_idx = self.pollutant_to_index[pol]
-            self.pollutant_yield_stats[pidx][pol_idx] = {k: row[k] for k in row.index if k in ("mean", "sd", "min", "max") or (str(k).startswith("p") and str(k)[1:].isdigit())}
+        # Yield stats per parcel x pollutant
+        pol_y = self.data[DATA_POLLUTANT_YIELD]
+        self.pollutant_yield_stats = [[None] * len(self.pollutants) for _ in range(len(self.parcel_ids))]
+        for _, row in pol_y.iterrows():
+            i = self.pid_to_index[str(row["pid"])]
+            j = self.pollutant_to_index[str(row[COL_POLLUTANT])]
+            self.pollutant_yield_stats[i][j] = {k: row[k] for k in row.index if k not in ("pid", COL_POLLUTANT)}
 
         # BMP selection probabilities
-        bmp_probs = self._get_bmp_selection_probs(self.cfg.get(CFG_BMP_SEL))
-        self.bmp_cps = bmp_probs["cps"].astype(int).tolist()
-        self.bmp_selection_probs = bmp_probs["probability"].astype(float).to_numpy()
-
-        self.logger.debug(
-            f"Prepared lookup tables: parcels={len(self.parcel_ids)}, pollutants={len(self.pollutants)}, "
-            f"bmp_types={len(self.bmp_cps)}"
-        )
+        if self.cfg.get(CFG_BMP_SEL):
+            probs_df = self._get_bmp_selection_probs(self.cfg.get(CFG_BMP_SEL))
+        else:
+            if self.data.get(DATA_BMP_COST) is not None:
+                probs_df = self._estimate_costs_for_probabilities()
+            else:
+                probs_df = pd.DataFrame({"cps": self.bmp_cps, "probability": np.full(len(self.bmp_cps), 1.0 / len(self.bmp_cps))})
+        probs_df = probs_df[probs_df["cps"].astype(int).isin(self.bmp_cps)]
+        self.bmp_cps = probs_df["cps"].astype(int).tolist()
+        self.bmp_selection_probs = probs_df["probability"].astype(float).values
 
     def _shared_payload(self) -> Dict[str, Any]:
-        """Create the shared, read-only payload for joblib worker processes."""
+        """Create a read-only payload for worker processes."""
         return dict(
+            cfg=self.cfg,
+            data=self.data,
+            parcel_ids=self.parcel_ids,
+            pid_to_index=self.pid_to_index,  # ensure workers have PID->index mapping
+            pollutants=self.pollutants,
             parcel_area_ha=np.asarray(self.parcel_area_ha, dtype=float),
             parcel_perim_m=np.asarray(self.parcel_perim_m, dtype=float),
-            parcel_selection_ids=np.asarray(self.parcel_selection_ids, dtype=object),
+            parcel_out_oids=self.parcel_out_oids,
+            parcel_up_idxs=self.parcel_up_idxs,
+            parcel_selection_ids=self.parcel_selection_ids,
             parcel_selection_probs=np.asarray(self.parcel_selection_probs, dtype=float),
-            parcel_ids=np.asarray(self.parcel_ids, dtype=object),
-            pid_to_index=dict(self.pid_to_index),
-            pollutants=list(self.pollutants),
-            outlet_oids=list(self.outlet_oids),
-            outlet_target_map=dict(self.outlet_target_map),
-            outlet_mean_map=dict(self.outlet_mean_map),
-            parcel_out_oids=[list(x) for x in self.parcel_out_oids],
-            parcel_up_idxs=[list(x) for x in self.parcel_up_idxs],
-            delivery_coeffs=dict(self.delivery_coeffs),
-            bmp_efficiency_stats={int(k): list(v) for k, v in self.bmp_efficiency_stats.items()},
-            pollutant_yield_stats=[[dict(s) if s is not None else None for s in row] for row in self.pollutant_yield_stats],
-            bmp_cps=list(self.bmp_cps),
-            bmp_selection_probs=np.asarray(self.bmp_selection_probs, dtype=float),
-            limit_usd=self.data.get(DATA_BMP_LIMIT_USD),
-            limit_n=self.data.get(DATA_BMP_LIMIT_N),
-            avg_area_ha=float(self.data[DATA_AVG_AREA_HA]),
-            avg_perim_m=float(self.data[DATA_AVG_PERIM_M]),
-            bmp_cost_df=self.data[DATA_BMP_COST],
-            cps_list=list(self.data[DATA_CPS]),
+            outlet_oids=self.outlet_oids,
+            outlet_target_map=self.outlet_target_map,
+            outlet_mean_map=self.outlet_mean_map,
+            delivery_coeffs=self.delivery_coeffs,
+            bmp_efficiency_stats=self.bmp_efficiency_stats,
+            pollutant_yield_stats=self.pollutant_yield_stats,
+            bmp_cps=self.bmp_cps,
+            bmp_selection_probs=self.bmp_selection_probs,
+            avg_area_ha=self.data.get(DATA_AVG_AREA_HA, 0.0),
+            avg_perim_m=self.data.get(DATA_AVG_PERIM_M, 0.0),
+            random_seed=self.data.get("random_seed"),
         )
 
-    def run_all_scenarios(
-        self,
-    ) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
-        """Run all scenarios in parallel and return plotting records.
-
-        Returns
-        -------
-        Dict[(str, str, str, str), List[(int, float, float)]]
-            Mapping (pollutant, outlet_oid, x_axis, y_axis) -> list of
-            (scenario_id, x, y) tuples used by plotting.
-
-        Notes
-        -----
-        Each worker writes:
-          - outputs/bmps/s{scenario}.csv
-          - outputs/parcels/s{scenario}.csv
-          - outputs/summaries/s{scenario}.csv (transposed; includes "All CPS" column)
-          - outputs/logs/s{scenario}.txt
-        """
+    def run_all_scenarios(self) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
+        """Run all scenarios (possibly in parallel) and return plotting records."""
         outputs_dir = Path(self.cfg.get(CFG_OUTPUTS, "./outputs"))
         outputs_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir = outputs_dir
 
-        shared = self._shared_payload()
-
-        par_cfg = dict(self.cfg.get(CFG_PARALLEL) or self.data.get("parallel") or {})
-        n_jobs = int(par_cfg.get("n_jobs", -1))
-        max_nbytes = par_cfg.get("max_nbytes", "1M")
-        temp_folder = par_cfg.get("temp_folder", None)
-
-        base_seed = self.data.get("random_seed", None)
         n_scenarios = int(self.data[DATA_N_SCENARIOS])
-        spawner = SeedSequence(base_seed) if base_seed is not None else SeedSequence()
-        child_seeds = spawner.spawn(n_scenarios)
+        parallel = dict(self.cfg.get(CFG_PARALLEL) or {})
+        n_jobs = int(parallel.get("n_jobs", 1))
 
-        self.logger.info(f"Executing {n_scenarios} scenarios in parallel (n_jobs={n_jobs})")
+        shared = self._shared_payload()
+        base_seed = self.data.get("random_seed")
+        ss = SeedSequence(base_seed if base_seed is not None else None)
+        child_seeds = ss.spawn(n_scenarios)
 
-        results = Parallel(n_jobs=n_jobs, backend="loky", max_nbytes=max_nbytes, temp_folder=temp_folder)(
-            delayed(_run_one_scenario)(shared, self.cfg, sidx, int(child_seeds[sidx].generate_state(1)[0]), outputs_dir)
-            for sidx in range(n_scenarios)
+        self.logger.info(f"Running {n_scenarios} scenario(s) with n_jobs={n_jobs}")
+        func = delayed(_run_one_scenario)
+        results = Parallel(n_jobs=n_jobs)(
+            func(shared, self.cfg, sidx, int(child_seeds[sidx].generate_state(1)[0]), outputs_dir) for sidx in range(n_scenarios)
         )
 
-        scenario_records: Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]] = defaultdict(list)
-        for scen_rec in results:
-            for k, trip in scen_rec.items():
-                scenario_records[k].extend(trip)
-
-        self.logger.info("All scenarios complete; per-scenario CSV and log files written.")
-        return scenario_records
+        # Merge plotting records
+        merged: Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]] = defaultdict(list)
+        for recs in results:
+            for k, v in recs.items():
+                merged[k].extend(v)
+        return merged
 
 
 class _ScenarioContext:
-    """Lightweight container for scenario helpers and state bound to a worker RNG.
+    """Lightweight worker context object for a single scenario."""
 
-    Rationale
-    ---------
-    Worker processes should not rely on global state. We bind necessary free
-    functions as methods on this context and store only the minimal data needed
-    for the simulation step.
-    """
-
-    def __init__(self, cfg: Dict[str, Any], shared: Dict[str, Any], logger: logging.Logger, seed: int) -> None:
+    def __init__(self, cfg: Dict[str, Any], shared: Dict[str, Any], logger, seed: int) -> None:
         self.cfg = cfg
         self.logger = logger
         self.rng = default_rng(seed)
 
-        # Arrays/dicts used by helpers
-        self.parcel_ids = shared["parcel_ids"]
-        self.pid_to_index = shared["pid_to_index"]
-        self.pollutants = shared["pollutants"]
-        self.parcel_area_ha = shared["parcel_area_ha"]
-        self.parcel_perim_m = shared["parcel_perim_m"]
-        self.parcel_selection_ids = shared["parcel_selection_ids"]
-        self.parcel_selection_probs = shared["parcel_selection_probs"]
-        self.parcel_out_oids = shared["parcel_out_oids"]
-        self.parcel_up_idxs = shared["parcel_up_idxs"]
+        # Unpack shared, then alias for getattr to work like the Model instance
+        for k, v in shared.items():
+            setattr(self, k, v)
 
-        self.outlet_oids = shared["outlet_oids"]
-        self.outlet_target_map = shared["outlet_target_map"]
-        self.outlet_mean_map = shared["outlet_mean_map"]
-        self.delivery_coeffs = shared["delivery_coeffs"]
-
-        self.bmp_efficiency_stats = shared["bmp_efficiency_stats"]
-        self.pollutant_yield_stats = shared["pollutant_yield_stats"]
-
-        self.bmp_cps = shared["bmp_cps"]
-        self.bmp_selection_probs = shared["bmp_selection_probs"]
-
-        # Minimal data payload for cost helpers
-        self.data = {
-            DATA_AVG_AREA_HA: shared["avg_area_ha"],
-            DATA_AVG_PERIM_M: shared["avg_perim_m"],
-            DATA_BMP_COST: shared["bmp_cost_df"],
-            DATA_CPS: shared["cps_list"],
-        }
-
-        # Bind helpers
+        # Bind helpers with self as first arg
         self._sample_from_stats = types.MethodType(_sample_from_stats, self)
         self._piecewise_quantile_sample = types.MethodType(_piecewise_quantile_sample, self)
         self._trunc_normal = types.MethodType(_trunc_normal, self)
@@ -377,6 +311,7 @@ class _ScenarioContext:
         self._simulate_grassed = types.MethodType(_simulate_grassed, self)
         self._simulate_infield = types.MethodType(_simulate_infield, self)
         self._get_bmp_selection_probs = types.MethodType(_get_bmp_selection_probs, self)
+        self._get_bmp_cost = types.MethodType(_get_bmp_cost, self)
 
         self._sample_parcel_index = types.MethodType(_sample_parcel_index, self)
         self._sample_yield = types.MethodType(_sample_yield, self)
@@ -384,10 +319,6 @@ class _ScenarioContext:
         self._get_parcel_up_list = types.MethodType(_get_parcel_up_list, self)
         self._get_parcel_out_oids = types.MethodType(_get_parcel_out_oids, self)
         self._delivery_coeffs = types.MethodType(_get_delivery_coeffs, self)
-
-        self._get_bmp_cost = types.MethodType(_get_bmp_cost, self)
-        self._estimate_costs_for_probabilities = types.MethodType(_estimate_costs_for_probabilities, self)
-        self._select_cost_rate_median = types.MethodType(_select_cost_rate_median, self)
 
 
 def _run_one_scenario(
@@ -408,7 +339,7 @@ def _run_one_scenario(
     sidx : int
         Zero-based scenario index; scenario id is sidx+1.
     seed : int
-        RNG seed unique to this worker.
+        RNG seed unique to this worker; ensures reproducibility.
     outputs_dir : Path
         Root outputs directory.
 
@@ -416,31 +347,39 @@ def _run_one_scenario(
     -------
     Dict[(str, str, str, str), List[(int, float, float)]]
         Records for plotting keyed by (pollutant, outlet_oid, x_axis, y_axis).
+
+    Side effects
+    ------------
+    - Writes per-BMP and per-parcel CSVs to outputs/bmps/s{sid}.csv and outputs/parcels/s{sid}.csv.
+    - Writes a transposed per-scenario summary with an 'All CPS' column to outputs/summaries/s{sid}.csv.
+    - Emits a per-scenario log at outputs/logs/s{sid}.txt.
     """
     sid = sidx + 1
     logger = make_worker_logger(outputs_dir, scenario_id=sid)
     ctx = _ScenarioContext(cfg, shared, logger, seed)
 
-    n_parcels = int(len(ctx.parcel_ids))
-    n_pol = int(len(ctx.pollutants))
+    logger.info(f"=== scenario {sid} start ===")
 
-    # Baseline yields
-    yields = np.empty((n_parcels, n_pol), dtype=float)
-    baseline = np.empty_like(yields)
-    for parcel_idx in range(n_parcels):
-        for pol_idx in range(n_pol):
-            v = ctx._sample_yield(parcel_idx, pol_idx)
-            yields[parcel_idx, pol_idx] = v
-            baseline[parcel_idx, pol_idx] = v
+    n_pol = len(ctx.pollutants)
+    baseline = np.zeros((len(ctx.parcel_selection_ids), n_pol), dtype=float)
+    yields = np.zeros_like(baseline)
 
+    # Sample baseline parcel yields for selection set
+    pid_to_parcel_idx = {str(pid): ctx.pid_to_index[str(pid)] for pid in ctx.parcel_selection_ids}
+    for i, pid in enumerate(ctx.parcel_selection_ids):
+        parcel_idx = pid_to_parcel_idx[str(pid)]
+        for pol_idx, pol in enumerate(ctx.pollutants):
+            y = ctx._sample_yield(parcel_idx, pol_idx)
+            baseline[i, pol_idx] = y
+            yields[i, pol_idx] = y
+
+    # Limits
+    limit_n = cfg.get("bmp_limit_n")
+    limit_usd = cfg.get("bmp_limit_usd")
     total_cost = 0.0
     total_bmp = 0
-    limit_usd = shared["limit_usd"]
-    limit_n = shared["limit_n"]
 
-    collector = BMPSummaryCollector(ctx.pollutants, sid)
-    pid_to_parcel_idx = {pid: idx for idx, pid in enumerate(ctx.parcel_selection_ids)}
-
+    # Axes and record buffers
     x_axes: List[str] = [XAXIS_COUNT]
     if cfg.get(CFG_BMP_COST):
         x_axes.append(XAXIS_COST)
@@ -453,10 +392,12 @@ def _run_one_scenario(
     records: Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]] = defaultdict(list)
     scenario_bmps: List[Dict[str, Any]] = []
     scenario_parcels: List[Dict[str, Any]] = []
-
     cumul: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
-    # Main placement loop
+    # Initialize summary collector once per scenario
+    collector = BMPSummaryCollector(ctx.pollutants, scenario_id=sid)
+
+    # Main loop
     while True:
         if limit_usd is not None and total_cost >= limit_usd:
             break
@@ -506,7 +447,7 @@ def _run_one_scenario(
             bmp_rec[f"{OUTPUT_REMOVED_PREFIX}{pol}"] = float(bmp_outputs[OUTPUT_REMOVED][pol_idx])
         scenario_bmps.append(bmp_rec)
 
-        # Add to collector
+        # Add to summary collector
         pidx_base = pid_to_parcel_idx.get(str(pid), 0)
         pid_baseline_yields = {pol: float(baseline[pidx_base, i]) for i, pol in enumerate(ctx.pollutants)}
         collector.add_bmp_record(bmp_rec, pid_baseline_yields)
@@ -524,6 +465,7 @@ def _run_one_scenario(
                 )
                 cumul[pol][oid] += deliver
 
+        # Record current cumulative for each axis choice
         for pol in ctx.pollutants:
             for oid in ctx.outlet_oids:
                 for xax in x_axes:
@@ -549,7 +491,7 @@ def _run_one_scenario(
             row[f"final_{pol}"] = float(yields[parcel_idx, pol_idx])
         scenario_parcels.append(row)
 
-    # Write CSVs (Option A)
+    # Write CSVs
     bmps_dir = outputs_dir / "bmps"
     parcels_dir = outputs_dir / "parcels"
     summaries_dir = outputs_dir / "summaries"
@@ -563,7 +505,7 @@ def _run_one_scenario(
     pd.DataFrame(scenario_bmps).to_csv(bmps_path, index=False)
     pd.DataFrame(scenario_parcels).to_csv(parcels_path, index=False)
 
-    # Transposed per-scenario summary + "All CPS" rollup
+    # Transposed per-scenario summary + "All CPS" roll-up
     summary_df = collector.generate_summary_dataframe()
     rollup = collector.generate_rollup_summary()
     summary_with_rollup = pd.concat([summary_df, pd.DataFrame([rollup])], ignore_index=True)

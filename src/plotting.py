@@ -4,6 +4,12 @@ Plotting utilities for cross-scenario comparisons.
 Generates line plots that compare cumulative delivered reductions by pollutant
 and outlet, using either BMP count or cost on x-axis, and absolute or normalized
 reductions on y-axis.
+
+Notes
+-----
+- Behavior restored to original implementation: uses a LineCollection of per-scenario
+  segments with a baseline (0, 0) start, the same x/y axis logic keyed on config,
+  and the original output file naming.
 """
 
 from __future__ import annotations
@@ -84,7 +90,7 @@ def make_summary_plots(
                     plt.figure(figsize=(7, 5), dpi=200)
                     ax = plt.gca()
 
-                    # Draw multi-segment lines scenario-by-scenario
+                    # Draw multi-segment lines scenario-by-scenario (baseline at 0,0)
                     lines = []
                     for sid, pts in sorted(by_scenario.items()):
                         pts = sorted(pts, key=lambda t: t[0])

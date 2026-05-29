@@ -1,10 +1,16 @@
 """
 I/O helpers and input validation.
 
-This module centralizes filesystem interactions:
-- Reading geospatial/tabular inputs
-- Validations and normalizations
-- Writing cross-scenario consolidated outputs (see consolidate_transposed_summaries)
+Centralized filesystem and ingestion utilities:
+- Reading geospatial/tabular inputs and normalizing labels
+- Validations (required columns, supported stats forms)
+- Ensuring projected CRS for area/perimeter calculations
+- Writing cross-scenario consolidated outputs
+
+Notes
+-----
+- Areas and perimeters are only meaningful under a projected CRS. Inputs are
+  reprojected to a suitable UTM when necessary.
 """
 
 from __future__ import annotations
@@ -71,7 +77,24 @@ def _merge_csvs(
     label: str,
     logger: Any,
 ) -> pd.DataFrame:
-    """Read one or multiple CSVs, normalize columns, validate and concat."""
+    """Read one or multiple CSVs, normalize columns, validate and concat.
+
+    Parameters
+    ----------
+    paths : str | Path | Sequence[str | Path]
+        One or more CSV file paths.
+    required_cols : Sequence[str]
+        Columns required to exist in each input.
+    label : str
+        Human label for messages and errors (e.g., 'bmp_efficiency').
+    logger : logging.Logger
+        Logger for messages.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Concatenated frame with normalized column labels and duplicates dropped.
+    """
     paths = [paths] if isinstance(paths, (str, Path)) else list(paths)
     frames: List[pd.DataFrame] = []
     for p in paths:
@@ -89,7 +112,12 @@ def _merge_csvs(
 
 
 def _ensure_projected(gdf: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
-    """Ensure GeoDataFrame is in a projected CRS; reproject if needed."""
+    """Ensure GeoDataFrame uses a projected CRS.
+
+    Returns either the original or a reprojected copy. Areas, perimeters, and
+    distances computed later are only meaningful in a projected CRS. If the
+    input CRS is missing or geographic, a suitable UTM is estimated and used.
+    """
     if gdf.crs is None or not gdf.crs.is_projected:
         est = gdf.estimate_utm_crs()
         logger.info(f"Reprojecting to projected CRS: {est}")
@@ -97,76 +125,112 @@ def _ensure_projected(gdf: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
     return gdf
 
 
-def _normalize_pollutant_column(df: pd.DataFrame, label_col: str, label_name: str, logger: Any) -> pd.DataFrame:
-    """Normalize a pollutant label column using canonical labels."""
-    if label_col not in df.columns:
-        raise ValueError(f"{label_name} must include '{label_col}'")
-    df[label_col] = df[label_col].astype(str).apply(normalize_pollutant_label)
+def _normalize_pollutant_column(df: pd.DataFrame, col: str, label: str, logger: Any) -> pd.DataFrame:
+    """Normalize a pollutant column to canonical labels (adds detailed error context)."""
+    if col not in df.columns:
+        raise ValueError(f"{label} missing required column '{col}'")
+    try:
+        df[col] = [normalize_pollutant_label(x) for x in df[col]]
+    except Exception as ex:  # pylint: disable=broad-except
+        raise ValueError(f"Failed to normalize pollutant labels in {label}: {ex}") from ex
     return df
 
 
+def _validate_stats_table(df: pd.DataFrame, label: str) -> None:
+    """Validate that a stats table provides mean/sd, min/max or percentile columns."""
+    cols = set(df.columns)
+    ok = (
+        ({"mean", "sd"} <= cols)
+        or ({"min", "max"} <= cols)
+        or any(str(c).lower().startswith("p") and str(c)[1:].isdigit() for c in cols)
+    )
+    if not ok:
+        raise ValueError(f"{label} must provide mean/sd or min/max or percentiles")
+
+
+def _load_pollutants(cfg: Dict[str, Any]) -> List[str]:
+    """Normalize and return the list of pollutants from config."""
+    pols = ci_get(cfg, CFG_POLLUTANTS)
+    if isinstance(pols, str):
+        pols = [pols]
+    if not pols:
+        raise ValueError(f"At least one {CFG_POLLUTANTS} value must be specified")
+    return [normalize_pollutant_label(p) for p in pols]
+
+
+def _load_cps(cfg: Dict[str, Any]) -> List[int]:
+    """Return CPS list from config as ints."""
+    cps = ci_get(cfg, CFG_CPS)
+    if isinstance(cps, int):
+        cps = [cps]
+    if not cps:
+        raise ValueError("At least one cps code must be specified")
+    return [int(c) for c in cps]
+
+
 def _load_domain(cfg: Dict[str, Any], logger: Any) -> gpd.GeoDataFrame:
-    """Load and project model domain geometry."""
+    """Load domain polygon(s) and ensure a projected CRS."""
     domain_path = Path(ci_get(cfg, CFG_DOMAIN))
     if not domain_path.exists():
         raise FileNotFoundError(f"Domain not found: {domain_path}")
     domain = gpd.read_file(domain_path)
-    return _ensure_projected(domain, logger)
+    domain = _ensure_projected(domain, logger)
+    return domain.rename(columns={c: c.lower() for c in domain.columns})
 
 
 def _load_parcels(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
-    """Load parcel geometries, project to domain CRS, and clip to domain."""
+    """Load parcels, ensure projected CRS, clip to domain, and compute area/perimeter."""
     parcels_path = Path(ci_get(cfg, CFG_PARCELS))
     if not parcels_path.exists():
         raise FileNotFoundError(f"Parcels not found: {parcels_path}")
     parcels = gpd.read_file(parcels_path)
-    parcels = _ensure_projected(parcels, logger).to_crs(domain.crs)
-    parcels = parcels.clip(domain.unary_union).reset_index(drop=True)
+    parcels = _ensure_projected(parcels, logger)
+    parcels = gpd.overlay(parcels, domain, how="intersection")
     parcels = parcels.rename(columns={c: c.lower() for c in parcels.columns})
-    if COL_PID not in parcels.columns:
-        raise ValueError(f"Parcels must include column '{COL_PID}'")
-    parcels[COL_PID] = parcels[COL_PID].astype(str)
-    parcels[COL_AREA_M2] = parcels.geometry.area
-    parcels[COL_AREA_HA] = parcels[COL_AREA_M2] / 10_000.0
-    parcels[COL_PERIM_M] = parcels.geometry.length
+    if "pid" not in parcels.columns:
+        raise ValueError("Parcels must include a 'pid' column")
+    parcels["area_m2"] = parcels.geometry.area
+    parcels["perim_m"] = parcels.geometry.length
+    parcels["area_ha"] = parcels["area_m2"] / 10000.0
     return parcels
 
 
-def _load_parcel_out(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
-    """Load parcel -> outlet OID mapping."""
-    return _merge_csvs(ci_get(cfg, CFG_PARCEL_OUT), [COL_PID, COL_OIDS], CFG_PARCEL_OUT, logger)
+def _load_parcel_graph(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
+    """Load parcel adjacency (up-gradient graph)."""
+    up_path = Path(ci_get(cfg, CFG_PARCEL_UP))
+    if not up_path.exists():
+        raise FileNotFoundError(f"{CFG_PARCEL_UP} not found: {up_path}")
+    df = _merge_csvs(up_path, [COL_PID, COL_PID_UP], CFG_PARCEL_UP, logger)
+    return df
 
 
-def _load_parcel_up(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataFrame]:
-    """Load optional parcel upstream neighbors table."""
-    if ci_get(cfg, CFG_PARCEL_UP) is None:
-        return None
-    return _merge_csvs(ci_get(cfg, CFG_PARCEL_UP), [COL_PID, COL_PID_UP], CFG_PARCEL_UP, logger)
+def _load_parcel_outlets(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
+    """Load parcel-to-outlet associations."""
+    out_path = Path(ci_get(cfg, CFG_PARCEL_OUT))
+    if not out_path.exists():
+        raise FileNotFoundError(f"{CFG_PARCEL_OUT} not found: {out_path}")
+    df = _merge_csvs(out_path, [COL_PID, COL_OIDS], CFG_PARCEL_OUT, logger)
+    return df
 
 
-def _load_parcel_p(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: Any) -> pd.DataFrame:
-    """Load or synthesize parcel selection probabilities, normalized to 1.0."""
-    if ci_get(cfg, CFG_PARCEL_P) is not None:
-        parcel_p = _merge_csvs(ci_get(cfg, CFG_PARCEL_P), [COL_PID, COL_PROBABILITY], CFG_PARCEL_P, logger)
-        parcel_p[COL_PID] = parcel_p[COL_PID].astype(str)
-        before = len(parcel_p)
-        parcel_p = parcel_p[parcel_p[COL_PID].isin(parcels[COL_PID])].copy()
-        dropped = before - len(parcel_p)
-        if dropped:
-            logger.warning(
-                f"{CFG_PARCEL_P} contained {dropped} {COL_PID}(s) not present in parcels after clipping; they were removed"
-            )
-        if parcel_p.empty:
+def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: Any) -> pd.DataFrame:
+    """Load or synthesize parcel selection probabilities (normalized to sum=1)."""
+    p_cfg = ci_get(cfg, CFG_PARCEL_P)
+    if p_cfg is not None:
+        df = _merge_csvs(p_cfg, [COL_PID, COL_PROBABILITY], CFG_PARCEL_P, logger)
+        df = df[df[COL_PID].astype(str).isin(parcels[COL_PID].astype(str))].copy()
+        removed = df[~df[COL_PID].astype(str).isin(parcels[COL_PID].astype(str))]
+        if not removed.empty:
+            logger.warning(f"{CFG_PARCEL_P}: some PIDs not found in parcels after clipping; they were removed")
+        if df.empty:
             raise ValueError(f"{CFG_PARCEL_P} has no {COL_PID}s that exist in parcels after clipping")
-        total_prob = parcel_p[COL_PROBABILITY].sum()
+        total_prob = df[COL_PROBABILITY].sum()
         if total_prob <= 0:
             raise ValueError(f"{CFG_PARCEL_P} probabilities sum to zero or negative")
-        parcel_p[COL_PROBABILITY] /= total_prob
-    else:
-        parcel_p = pd.DataFrame(
-            {COL_PID: parcels[COL_PID].values, COL_PROBABILITY: np.full(len(parcels), 1 / len(parcels))}
-        )
-    return parcel_p
+        df[COL_PROBABILITY] /= total_prob
+        return df[[COL_PID, COL_PROBABILITY]].copy()
+    # synthesize uniform
+    return pd.DataFrame({COL_PID: parcels[COL_PID].values, COL_PROBABILITY: np.full(len(parcels), 1 / len(parcels))})
 
 
 def _load_outlet_loc(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
@@ -211,38 +275,6 @@ def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataF
     )
 
 
-def _load_pollutants(cfg: Dict[str, Any]) -> List[str]:
-    """Normalize and return the list of pollutants from config."""
-    pols = ci_get(cfg, CFG_POLLUTANTS)
-    if isinstance(pols, str):
-        pols = [pols]
-    if not pols:
-        raise ValueError(f"At least one {CFG_POLLUTANTS} value must be specified")
-    return [normalize_pollutant_label(p) for p in pols]
-
-
-def _load_cps(cfg: Dict[str, Any]) -> List[int]:
-    """Return CPS list from config as ints."""
-    cps = ci_get(cfg, CFG_CPS)
-    if isinstance(cps, int):
-        cps = [cps]
-    if not cps:
-        raise ValueError("At least one cps code must be specified")
-    return [int(c) for c in cps]
-
-
-def _validate_stats_table(df: pd.DataFrame, label: str) -> None:
-    """Validate that a stats table provides mean/sd, min/max or percentile columns."""
-    cols = set(df.columns)
-    ok = (
-        ({"mean", "sd"} <= cols)
-        or ({"min", "max"} <= cols)
-        or any(str(c).lower().startswith("p") and str(c)[1:].isdigit() for c in cols)
-    )
-    if not ok:
-        raise ValueError(f"{label} must provide mean/sd or min/max or percentiles")
-
-
 def _load_bmp_efficiency(cfg: Dict[str, Any], cps: List[int], pollutants: List[str], logger: Any) -> pd.DataFrame:
     """Load BMP efficiency stats filtered to requested CPS and pollutants."""
     df = _merge_csvs(ci_get(cfg, CFG_BMP_EFFICIENCY), [COL_CPS, COL_POLLUTANT], CFG_BMP_EFFICIENCY, logger)
@@ -254,187 +286,146 @@ def _load_bmp_efficiency(cfg: Dict[str, Any], cps: List[int], pollutants: List[s
     return df
 
 
-def _load_pollutant_yield(
-    cfg: Dict[str, Any],
-    parcels: pd.DataFrame,
-    pollutants: List[str],
-    logger: Any,
-) -> pd.DataFrame:
-    """Load parcel pollutant yield stats for all parcels and pollutants."""
+def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any) -> Optional[pd.DataFrame]:
+    """Load optional BMP cost stats filtered to requested CPS."""
+    path = ci_get(cfg, CFG_BMP_COST)
+    if path is None:
+        return None
+    df = _merge_csvs(path, [COL_CPS, COL_UNIT], CFG_BMP_COST, logger)
+    _validate_stats_table(df, CFG_BMP_COST)
+    df = df[df[COL_CPS].astype(int).isin(cps)].copy()
+    if df.empty:
+        logger.warning("bmp_cost has no records for specified cps; proceeding without costing")
+        return None
+    return df
+
+
+def _load_pollutant_yield(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants: List[str], logger: Any) -> pd.DataFrame:
+    """Load baseline pollutant yield stats per parcel and pollutant."""
     df = _merge_csvs(ci_get(cfg, CFG_POLLUTANT_YIELD), [COL_PID, COL_POLLUTANT], CFG_POLLUTANT_YIELD, logger)
-    df[COL_PID] = df[COL_PID].astype(str)
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_POLLUTANT_YIELD, logger)
     _validate_stats_table(df, CFG_POLLUTANT_YIELD)
-    _validate_pollutant_yield_coverage(parcels, pollutants, df)
+    df = df[df[COL_PID].astype(str).isin(parcels[COL_PID].astype(str)) & df[COL_POLLUTANT].isin(pollutants)].copy()
+    if df.empty:
+        raise ValueError("pollutant_yield has no records for specified parcels+pollutants")
     return df
 
 
-def _validate_pollutant_yield_coverage(parcels: pd.DataFrame, pollutants: List[str], pol_y: pd.DataFrame) -> None:
-    """Ensure pollutant_yield covers every parcel x pollutant combination."""
-    req = pd.MultiIndex.from_product([parcels[COL_PID].astype(str).values, pollutants], names=[COL_PID, COL_POLLUTANT])
-    got = pd.MultiIndex.from_frame(pol_y[[COL_PID, COL_POLLUTANT]].astype(str))
-    missing = req.difference(got)
-    if len(missing) > 0:
-        examples = list(missing)[:5]
-        fmt = ", ".join([f"{p}-{pol}" for p, pol in examples])
-        raise ValueError(f"pollutant_yield missing parcel+pollutant rows, e.g.: {fmt}")
+def _assemble_delivery_coeffs(
+    parcel_out: pd.DataFrame,
+    delivery_ratios: Optional[pd.DataFrame],
+    logger: Any,
+) -> Dict[tuple[str, str], Dict[str, float]]:
+    """Create a mapping {(pid, oid) -> delivery coeff dict}, defaulting to 1.0 for missing pairs."""
+    coeffs: Dict[tuple[str, str], Dict[str, float]] = {}
+    for _, row in parcel_out.iterrows():
+        pid = str(row[COL_PID])
+        for oid in str(row[COL_OIDS]).split(","):
+            coeffs[(pid, str(oid))] = dict(sdr_f_to_s=1.0, sdr_s_to_o=1.0, ndr_f_to_s=1.0, ndr_s_to_o=1.0)
 
+    if delivery_ratios is None:
+        return coeffs
 
-def _load_bmp_cost(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataFrame]:
-    """Load optional BMP cost table with stats."""
-    if ci_get(cfg, CFG_BMP_COST) is None:
-        return None
-    df = _merge_csvs(ci_get(cfg, CFG_BMP_COST), [COL_CPS, COL_UNIT], CFG_BMP_COST, logger)
-    cols = set(df.columns)
-    ok = (
-        ({"mean", "sd"} <= cols)
-        or ({"min", "max"} <= cols)
-        or any(str(c).lower().startswith("p") and str(c)[1:].isdigit() for c in cols)
-    )
-    if not ok:
-        raise ValueError("bmp_cost must provide mean/sd or min/max or percentiles")
-    return df
-
-
-def _build_parcel_up_map(parcel_up: Optional[pd.DataFrame]) -> Dict[str, List[str]]:
-    """Convert parcel_up rows to a mapping {pid: [up_pid, ...]}."""
-    m: Dict[str, List[str]] = {}
-    if parcel_up is None:
-        return m
-    for _, row in parcel_up.iterrows():
-        ups: List[str] = []
-        if isinstance(row[COL_PID_UP], str) and row[COL_PID_UP].strip():
-            ups = [x.strip() for x in row[COL_PID_UP].split(",") if x.strip()]
-        m[str(row[COL_PID])] = ups
-    return m
-
-
-def _validate_parcel_out(parcel_out: pd.DataFrame, outlet_loc: pd.DataFrame) -> None:
-    """Ensure parcel_out maps only to known outlet oids."""
-    outlet_oids = set(outlet_loc[COL_OID].astype(str).tolist())
-    po = parcel_out.copy()
-    po[COL_PID] = po[COL_PID].astype(str)
-    po[COL_OIDS] = po[COL_OIDS].astype(str)
-    po["oids_list"] = po[COL_OIDS].apply(lambda s: [x.strip() for x in s.split(",") if str(x).strip()])
-    unknown = sorted({oid for olist in po["oids_list"] for oid in olist if oid not in outlet_oids})
-    if unknown:
-        raise ValueError(f"parcel_out references unknown outlet oid(s): {unknown}")
-
-
-def _validate_parcel_up(parcel_up: Optional[pd.DataFrame], parcels: pd.DataFrame) -> None:
-    """Validate parcel_up references only known PIDs."""
-    if parcel_up is None:
-        return
-    parcel_up[COL_PID] = parcel_up[COL_PID].astype(str)
-    parcel_up[COL_PID_UP] = parcel_up[COL_PID_UP].fillna("").astype(str)
-    valid_pids = set(parcels[COL_PID].astype(str).tolist())
-    unknown_pids = sorted({pid for pid in parcel_up[COL_PID].tolist() if pid not in valid_pids})
-    unknown_up_pids = sorted({pid for pid in parcel_up[COL_PID_UP].tolist() if pid and pid not in valid_pids})
-    if unknown_pids:
-        raise ValueError(f"parcel_up contains pid values not present in parcels: {unknown_pids}")
-    if unknown_up_pids:
-        raise ValueError(f"parcel_up contains pid_up values not present in parcels: {unknown_up_pids}")
-
-
-def _validate_outlet_stats(
-    outlet_target: Optional[pd.DataFrame],
-    outlet_mean: Optional[pd.DataFrame],
-    outlet_loc: pd.DataFrame,
-) -> None:
-    """Validate that outlet target/mean refer only to known outlet oids."""
-    outlet_oids = set(outlet_loc[COL_OID].astype(str).tolist())
-    target_oids = set(outlet_target[COL_OID].astype(str).tolist()) if outlet_target is not None else set()
-    mean_oids = set(outlet_mean[COL_OID].astype(str).tolist()) if outlet_mean is not None else set()
-    invalid = sorted((target_oids | mean_oids) - outlet_oids)
-    if invalid:
-        raise ValueError(f"outlet_target/outlet_mean reference unknown outlet oid(s): {invalid}")
-
-
-def _build_parcel_out_map(parcel_out: pd.DataFrame) -> Dict[str, List[str]]:
-    """Convert parcel_out rows into a mapping {pid: [oid, ...]}."""
-    po = parcel_out.copy()
-    po[COL_PID] = po[COL_PID].astype(str)
-    po[COL_OIDS] = po[COL_OIDS].astype(str)
-    po["oids_list"] = po[COL_OIDS].apply(lambda s: [x.strip() for x in s.split(",") if str(x).strip()])
-    return {str(row[COL_PID]): row["oids_list"] for _, row in po.iterrows()}
+    for _, row in delivery_ratios.iterrows():
+        pid = str(row[COL_PID])
+        oid = str(row[COL_OID])
+        coeffs[(pid, oid)] = dict(
+            sdr_f_to_s=float(row["sdr_f_to_s"]),
+            sdr_s_to_o=float(row["sdr_s_to_o"]),
+            ndr_f_to_s=float(row["ndr_f_to_s"]),
+            ndr_s_to_o=float(row["ndr_s_to_o"]),
+        )
+    return coeffs
 
 
 def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
-    """Load all model inputs, validate, and return a normalized data payload.
-
-    Parameters
-    ----------
-    cfg : Dict[str, Any]
-        Parsed configuration dictionary (case-insensitive keys).
-    logger : Any
-        Logger for messages.
+    """Load, normalize, and validate all inputs; return a data payload for Model.
 
     Returns
     -------
     Dict[str, Any]
-        Dictionary keyed by constants.DATA_* names, used by model.Model.
+        Keys
+        - parcels : geopandas.GeoDataFrame
+        - parcel_p : pandas.DataFrame
+        - parcel_up_map : Dict[str, List[str]]
+        - parcel_out_map : Dict[str, List[str]]
+        - pollutants : List[str]
+        - cps : List[int]
+        - outlet_loc : geopandas.GeoDataFrame
+        - outlet_target : Optional[pandas.DataFrame]
+        - outlet_mean : Optional[pandas.DataFrame]
+        - bmp_eff : pandas.DataFrame
+        - bmp_cost : Optional[pandas.DataFrame]
+        - pollutant_yield : pandas.DataFrame
+        - delivery_ratios : Optional[pandas.DataFrame]
+        - bmp_limit_n : Optional[int]
+        - bmp_limit_usd : Optional[float]
+        - n_scenarios : int
+        - random_seed : Optional[int]
+        - avg_area_ha : float
+        - avg_perim_m : float
+        - parallel : Optional[Dict[str, Any]]
     """
-    logger.info("Loading and validating input datasets")
-
     domain = _load_domain(cfg, logger)
     parcels = _load_parcels(cfg, domain, logger)
-    parcel_out = _load_parcel_out(cfg, logger)
-    parcel_up = _load_parcel_up(cfg, logger)
-    parcel_p = _load_parcel_p(cfg, parcels, logger)
+
+    up = _load_parcel_graph(cfg, logger)
+    out = _load_parcel_outlets(cfg, logger)
+    sel = _load_parcel_selection(cfg, parcels, logger)
+
+    # Upstream list mapping
+    parcel_up_map: Dict[str, List[str]] = {}
+    for pid in parcels[COL_PID].astype(str):
+        ups = up[up[COL_PID].astype(str) == str(pid)][COL_PID_UP].astype(str).tolist()
+        parcel_up_map[str(pid)] = ups
+
+    # Parcel->outlet mapping
+    parcel_out_map: Dict[str, List[str]] = {}
+    for pid in parcels[COL_PID].astype(str):
+        oids = []
+        row = out[out[COL_PID].astype(str) == str(pid)]
+        if not row.empty:
+            oids = str(row.iloc[0][COL_OIDS]).split(",")
+        parcel_out_map[str(pid)] = [str(x) for x in oids if str(x)]
+
+    pollutants = _load_pollutants(cfg)
+    cps = _load_cps(cfg)
+
     outlet_loc = _load_outlet_loc(cfg, domain, logger)
     outlet_target = _load_optional_outlet_stats(cfg, CFG_OUTLET_TARGET, [COL_OID, COL_POLLUTANT, COL_TARGET], CFG_OUTLET_TARGET, logger)
     outlet_mean = _load_optional_outlet_stats(cfg, CFG_OUTLET_MEAN, [COL_OID, COL_POLLUTANT, COL_MEAN], CFG_OUTLET_MEAN, logger)
-    delivery_ratios = _load_delivery_ratios(cfg, logger)
-    pollutants = _load_pollutants(cfg)
-    cps = _load_cps(cfg)
+
     bmp_eff = _load_bmp_efficiency(cfg, cps, pollutants, logger)
-    pol_y = _load_pollutant_yield(cfg, parcels, pollutants, logger)
-    bmp_cost = _load_bmp_cost(cfg, logger)
+    bmp_cost = _load_bmp_cost(cfg, cps, logger)
+    pollutant_yield = _load_pollutant_yield(cfg, parcels, pollutants, logger)
+    delivery_ratios = _load_delivery_ratios(cfg, logger)
 
-    n_scenarios = int(ci_get(cfg, CFG_N_SCENARIOS))
-    limit_n = ci_get(cfg, CFG_BMP_LIMIT_N)
-    limit_usd = ci_get(cfg, CFG_BMP_LIMIT_USD)
-    if limit_n is None and limit_usd is None:
-        raise ValueError("Specify bmp_limit_n or bmp_limit_usd")
+    # Precompute averages for selection heuristics and reporting
+    avg_area_ha = float(parcels["area_ha"].mean())
+    avg_perim_m = float(parcels["perim_m"].mean())
 
-    parallel = dict(ci_get(cfg, CFG_PARALLEL) or {})
-    random_seed = ci_get(cfg, CFG_RANDOM_SEED)
-
-    _validate_parcel_out(parcel_out, outlet_loc)
-    _validate_parcel_up(parcel_up, parcels)
-    _validate_outlet_stats(outlet_target, outlet_mean, outlet_loc)
-
-    parcel_out_map = _build_parcel_out_map(parcel_out)
-    parcel_up_map = _build_parcel_up_map(parcel_up)
-
-    avg_area_ha = float(parcels[COL_AREA_HA].mean())
-    avg_perim_m = float(parcels[COL_PERIM_M].mean())
-
-    logger.info("Input validation complete; assembling data payload")
-    data = dict(
-        domain=domain,
+    return dict(
         parcels=parcels,
-        parcel_out_map=parcel_out_map,
+        parcel_p=sel,
         parcel_up_map=parcel_up_map,
-        parcel_p=parcel_p,
+        parcel_out_map=parcel_out_map,
+        pollutants=pollutants,
+        cps=cps,
         outlet_loc=outlet_loc,
         outlet_target=outlet_target,
         outlet_mean=outlet_mean,
-        delivery_ratios=delivery_ratios,
-        pollutants=pollutants,
-        cps=cps,
         bmp_eff=bmp_eff,
-        pollutant_yield=pol_y,
         bmp_cost=bmp_cost,
-        n_scenarios=int(n_scenarios),
-        bmp_limit_n=int(limit_n) if limit_n is not None else None,
-        bmp_limit_usd=float(limit_usd) if limit_usd is not None else None,
-        parallel=parallel,
-        random_seed=int(random_seed) if random_seed is not None else None,
+        pollutant_yield=pollutant_yield,
+        delivery_ratios=delivery_ratios,
+        bmp_limit_n=ci_get(cfg, CFG_BMP_LIMIT_N),
+        bmp_limit_usd=ci_get(cfg, CFG_BMP_LIMIT_USD),
+        n_scenarios=int(ci_get(cfg, CFG_N_SCENARIOS) or 1),
+        random_seed=ci_get(cfg, CFG_RANDOM_SEED),
         avg_area_ha=avg_area_ha,
         avg_perim_m=avg_perim_m,
+        parallel=ci_get(cfg, CFG_PARALLEL),
     )
-    return data
 
 
 def consolidate_transposed_summaries(outputs_dir: Path, logger) -> Path:
@@ -456,8 +447,9 @@ def consolidate_transposed_summaries(outputs_dir: Path, logger) -> Path:
     -----
     - Reads: outputs/summaries/s*.csv (each with a 'field' column)
     - Writes: outputs/summaries/all_scenarios.csv
-    - Outer-joins on 'field'. Columns sorted by scenario id, with "All CPS"
-      first within each scenario.
+    - Merge: outer-join on 'field'. Columns are per-scenario labels like
+      's1-All CPS' or 's1-Grassed Waterway(412)'. Within each scenario,
+      'All CPS' is ordered first via the regex-based sort key.
     """
     outputs_dir = Path(outputs_dir)
     summaries_dir = outputs_dir / "summaries"

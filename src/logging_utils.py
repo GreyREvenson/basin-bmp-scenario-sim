@@ -30,66 +30,51 @@ def make_logger(outputs_dir: Path, verbose: bool = True, scenario_id: Optional[i
         The logger and optional log file path if scenario_id is provided.
     """
     outputs_dir = Path(outputs_dir)
-    outputs_dir.mkdir(parents=True, exist_ok=True)
-    log_path = None
-    if scenario_id is not None:
-        logs_dir = outputs_dir / "logs"
-        logs_dir.mkdir(parents=True, exist_ok=True)
-        log_path = logs_dir / f"s{scenario_id}.txt"
+    logs_dir = outputs_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
-    logger = logging.getLogger("bmp_model")
-    logger.handlers.clear()
-    logger.setLevel(logging.DEBUG)
+    logger = logging.getLogger("bmp-sim")
+    logger.setLevel(logging.INFO)
+    logger.handlers = []
     logger.propagate = False
 
-    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    if log_path is not None:
-        fh = logging.FileHandler(log_path, encoding="utf-8")
-        fh.setLevel(logging.DEBUG)
-        fh.setFormatter(fmt)
+    log_path = None
+    if scenario_id is not None:
+        log_path = logs_dir / f"s{scenario_id}.txt"
+        fh = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+        fh.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
+        fh.setLevel(logging.INFO)
         logger.addHandler(fh)
 
     if verbose:
         ch = logging.StreamHandler()
+        ch.setFormatter(logging.Formatter("%(message)s"))
         ch.setLevel(logging.INFO)
-        ch.setFormatter(fmt)
         logger.addHandler(ch)
 
-    logger.debug("Driver logger initialized")
     return logger, log_path
 
 
 def make_worker_logger(outputs_dir: Path, scenario_id: int) -> logging.Logger:
     """Create a per-scenario logger writing into outputs/logs/s{scenario_id}.txt.
 
-    Parameters
-    ----------
-    outputs_dir : Path
-        Root outputs directory.
-    scenario_id : int
-        1-based scenario id.
-
-    Returns
-    -------
-    logging.Logger
-        Logger instance dedicated to this scenario.
+    Notes
+    -----
+    Workers do not log to console to avoid interleaving stdout with the driver.
     """
     outputs_dir = Path(outputs_dir)
-    outputs_dir.mkdir(parents=True, exist_ok=True)
     logs_dir = outputs_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    logger = logging.getLogger(f"bmp_model.worker.scenario_{scenario_id}")
-    logger.handlers.clear()
-    logger.setLevel(logging.DEBUG)
+    logger = logging.getLogger(f"bmp-sim-s{scenario_id}")
+    logger.setLevel(logging.INFO)
+    logger.handlers = []
+    logger.propagate = False
 
-    fh = logging.FileHandler(logs_dir / f"s{scenario_id}.txt", encoding="utf-8")
-    fh.setLevel(logging.DEBUG)
-    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    fh.setFormatter(fmt)
+    log_path = logs_dir / f"s{scenario_id}.txt"
+    fh = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+    fh.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
+    fh.setLevel(logging.INFO)
     logger.addHandler(fh)
 
-    # Workers do not log to console to avoid interleaving lines.
-    logger.propagate = False
-    logger.debug(f"Worker logger initialized for scenario {scenario_id}")
     return logger

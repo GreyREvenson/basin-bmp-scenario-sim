@@ -1,4 +1,15 @@
-# src/parcel.py
+"""
+Parcel utilities: metadata lookup, upstream/downstream relations, and baseline yield sampling.
+
+Notes
+-----
+- Units: areas in hectares (ha), perimeters in meters (m).
+- Baseline parcel yields are sampled in units of load/ha and used downstream
+  to compute treated and removed loads for each BMP.
+"""
+
+from __future__ import annotations
+
 import pandas as pd
 from typing import Dict, List, Union, TYPE_CHECKING
 
@@ -16,7 +27,13 @@ from .constants import (
 
 
 def _sample_yield(self: "Model", parcel_idx: int, pol_idx: int) -> float:
-    """Sample baseline pollutant yield for a parcel and pollutant index."""
+    """Sample baseline pollutant yield for a parcel and pollutant index (units: load/ha).
+
+    Raises
+    ------
+    KeyError
+        If per-parcel, per-pollutant yield statistics are missing.
+    """
     stats = self.pollutant_yield_stats[parcel_idx][pol_idx]
     if stats is None:
         raise KeyError(
@@ -33,7 +50,7 @@ def _sample_parcel_index(self: "Model") -> int:
 
 
 def _get_parcel_metadata(self: "Model", pid: Union[int, str]) -> pd.Series:
-    """Return parcel metadata for a given parcel ID, raising if missing."""
+    """Return parcel metadata for a given parcel ID, raising KeyError if missing."""
     sub = self.data[DATA_PARCELS]
     match = sub[sub[COL_PID].astype(str) == str(pid)]
     if match.empty:
