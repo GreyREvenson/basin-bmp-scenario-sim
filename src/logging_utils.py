@@ -1,23 +1,41 @@
+"""
+Logging helpers for driver and worker processes.
+
+- Driver logger optionally writes to console and/or a file.
+- Worker loggers write a dedicated file per scenario under outputs/logs/.
+"""
+
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from typing import Optional, Tuple
 
 
-def make_logger(
-    outputs_dir: Path,
-    verbose: bool = True,
-    scenario_id: Optional[int] = None,
-) -> Tuple[logging.Logger, Optional[Path]]:
-    """Create the driver logger that optionally writes to stdout.
+def make_logger(outputs_dir: Path, verbose: bool = True, scenario_id: Optional[int] = None) -> Tuple[logging.Logger, Optional[Path]]:
+    """Create a driver logger.
 
-    If a scenario_id is provided, the logger writes to that scenario's log file.
-    Otherwise it only logs to stdout and does not create a generic file.
+    Parameters
+    ----------
+    outputs_dir : Path
+        Root outputs directory.
+    verbose : bool, default True
+        If True, also log to console at INFO level.
+    scenario_id : Optional[int]
+        If provided, the driver also logs to outputs/logs/s{scenario_id}.txt.
+
+    Returns
+    -------
+    (logging.Logger, Optional[Path])
+        The logger and optional log file path if scenario_id is provided.
     """
     outputs_dir = Path(outputs_dir)
     outputs_dir.mkdir(parents=True, exist_ok=True)
     log_path = None
     if scenario_id is not None:
-        log_path = outputs_dir / f"log_s{scenario_id}.txt"
+        logs_dir = outputs_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        log_path = logs_dir / f"s{scenario_id}.txt"
 
     logger = logging.getLogger("bmp_model")
     logger.handlers.clear()
@@ -42,18 +60,30 @@ def make_logger(
 
 
 def make_worker_logger(outputs_dir: Path, scenario_id: int) -> logging.Logger:
-    """Create a per-scenario logger that writes all DEBUG lines to its own file.
+    """Create a per-scenario logger writing into outputs/logs/s{scenario_id}.txt.
 
-    Workers call this to log into outputs/log_s{scenario_id}.txt.
+    Parameters
+    ----------
+    outputs_dir : Path
+        Root outputs directory.
+    scenario_id : int
+        1-based scenario id.
+
+    Returns
+    -------
+    logging.Logger
+        Logger instance dedicated to this scenario.
     """
     outputs_dir = Path(outputs_dir)
     outputs_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir = outputs_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger(f"bmp_model.worker.scenario_{scenario_id}")
     logger.handlers.clear()
     logger.setLevel(logging.DEBUG)
 
-    fh = logging.FileHandler(outputs_dir / f"log_s{scenario_id}.txt", encoding="utf-8")
+    fh = logging.FileHandler(logs_dir / f"s{scenario_id}.txt", encoding="utf-8")
     fh.setLevel(logging.DEBUG)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
     fh.setFormatter(fmt)
