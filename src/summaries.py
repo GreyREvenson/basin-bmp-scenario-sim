@@ -13,6 +13,7 @@ For each CPS and for 'All CPS', the collector reports:
 - Per-pollutant treated_*/removed_* statistics
 - Per-BMP efficiency statistics (treated/baseline), per pollutant
 - Cost statistics: cost_usd_{count,mean,std,min,p25,p50,p75,max} and total_cost_usd
+- New: failures_count (number of BMPs that were marked failed)
 """
 
 from __future__ import annotations
@@ -33,29 +34,17 @@ from .constants import (
     OUTPUT_WETLAND_AREA,
     OUTPUT_COST_USD,
     OUTPUT_TOTAL_COST_USD,
+    OUTPUT_BMP_FAILED,
 )
 
 
 def _compute_statistics(values: np.ndarray) -> Dict[str, float]:
-    """Compute descriptive statistics for a 1-D array of values.
-
-    Parameters
-    ----------
-    values : np.ndarray
-        Input values. NaNs are ignored in the computations.
-
-    Returns
-    -------
-    Dict[str, float]
-        Dictionary with keys: count, mean, std, min, p25, p50, p75, max
-    """
+    """Compute descriptive statistics for a 1-D array of values."""
     if values.size == 0:
         return {"count": 0, "mean": np.nan, "std": np.nan, "min": np.nan, "p25": np.nan, "p50": np.nan, "p75": np.nan, "max": np.nan}
-
     valid = values[~np.isnan(values)]
     if valid.size == 0:
         return {"count": 0, "mean": np.nan, "std": np.nan, "min": np.nan, "p25": np.nan, "p50": np.nan, "p75": np.nan, "max": np.nan}
-
     return {
         "count": int(valid.size),
         "mean": float(np.mean(valid)),
@@ -84,15 +73,7 @@ class BMPSummaryCollector:
       - treated/removed loads per pollutant
       - per-BMP efficiency ratios (treated / parcel baseline), per pollutant
       - cost statistics (USD): cost_usd_{count,mean,std,min,p25,p50,p75,max} and total_cost_usd
-
-    This class is pure compute and performs no filesystem I/O.
-
-    Parameters
-    ----------
-    pollutants : List[str]
-        Canonical pollutant labels used throughout the scenario.
-    scenario_id : int
-        1-based scenario identifier.
+      - failures_count (number of BMPs with OUTPUT_BMP_FAILED true)
     """
 
     def __init__(self, pollutants: List[str], scenario_id: int) -> None:
@@ -107,21 +88,7 @@ class BMPSummaryCollector:
         bmp_record: Dict[str, Any],
         pid_baseline_yields: Dict[str, float],
     ) -> None:
-        """Add a single per-BMP record to the collector.
-
-        Parameters
-        ----------
-        bmp_record : Dict[str, Any]
-            Per-BMP record with keys including:
-              - "cps" (int), "pid" (str), "cps_name" (str),
-              - type-specific fields: OUTPUT_WETLAND_AREA, OUTPUT_CATCHMENT_RATIO,
-                OUTPUT_BUFFER_AREA, OUTPUT_LINEAR_LENGTH (when applicable),
-              - per-pollutant treated/removed fields using OUTPUT_*_PREFIX, and
-              - cost_usd (if a cost table is provided).
-        pid_baseline_yields : Dict[str, float]
-            Baseline yields for the BMP's parcel for each pollutant. Used to
-            compute per-BMP efficiency ratios.
-        """
+        """Add a single per-BMP record to the collector."""
         cps = int(bmp_record["cps"])
         group = self.bmp_by_cps[cps]
         group["records"].append(bmp_record)
@@ -142,23 +109,17 @@ class BMPSummaryCollector:
             if linear_length is not None:
                 group["attributes"]["linear_length_m"].append(float(linear_length))
 
+        # Per-BMP failure flag for counting
+        failed_flag = bool(bmp_record.get(OUTPUT_BMP_FAILED, False))
+        group["attributes"]["failed"].append(1 if failed_flag else 0)
+
         # Parcel ID and baseline yields (for per-BMP efficiency)
         group["attributes"]["pid"].append(str(bmp_record.get("pid", "")))
         for pol in self.pollutants:
             group["attributes"][f"baseline_{pol}"].append(float(pid_baseline_yields.get(pol, 0.0)))
 
     def generate_summary_dataframe(self) -> pd.DataFrame:
-        """Compute per-CPS summary statistics.
-
-        Returns
-        -------
-        pd.DataFrame
-            One row per CPS present in this scenario. Columns include:
-              - scenario, cps, cps_name, bmp_count
-              - type-specific stats: <attr>_{count,mean,std,min,p25,p50,p75,max}
-              - treated_{pol}_<stat>, removed_{pol}_<stat>, efficiency_{pol}_<stat>
-              - cost_usd_{count,mean,std,min,p25,p50,p75,max}, total_cost_usd
-        """
+        """Compute per-CPS summary statistics."""
         summaries: List[Dict[str, Any]] = []
         for cps in sorted(self.bmp_by_cps.keys()):
             group = self.bmp_by_cps[cps]
@@ -170,6 +131,7 @@ class BMPSummaryCollector:
                 "cps": cps,
                 "cps_name": BMP_CPS_NAME_MAP.get(cps, f"CPS {cps}"),
                 "bmp_count": len(bmp_records),
+                "failures_count": int(np.sum(np.asarray(attrs.get("failed", []), dtype=float))) if "failed" in attrs else 0,
             }
 
             # Type-specific attributes
@@ -226,14 +188,7 @@ class BMPSummaryCollector:
         return pd.DataFrame(summaries)
 
     def generate_rollup_summary(self) -> Dict[str, Any]:
-        """Compute an "All CPS" roll-up by re-aggregating raw BMP records.
-
-        Returns
-        -------
-        Dict[str, Any]
-            A single dictionary mirroring generate_summary_dataframe columns,
-            labeled with cps=0 and cps_name="All CPS".
-        """
+        """Compute an "All CPS" roll-up by re-aggregating raw BMP records."""
         all_records: List[Dict[str, Any]] = []
         all_attrs: Dict[str, List[float]] = defaultdict(list)
 
@@ -248,6 +203,7 @@ class BMPSummaryCollector:
             "cps": 0,
             "cps_name": "All CPS",
             "bmp_count": len(all_records),
+            "failures_count": int(np.sum(np.asarray(all_attrs.get("failed", []), dtype=float))) if "failed" in all_attrs else 0,
         }
 
         # Type-specific attributes
@@ -277,6 +233,7 @@ class BMPSummaryCollector:
         for pol in self.pollutants:
             t_col = f"{OUTPUT_TREATED_PREFIX}{pol}"
             efficiencies: List[float] = []
+            # iterate per CPS to align with baseline lists
             for cps in sorted(self.bmp_by_cps.keys()):
                 group = self.bmp_by_cps[cps]
                 recs = group["records"]

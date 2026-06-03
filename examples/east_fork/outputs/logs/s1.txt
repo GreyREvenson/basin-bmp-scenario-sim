@@ -1,5 +1,5 @@
-2026-05-29 16:38:23,929 | INFO | === scenario 1 start ===
-2026-05-29 16:38:24,124 | INFO | Wrote per-scenario BMPs: examples\east_fork\outputs\bmps\s1.csv
-2026-05-29 16:38:24,124 | INFO | Wrote per-scenario parcels: examples\east_fork\outputs\parcels\s1.csv
-2026-05-29 16:38:24,124 | INFO | Wrote transposed BMP summary with All CPS: examples\east_fork\outputs\summaries\s1.csv
-2026-05-29 16:38:24,124 | INFO | === scenario 1 end (cost=142489.63, bmp=50) ===
+2026-06-03 16:47:36,104 | INFO | === scenario 1 start ===
+2026-06-03 16:47:37,856 | INFO | Wrote per-scenario BMPs: examples\east_fork\outputs\bmps\s1.csv
+2026-06-03 16:47:37,856 | INFO | Wrote per-scenario parcels: examples\east_fork\outputs\parcels\s1.csv
+2026-06-03 16:47:37,856 | INFO | Wrote transposed BMP summary with All CPS: examples\east_fork\outputs\summaries\s1.csv
+2026-06-03 16:47:37,857 | INFO | === scenario 1 end (cost=1699595.92, bmp=1000) ===

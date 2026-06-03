@@ -6,11 +6,6 @@ Centralized filesystem and ingestion utilities:
 - Validations (required columns, supported stats forms)
 - Ensuring projected CRS for area/perimeter calculations
 - Writing cross-scenario consolidated outputs
-
-Notes
------
-- Areas and perimeters are only meaningful under a projected CRS. Inputs are
-  reprojected to a suitable UTM when necessary.
 """
 
 from __future__ import annotations
@@ -60,6 +55,7 @@ from .constants import (
     COL_SD,
     COL_TARGET,
     COL_UNIT,
+    COL_PATHWAY,
 )
 from .utils import ci_get, normalize_columns, normalize_pollutant_label
 
@@ -79,21 +75,10 @@ def _merge_csvs(
 ) -> pd.DataFrame:
     """Read one or multiple CSVs, normalize columns, validate and concat.
 
-    Parameters
-    ----------
-    paths : str | Path | Sequence[str | Path]
-        One or more CSV file paths.
-    required_cols : Sequence[str]
-        Columns required to exist in each input.
-    label : str
-        Human label for messages and errors (e.g., 'bmp_efficiency').
-    logger : logging.Logger
-        Logger for messages.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Concatenated frame with normalized column labels and duplicates dropped.
+    Notes
+    -----
+    - When a 'pathway' column is present, duplicates are dropped using required_cols + ['pathway'].
+      This preserves distinct pathway rows for the same cps and pollutant (important for bmp_efficiency).
     """
     paths = [paths] if isinstance(paths, (str, Path)) else list(paths)
     frames: List[pd.DataFrame] = []
@@ -104,20 +89,20 @@ def _merge_csvs(
         _require_cols(df, required_cols, f"{label} ({p})", logger)
         frames.append(df)
     out = pd.concat(frames, ignore_index=True)
-    dup = out.duplicated(subset=required_cols, keep=False)
+
+    dedup_subset = list(required_cols)
+    if COL_PATHWAY in out.columns and COL_PATHWAY not in dedup_subset:
+        dedup_subset.append(COL_PATHWAY)
+
+    dup = out.duplicated(subset=dedup_subset, keep=False)
     if dup.any():
         logger.warning(f"Duplicate rows detected in {label}; keeping first occurrence")
-        out = out.drop_duplicates(subset=required_cols, keep="first")
+        out = out.drop_duplicates(subset=dedup_subset, keep="first")
     return out
 
 
 def _ensure_projected(gdf: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
-    """Ensure GeoDataFrame uses a projected CRS.
-
-    Returns either the original or a reprojected copy. Areas, perimeters, and
-    distances computed later are only meaningful in a projected CRS. If the
-    input CRS is missing or geographic, a suitable UTM is estimated and used.
-    """
+    """Ensure GeoDataFrame uses a projected CRS."""
     if gdf.crs is None or not gdf.crs.is_projected:
         est = gdf.estimate_utm_crs()
         logger.info(f"Reprojecting to projected CRS: {est}")
@@ -133,6 +118,24 @@ def _normalize_pollutant_column(df: pd.DataFrame, col: str, label: str, logger: 
         df[col] = [normalize_pollutant_label(x) for x in df[col]]
     except Exception as ex:  # pylint: disable=broad-except
         raise ValueError(f"Failed to normalize pollutant labels in {label}: {ex}") from ex
+    return df
+
+
+def _normalize_pathway_column(df: pd.DataFrame, label: str, logger: Any) -> pd.DataFrame:
+    """Normalize pathway column values when present."""
+    if COL_PATHWAY not in df.columns:
+        return df
+    df[COL_PATHWAY] = df[COL_PATHWAY].astype(str).str.strip().str.lower()
+    alias = {
+        "shallow_subsurface": "shallow subsurface",
+        "deep_subsurface": "deep subsurface",
+        "surface_flow": "surface",
+    }
+    df[COL_PATHWAY] = df[COL_PATHWAY].map(lambda x: alias.get(x, x))
+    allowed = {"surface", "shallow subsurface", "deep subsurface"}
+    bad = sorted(set(df[COL_PATHWAY]) - allowed)
+    if bad:
+        raise ValueError(f"{label} pathway contains invalid values: {bad}; expected one of {sorted(allowed)}")
     return df
 
 
@@ -279,6 +282,7 @@ def _load_bmp_efficiency(cfg: Dict[str, Any], cps: List[int], pollutants: List[s
     """Load BMP efficiency stats filtered to requested CPS and pollutants."""
     df = _merge_csvs(ci_get(cfg, CFG_BMP_EFFICIENCY), [COL_CPS, COL_POLLUTANT], CFG_BMP_EFFICIENCY, logger)
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_BMP_EFFICIENCY, logger)
+    df = _normalize_pathway_column(df, CFG_BMP_EFFICIENCY, logger)
     _validate_stats_table(df, CFG_BMP_EFFICIENCY)
     df = df[df[COL_CPS].astype(int).isin(cps) & df[COL_POLLUTANT].isin(pollutants)].copy()
     if df.empty:
@@ -311,61 +315,8 @@ def _load_pollutant_yield(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants
     return df
 
 
-def _assemble_delivery_coeffs(
-    parcel_out: pd.DataFrame,
-    delivery_ratios: Optional[pd.DataFrame],
-    logger: Any,
-) -> Dict[tuple[str, str], Dict[str, float]]:
-    """Create a mapping {(pid, oid) -> delivery coeff dict}, defaulting to 1.0 for missing pairs."""
-    coeffs: Dict[tuple[str, str], Dict[str, float]] = {}
-    for _, row in parcel_out.iterrows():
-        pid = str(row[COL_PID])
-        for oid in str(row[COL_OIDS]).split(","):
-            coeffs[(pid, str(oid))] = dict(sdr_f_to_s=1.0, sdr_s_to_o=1.0, ndr_f_to_s=1.0, ndr_s_to_o=1.0)
-
-    if delivery_ratios is None:
-        return coeffs
-
-    for _, row in delivery_ratios.iterrows():
-        pid = str(row[COL_PID])
-        oid = str(row[COL_OID])
-        coeffs[(pid, oid)] = dict(
-            sdr_f_to_s=float(row["sdr_f_to_s"]),
-            sdr_s_to_o=float(row["sdr_s_to_o"]),
-            ndr_f_to_s=float(row["ndr_f_to_s"]),
-            ndr_s_to_o=float(row["ndr_s_to_o"]),
-        )
-    return coeffs
-
-
 def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
-    """Load, normalize, and validate all inputs; return a data payload for Model.
-
-    Returns
-    -------
-    Dict[str, Any]
-        Keys
-        - parcels : geopandas.GeoDataFrame
-        - parcel_p : pandas.DataFrame
-        - parcel_up_map : Dict[str, List[str]]
-        - parcel_out_map : Dict[str, List[str]]
-        - pollutants : List[str]
-        - cps : List[int]
-        - outlet_loc : geopandas.GeoDataFrame
-        - outlet_target : Optional[pandas.DataFrame]
-        - outlet_mean : Optional[pandas.DataFrame]
-        - bmp_eff : pandas.DataFrame
-        - bmp_cost : Optional[pandas.DataFrame]
-        - pollutant_yield : pandas.DataFrame
-        - delivery_ratios : Optional[pandas.DataFrame]
-        - bmp_limit_n : Optional[int]
-        - bmp_limit_usd : Optional[float]
-        - n_scenarios : int
-        - random_seed : Optional[int]
-        - avg_area_ha : float
-        - avg_perim_m : float
-        - parallel : Optional[Dict[str, Any]]
-    """
+    """Load, normalize, and validate all inputs; return a data payload for Model."""
     domain = _load_domain(cfg, logger)
     parcels = _load_parcels(cfg, domain, logger)
 
@@ -429,28 +380,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
 
 
 def consolidate_transposed_summaries(outputs_dir: Path, logger) -> Path:
-    """Consolidate all per-scenario transposed summaries into one CSV.
-
-    Parameters
-    ----------
-    outputs_dir : Path
-        Root outputs directory (contains 'summaries' subfolder).
-    logger : logging.Logger
-        Logger for status messages.
-
-    Returns
-    -------
-    Path
-        Path to outputs/summaries/all_scenarios.csv.
-
-    Notes
-    -----
-    - Reads: outputs/summaries/s*.csv (each with a 'field' column)
-    - Writes: outputs/summaries/all_scenarios.csv
-    - Merge: outer-join on 'field'. Columns are per-scenario labels like
-      's1-All CPS' or 's1-Grassed Waterway(412)'. Within each scenario,
-      'All CPS' is ordered first via the regex-based sort key.
-    """
+    """Consolidate all per-scenario transposed summaries into one CSV."""
     outputs_dir = Path(outputs_dir)
     summaries_dir = outputs_dir / "summaries"
     summaries_dir.mkdir(parents=True, exist_ok=True)

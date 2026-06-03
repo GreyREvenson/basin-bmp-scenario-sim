@@ -6,11 +6,9 @@ constructed wetlands, grassed waterways/buffers, and in-field practices.
 
 Units and conventions
 ---------------------
-- Areas in hectares (ha), lengths in meters (m), depths in feet (ft) in config and
-  converted to m.
+- Areas in hectares (ha), lengths in meters (m), depths in feet (ft) in config and converted to m.
 - Parcel yields are in load per unit area (e.g., mass/ha).
-- Side effects: wetland/grassed/in-field simulators mutate the yields array in place and
-  populate per-BMP records with type-specific attributes and per-pollutant results.
+- Side effects: simulators mutate the yields array in place and populate per-BMP records and per-pollutant results.
 """
 
 from __future__ import annotations
@@ -24,7 +22,6 @@ if TYPE_CHECKING:
 
 from .constants import (
     CFG_BUFFER_DEPTH_FT,
-    CFG_BMP_SEL,
     BMP_CPS_NAME_MAP,
     COL_CPS,
     COL_PROBABILITY,
@@ -62,47 +59,45 @@ def _get_bmp_name(self: "Model", cps: Union[int, str]) -> str:
 
 
 def _sample_efficiency(self: "Model", cps: Union[int, str], pol_idx: int) -> float:
-    """Sample BMP efficiency for a specific CPS code and pollutant in [0, 1]."""
+    """Legacy: sample a single BMP efficiency for a CPS/pollutant in [0, 1]."""
     stats = self.bmp_efficiency_stats[int(cps)][pol_idx]
     eff = self._sample_from_stats(stats, kind="efficiency")
     self.logger.debug(f"selected efficiency value {eff:.2f} for pollutant={self.pollutants[pol_idx]}")
     return eff
 
 
+def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) -> Dict[str, float]:
+    """Sample per-pathway efficiencies for a CPS/pollutant.
+
+    Returns dict with keys: 'surface', 'shallow subsurface', 'deep subsurface'.
+    When pathway stats are not present, all keys use the same sampled value.
+    """
+    entry = self.bmp_efficiency_stats[int(cps)][pol_idx]
+    if isinstance(entry, dict):  # pathway-aware
+        out: Dict[str, float] = {}
+        for path in ("surface", "shallow subsurface", "deep subsurface"):
+            stats = entry.get(path)
+            if stats is None:
+                # Fallback: reuse any available stats; else 0.0
+                stats = next(iter(entry.values())) if entry else {"mean": 0.0, "min": 0.0, "max": 0.0}
+            out[path] = float(self._sample_from_stats(stats, kind="efficiency"))
+        return out
+    else:
+        # Legacy single efficiency applied uniformly
+        val = float(self._sample_from_stats(entry, kind="efficiency"))
+        return {"surface": val, "shallow subsurface": val, "deep subsurface": val}
+
+
 def _simulate_wetland(
     self: "Model",
     parcel_idx: int,
-    eff: Sequence[float],
+    eff_maps: Sequence[Dict[str, float]],
     yields: np.ndarray,
     bmp_rec: Dict[str, Any],
     bmp_outputs: Dict[str, np.ndarray],
     cps: Union[int, str] = 656,
 ) -> None:
-    """Simulate a constructed wetland BMP and update parcel yields.
-
-    Parameters
-    ----------
-    parcel_idx : int
-        Index into parcel arrays.
-    eff : Sequence[float]
-        Per-pollutant efficiency samples in [0, 1].
-    yields : np.ndarray, shape (n_parcels, n_pollutants)
-        Mutable array of parcel yields (units: load/ha). Updated in place.
-    bmp_rec : Dict[str, Any]
-        Per-BMP record populated with:
-        - OUTPUT_WETLAND_AREA (ha)
-        - OUTPUT_CATCHMENT_RATIO (dimensionless)
-        - OUTPUT_IMPACTED_PIDS (comma-separated up-gradient PIDs when >1)
-    bmp_outputs : Dict[str, np.ndarray]
-        Aggregators for per-pollutant treated and removed loads.
-
-    Notes
-    -----
-    - Wetland area and catchment ratio are sampled from heuristic percentiles
-      and clipped by available parcel area; upstream traversal adjusts the
-      ratio when insufficient up-gradient area exists, updating impacted parcel
-      lists accordingly.
-    """
+    """Simulate a constructed wetland BMP and update parcel yields."""
     self.logger.debug("calling simulate_wetland")
 
     # wetland area (ha), clipped by field area
@@ -150,11 +145,21 @@ def _simulate_wetland(
 
         for pol_idx, pollutant in enumerate(self.pollutants):
             y = float(yields[p_idx, pol_idx])
-            reduction = y * (A * frac) * eff[pol_idx]
+            y_surf = y * float(self.pollutant_yield_frac_surface)
+            y_shal = y * float(self.pollutant_yield_frac_shallow)
+            y_deep = max(0.0, y - (y_surf + y_shal))
+            emap = eff_maps[pol_idx]
+
             treated = y * (A * frac)
+            removed = (A * frac) * (
+                y_surf * emap["surface"] +
+                y_shal * emap["shallow subsurface"] +
+                y_deep * emap["deep subsurface"]
+            )
+
             bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
-            bmp_outputs[OUTPUT_REMOVED][pol_idx] += reduction
-            y_new = y - reduction / A
+            bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
+            y_new = y - removed / A
             yields[p_idx, pol_idx] = max(0.0, y_new)
 
         remaining -= A
@@ -163,35 +168,12 @@ def _simulate_wetland(
 def _simulate_grassed(
     self: "Model",
     parcel_idx: int,
-    eff: Sequence[float],
+    eff_maps: Sequence[Dict[str, float]],
     yields: np.ndarray,
     bmp_rec: Dict[str, Any],
     bmp_outputs: Dict[str, np.ndarray],
 ) -> None:
-    """Simulate a grassed waterway/buffer BMP and update parcel yields.
-
-    Parameters
-    ----------
-    parcel_idx : int
-        Index into parcel arrays.
-    eff : Sequence[float]
-        Per-pollutant efficiency samples in [0, 1].
-    yields : np.ndarray, shape (n_parcels, n_pollutants)
-        Mutable array of parcel yields (units: load/ha). Updated in place.
-    bmp_rec : Dict[str, Any]
-        Per-BMP record populated with:
-        - OUTPUT_LINEAR_LENGTH (m)
-        - OUTPUT_BUFFER_AREA (ha)
-        - OUTPUT_PORTION_TREATED (dimensionless fraction of parcel area)
-    bmp_outputs : Dict[str, np.ndarray]
-        Aggregators for per-pollutant treated and removed loads.
-
-    Notes
-    -----
-    - Linear length is sampled as a fraction of parcel perimeter; depth is taken
-      from cfg (ft) and converted to meters; area is computed in ha.
-    - Side effects: mutates 'yields' in place; updates treated/removed accumulators.
-    """
+    """Simulate a grassed waterway/buffer BMP and update parcel yields."""
     self.logger.debug("calling simulate_grassed")
 
     # Determine linear length as a fraction of parcel perimeter
@@ -217,37 +199,53 @@ def _simulate_grassed(
     A = float(self.parcel_area_ha[parcel_idx])
     for pol_idx, pollutant in enumerate(self.pollutants):
         y = float(yields[parcel_idx, pol_idx])
-        reduction = y * (A * frac_treated) * eff[pol_idx]
-        bmp_outputs[OUTPUT_TREATED][pol_idx] += y * (A * frac_treated)
-        bmp_outputs[OUTPUT_REMOVED][pol_idx] += reduction
-        y_new = y - reduction / A
+        y_surf = y * float(self.pollutant_yield_frac_surface)
+        y_shal = y * float(self.pollutant_yield_frac_shallow)
+        y_deep = max(0.0, y - (y_surf + y_shal))
+        emap = eff_maps[pol_idx]
+
+        treated = y * (A * frac_treated)
+        removed = (A * frac_treated) * (
+            y_surf * emap["surface"] +
+            y_shal * emap["shallow subsurface"] +
+            y_deep * emap["deep subsurface"]
+        )
+
+        bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
+        bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
+        y_new = y - removed / A
         yields[parcel_idx, pol_idx] = max(0.0, y_new)
 
 
 def _simulate_infield(
     self: "Model",
     parcel_idx: int,
-    eff: Sequence[float],
+    eff_maps: Sequence[Dict[str, float]],
     yields: np.ndarray,
     bmp_rec: Dict[str, Any],
     bmp_outputs: Dict[str, np.ndarray],
 ) -> None:
-    """Simulate an in-field BMP and update the parcel yield state.
-
-    Notes
-    -----
-    - Treated equals baseline yield times parcel area; removed equals treated times efficiency.
-    - Side effects: mutates 'yields' in place and updates 'bmp_outputs'.
-    """
+    """Simulate an in-field BMP and update the parcel yield state."""
     self.logger.debug("calling _simulate_infield")
 
     A = float(self.parcel_area_ha[parcel_idx])
     for pol_idx, pollutant in enumerate(self.pollutants):
         y = float(yields[parcel_idx, pol_idx])
-        reduction = y * A * eff[pol_idx]
-        bmp_outputs[OUTPUT_TREATED][pol_idx] += y * A
-        bmp_outputs[OUTPUT_REMOVED][pol_idx] += reduction
-        y_new = y - reduction / A
+        y_surf = y * float(self.pollutant_yield_frac_surface)
+        y_shal = y * float(self.pollutant_yield_frac_shallow)
+        y_deep = max(0.0, y - (y_surf + y_shal))
+        emap = eff_maps[pol_idx]
+
+        treated = y * A
+        removed = A * (
+            y_surf * emap["surface"] +
+            y_shal * emap["shallow subsurface"] +
+            y_deep * emap["deep subsurface"]
+        )
+
+        bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
+        bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
+        y_new = y - removed / A
         yields[parcel_idx, pol_idx] = max(0.0, y_new)
 
 
@@ -269,7 +267,7 @@ def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.D
             df[COL_PROBABILITY] = df["p"]
         s = df[COL_PROBABILITY].sum()
         if s <= 0:
-            raise ValueError(f"{CFG_BMP_SEL} probabilities sum to zero or negative")
+            raise ValueError("bmp_sel probabilities sum to zero or negative")
         df[COL_PROBABILITY] = df[COL_PROBABILITY] / s
         self.logger.debug(
             f"Loaded explicit BMP selection probabilities from {bmp_sel_path}: "
@@ -277,9 +275,11 @@ def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.D
         )
         return df[[COL_CPS, COL_PROBABILITY]]
     else:
-        if self.data[DATA_BMP_COST] is None:
+        est_via_costs = self.cfg.get("bmp_sel_prob_via_costs", False)
+        if est_via_costs and self.data[DATA_BMP_COST] is not None:
+            self.logger.info(f"estimating BMP selection probabilities via cost heuristics")
+            df = self._estimate_costs_for_probabilities()
+            return df[[COL_CPS, COL_PROBABILITY]]
+        else:
             probs = np.full(len(self.data[DATA_CPS]), 1.0 / len(self.data[DATA_CPS]))
             return pd.DataFrame({COL_CPS: self.data[DATA_CPS], COL_PROBABILITY: probs})
-        else:
-            df = self._estimate_costs_for_probabilities()
-            return df

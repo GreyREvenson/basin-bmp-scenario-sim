@@ -1,5 +1,5 @@
 # Example East Fork (OH) watershed configuration (synthetic data)
-verbose: true
+verbose: True
 outputs:  ./examples/east_fork/outputs
 
 random_seed: 42
@@ -31,11 +31,22 @@ outlet_target: ./examples/east_fork/inputs/outlet_target.csv
 outlet_mean: ./examples/east_fork/inputs/outlet_mean.csv
 
 # number of scenarios to run
-n_scenarios: 5
+n_scenarios: 1000
 
 # per-scenario bmp limits
-bmp_limit_n: 50
-#bmp_limit_usd: 10000000
+bmp_limit_n: 1000
+#bmp_limit_usd: 5000000
 
 # optional assumed buffer depth (ft) for grassed waterways
 buffer_depth_ft: 35
+
+parallel:
+  n_jobs: -1
+
+bmp_sel_prob_via_costs: True
+
+pollutant_yield_frac_surface: 0.3 
+pollutant_yield_frac_shallow: 0.4
+
+bmp_fail_rate: 0.25
+bmp_fail_reduction: 0.25
