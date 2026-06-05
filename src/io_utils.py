@@ -385,7 +385,27 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
 
 
 def consolidate_transposed_summaries(outputs_dir: Path, logger) -> Path:
-    """Consolidate all per-scenario transposed summaries into one CSV."""
+    """Consolidate all per-scenario transposed summaries into one CSV.
+
+    Parameters
+    ----------
+    outputs_dir : Path
+        Root outputs directory (contains 'summaries' subfolder).
+    logger : logging.Logger
+        Logger for status messages.
+
+    Returns
+    -------
+    Path
+        Path to outputs/summaries/all_scenarios.csv.
+
+    Notes
+    -----
+    - Reads: outputs/summaries/s*.csv (each with a 'field' column)
+    - Writes: outputs/summaries/all_scenarios.csv
+    - Outer-joins on 'field'. Columns sorted by scenario id, with "All CPS"
+      first within each scenario.
+    """
     outputs_dir = Path(outputs_dir)
     summaries_dir = outputs_dir / "summaries"
     summaries_dir.mkdir(parents=True, exist_ok=True)
