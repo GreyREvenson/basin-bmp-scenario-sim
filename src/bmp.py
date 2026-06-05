@@ -37,6 +37,7 @@ from .constants import (
     DATA_CPS,
     DEFAULT_BUFFER_DEPTH_FT,
 )
+from .logging_utils import log_scope
 
 ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
 ParcelUpListFn = Callable[[Union[int, str]], List[str]]
@@ -48,7 +49,7 @@ def _select_bmp_type(self: "Model") -> int:
     """Choose a BMP type code from the precomputed probability distribution."""
     idx = self.rng.choice(len(self.bmp_cps), p=self.bmp_selection_probs)
     cps = int(self.bmp_cps[idx])
-    self.logger.debug(f"selected bmp {cps} ({self._get_bmp_name(cps)})")
+    self.logger.verbose(f"selected bmp {cps} ({self._get_bmp_name(cps)})")
     return cps
 
 
@@ -62,7 +63,7 @@ def _sample_efficiency(self: "Model", cps: Union[int, str], pol_idx: int) -> flo
     """Legacy: sample a single BMP efficiency for a CPS/pollutant in [0, 1]."""
     stats = self.bmp_efficiency_stats[int(cps)][pol_idx]
     eff = self._sample_from_stats(stats, kind="efficiency")
-    self.logger.debug(f"selected efficiency value {eff:.2f} for pollutant={self.pollutants[pol_idx]}")
+    self.logger.verbose(f"selected efficiency value {eff:.2f} for pollutant={self.pollutants[pol_idx]}")
     return eff
 
 
@@ -98,71 +99,91 @@ def _simulate_wetland(
     cps: Union[int, str] = 656,
 ) -> None:
     """Simulate a constructed wetland BMP and update parcel yields."""
-    self.logger.debug("calling simulate_wetland")
+    with log_scope(label="simulate_wetland", logger=self.logger):
+        self.logger.verbose("calling simulate_wetland")
 
-    # wetland area (ha), clipped by field area
-    area_field_ha = float(self.parcel_area_ha[parcel_idx])
-    wet_area_stats = {"min": 0.1, "p25": 0.4, "p50": 0.81, "p75": 2.0, "max": 4.0}  # heuristic
-    wet_area = self._sample_from_stats(stats=wet_area_stats, kind=None)
-    wet_area = min(wet_area, area_field_ha)
+        # wetland area (ha), clipped by field area
+        area_field_ha = float(self.parcel_area_ha[parcel_idx])
+        wet_area_stats = {"min": 0.1, "p25": 0.4, "p50": 0.81, "p75": 2.0, "max": 4.0}  # heuristic
+        wet_area = self._sample_from_stats(stats=wet_area_stats, kind=None)
+        wet_area = min(wet_area, area_field_ha)
+        # Restored from legacy: detailed diagnostics
+        self.logger.verbose(
+            f"selected wetland area of {wet_area:.2f} ha in parcel idx={parcel_idx} of area={area_field_ha:.2f} ha"
+        )
 
-    # catchment area ratio (dimensionless)
-    ratio_stats = {"min": 1.0, "p25": 2.0, "p50": 5.0, "p75": 10.0, "max": 100.0}  # heuristic
-    cat_ratio = self._sample_from_stats(stats=ratio_stats, kind=None)
-    cat_ratio = max(0.0, float(cat_ratio))
+        # catchment area ratio (dimensionless)
+        ratio_stats = {"min": 1.0, "p25": 2.0, "p50": 5.0, "p75": 10.0, "max": 100.0}  # heuristic
+        cat_ratio = self._sample_from_stats(stats=ratio_stats, kind=None)
+        cat_ratio = max(0.0, float(cat_ratio))
 
-    # Impacted area to satisfy ratio
-    impacted_idxs: List[int] = [parcel_idx]
-    impacted_area_ha: float = wet_area * (1.0 + cat_ratio)
-    total_available_ha = float(self.parcel_area_ha[parcel_idx])
+        # Impacted area to satisfy ratio
+        impacted_idxs: List[int] = [parcel_idx]
+        impacted_area_ha: float = wet_area * (1.0 + cat_ratio)
+        total_available_ha = float(self.parcel_area_ha[parcel_idx])
 
-    for up_idx in self.parcel_up_idxs[parcel_idx]:
-        if up_idx not in impacted_idxs:
-            impacted_idxs.append(up_idx)
-            total_available_ha += float(self.parcel_area_ha[up_idx])
-            if total_available_ha >= impacted_area_ha:
-                break
+        for up_idx in self.parcel_up_idxs[parcel_idx]:
+            if up_idx not in impacted_idxs:
+                impacted_idxs.append(up_idx)
+                total_available_ha += float(self.parcel_area_ha[up_idx])
+                self.logger.verbose(
+                    f"added upgradient parcel (pid={self.parcel_ids[up_idx]}) with area "
+                    f"{self.parcel_area_ha[up_idx]:.2f} ha to wetland-impacted parcels"
+                )
+                if total_available_ha >= impacted_area_ha:
+                    break
 
-    # Adjust ratio when upstream area is insufficient
-    if impacted_area_ha > total_available_ha:
-        impacted_area_ha = total_available_ha
-        cat_ratio = max(0.0, (impacted_area_ha - wet_area) / max(wet_area, 1e-9))
-
-    bmp_rec[OUTPUT_WETLAND_AREA] = float(wet_area)
-    bmp_rec[OUTPUT_CATCHMENT_RATIO] = float(cat_ratio)
-    bmp_rec[OUTPUT_IMPACTED_PIDS] = ",".join([self.parcel_ids[idx] for idx in impacted_idxs] if len(impacted_idxs) > 1 else [])
-
-    # Apply reductions across impacted parcels
-    remaining = impacted_area_ha
-    for p_idx in impacted_idxs:
-        A = float(self.parcel_area_ha[p_idx])
-        if remaining <= 0:
-            frac = 0.0
-        elif remaining < A:
-            frac = remaining / A
-        else:
-            frac = 1.0
-
-        for pol_idx, pollutant in enumerate(self.pollutants):
-            y = float(yields[p_idx, pol_idx])
-            y_surf = y * float(self.pollutant_yield_frac_surface)
-            y_shal = y * float(self.pollutant_yield_frac_shallow)
-            y_deep = max(0.0, y - (y_surf + y_shal))
-            emap = eff_maps[pol_idx]
-
-            treated = y * (A * frac)
-            removed = (A * frac) * (
-                y_surf * emap["surface"] +
-                y_shal * emap["shallow subsurface"] +
-                y_deep * emap["deep subsurface"]
+        # Adjust ratio when upstream area is insufficient
+        if impacted_area_ha > total_available_ha:
+            self.logger.verbose(
+                f"total available upgradient area ({total_available_ha:.2f} ha) < impacted area "
+                f"(wetland+catchment) ({impacted_area_ha:.2f} ha)"
+            )
+            impacted_area_ha = total_available_ha
+            cat_ratio = max(0.0, (impacted_area_ha - wet_area) / max(wet_area, 1e-9))
+            self.logger.verbose(
+                f"reduced impacted area to {impacted_area_ha:.2f} ha and catchment ratio to {cat_ratio:.2f}"
             )
 
-            bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
-            bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-            y_new = y - removed / A
-            yields[p_idx, pol_idx] = max(0.0, y_new)
+        bmp_rec[OUTPUT_WETLAND_AREA] = float(wet_area)
+        bmp_rec[OUTPUT_CATCHMENT_RATIO] = float(cat_ratio)
+        bmp_rec[OUTPUT_IMPACTED_PIDS] = ",".join([self.parcel_ids[idx] for idx in impacted_idxs] if len(impacted_idxs) > 1 else [])
 
-        remaining -= A
+        # Apply reductions across impacted parcels
+        remaining = impacted_area_ha
+        for p_idx in impacted_idxs:
+            A = float(self.parcel_area_ha[p_idx])
+            if remaining <= 0:
+                frac = 0.0
+            elif remaining < A:
+                frac = remaining / A
+            else:
+                frac = 1.0
+            self.logger.verbose(
+                f"processing wetland-impacted parcel pid={self.parcel_ids[p_idx]}, "
+                f"area={A:.2f} ha, fraction draining={frac:.2f}"
+            )
+
+            for pol_idx, pollutant in enumerate(self.pollutants):
+                y = float(yields[p_idx, pol_idx])
+                y_surf = y * float(self.pollutant_yield_frac_surface)
+                y_shal = y * float(self.pollutant_yield_frac_shallow)
+                y_deep = max(0.0, y - (y_surf + y_shal))
+                emap = eff_maps[pol_idx]
+
+                treated = y * (A * frac)
+                removed = (A * frac) * (
+                    y_surf * emap["surface"] +
+                    y_shal * emap["shallow subsurface"] +
+                    y_deep * emap["deep subsurface"]
+                )
+
+                bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
+                bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
+                y_new = y - removed / A
+                yields[p_idx, pol_idx] = max(0.0, y_new)
+
+            remaining -= A
 
 
 def _simulate_grassed(
@@ -174,47 +195,54 @@ def _simulate_grassed(
     bmp_outputs: Dict[str, np.ndarray],
 ) -> None:
     """Simulate a grassed waterway/buffer BMP and update parcel yields."""
-    self.logger.debug("calling simulate_grassed")
+    with log_scope(label="simulate_grassed", logger=self.logger):
+        self.logger.verbose("calling simulate_grassed")
 
-    # Determine linear length as a fraction of parcel perimeter
-    perim_m = float(self.parcel_perim_m[parcel_idx])
-    frac_stats = {"min": 0.1, "max": 0.3, "mean": 0.2}  # heuristic
-    perim_frac = self._sample_from_stats(stats=frac_stats, kind=None)
-    length_m = perim_m * perim_frac
-
-    # Depth and area (length * depth -> m^2 -> ha)
-    depth_ft = float(self.cfg.get(CFG_BUFFER_DEPTH_FT, DEFAULT_BUFFER_DEPTH_FT))
-    depth_m = depth_ft * FT_TO_M
-    area_ha = (length_m * depth_m) / 10000.0
-
-    # Portion treated
-    frac_stats = {"min": 0.2, "max": 0.4, "mean": 0.3}  # heuristic
-    frac_treated = self._sample_from_stats(stats=frac_stats, kind=None)
-
-    # Update record and outputs
-    bmp_rec[OUTPUT_LINEAR_LENGTH] = float(length_m)
-    bmp_rec[OUTPUT_BUFFER_AREA] = float(area_ha)
-    bmp_rec[OUTPUT_PORTION_TREATED] = float(frac_treated)
-
-    A = float(self.parcel_area_ha[parcel_idx])
-    for pol_idx, pollutant in enumerate(self.pollutants):
-        y = float(yields[parcel_idx, pol_idx])
-        y_surf = y * float(self.pollutant_yield_frac_surface)
-        y_shal = y * float(self.pollutant_yield_frac_shallow)
-        y_deep = max(0.0, y - (y_surf + y_shal))
-        emap = eff_maps[pol_idx]
-
-        treated = y * (A * frac_treated)
-        removed = (A * frac_treated) * (
-            y_surf * emap["surface"] +
-            y_shal * emap["shallow subsurface"] +
-            y_deep * emap["deep subsurface"]
+        # Determine linear length as a fraction of parcel perimeter
+        perim_m = float(self.parcel_perim_m[parcel_idx])
+        frac_stats = {"min": 0.1, "max": 0.3, "mean": 0.2}  # heuristic
+        perim_frac = self._sample_from_stats(stats=frac_stats, kind=None)
+        length_m = perim_m * perim_frac
+        self.logger.verbose(
+            f"grassed buffer length={length_m:.2f} m from fraction={perim_frac:.2f} of perimeter={perim_m:.2f} m"
         )
 
-        bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
-        bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-        y_new = y - removed / A
-        yields[parcel_idx, pol_idx] = max(0.0, y_new)
+        # Depth and area (length * depth -> m^2 -> ha)
+        depth_ft = float(self.cfg.get(CFG_BUFFER_DEPTH_FT, DEFAULT_BUFFER_DEPTH_FT))
+        depth_m = depth_ft * FT_TO_M
+        area_ha = (length_m * depth_m) / 10000.0
+        self.logger.verbose(
+            f"grassed buffer depth={depth_ft:.2f} ft ({depth_m:.2f} m), area={area_ha:.4f} ha"
+        )
+
+        # Portion treated
+        frac_stats = {"min": 0.2, "max": 0.4, "mean": 0.3}  # heuristic
+        frac_treated = self._sample_from_stats(stats=frac_stats, kind=None)
+
+        # Update record and outputs
+        bmp_rec[OUTPUT_LINEAR_LENGTH] = float(length_m)
+        bmp_rec[OUTPUT_BUFFER_AREA] = float(area_ha)
+        bmp_rec[OUTPUT_PORTION_TREATED] = float(frac_treated)
+
+        A = float(self.parcel_area_ha[parcel_idx])
+        for pol_idx, pollutant in enumerate(self.pollutants):
+            y = float(yields[parcel_idx, pol_idx])
+            y_surf = y * float(self.pollutant_yield_frac_surface)
+            y_shal = y * float(self.pollutant_yield_frac_shallow)
+            y_deep = max(0.0, y - (y_surf + y_shal))
+            emap = eff_maps[pol_idx]
+
+            treated = y * (A * frac_treated)
+            removed = (A * frac_treated) * (
+                y_surf * emap["surface"] +
+                y_shal * emap["shallow subsurface"] +
+                y_deep * emap["deep subsurface"]
+            )
+
+            bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
+            bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
+            y_new = y - removed / A
+            yields[parcel_idx, pol_idx] = max(0.0, y_new)
 
 
 def _simulate_infield(
@@ -226,27 +254,28 @@ def _simulate_infield(
     bmp_outputs: Dict[str, np.ndarray],
 ) -> None:
     """Simulate an in-field BMP and update the parcel yield state."""
-    self.logger.debug("calling _simulate_infield")
+    with log_scope(label="simulate_infield", logger=self.logger):
+        self.logger.verbose("calling _simulate_infield")
 
-    A = float(self.parcel_area_ha[parcel_idx])
-    for pol_idx, pollutant in enumerate(self.pollutants):
-        y = float(yields[parcel_idx, pol_idx])
-        y_surf = y * float(self.pollutant_yield_frac_surface)
-        y_shal = y * float(self.pollutant_yield_frac_shallow)
-        y_deep = max(0.0, y - (y_surf + y_shal))
-        emap = eff_maps[pol_idx]
+        A = float(self.parcel_area_ha[parcel_idx])
+        for pol_idx, pollutant in enumerate(self.pollutants):
+            y = float(yields[parcel_idx, pol_idx])
+            y_surf = y * float(self.pollutant_yield_frac_surface)
+            y_shal = y * float(self.pollutant_yield_frac_shallow)
+            y_deep = max(0.0, y - (y_surf + y_shal))
+            emap = eff_maps[pol_idx]
 
-        treated = y * A
-        removed = A * (
-            y_surf * emap["surface"] +
-            y_shal * emap["shallow subsurface"] +
-            y_deep * emap["deep subsurface"]
-        )
+            treated = y * A
+            removed = A * (
+                y_surf * emap["surface"] +
+                y_shal * emap["shallow subsurface"] +
+                y_deep * emap["deep subsurface"]
+            )
 
-        bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
-        bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-        y_new = y - removed / A
-        yields[parcel_idx, pol_idx] = max(0.0, y_new)
+            bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
+            bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
+            y_new = y - removed / A
+            yields[parcel_idx, pol_idx] = max(0.0, y_new)
 
 
 def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.DataFrame:
@@ -269,7 +298,7 @@ def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.D
         if s <= 0:
             raise ValueError("bmp_sel probabilities sum to zero or negative")
         df[COL_PROBABILITY] = df[COL_PROBABILITY] / s
-        self.logger.debug(
+        self.logger.verbose(
             f"Loaded explicit BMP selection probabilities from {bmp_sel_path}: "
             f"{df[[COL_CPS, COL_PROBABILITY]].to_dict(orient='records')}"
         )
@@ -277,7 +306,7 @@ def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.D
     else:
         est_via_costs = self.cfg.get("bmp_sel_prob_via_costs", False)
         if est_via_costs and self.data[DATA_BMP_COST] is not None:
-            self.logger.info(f"estimating BMP selection probabilities via cost heuristics")
+            self.logger.info("estimating BMP selection probabilities via cost heuristics")
             df = self._estimate_costs_for_probabilities()
             return df[[COL_CPS, COL_PROBABILITY]]
         else:

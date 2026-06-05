@@ -58,6 +58,7 @@ from .constants import (
     COL_PATHWAY,
 )
 from .utils import ci_get, normalize_columns, normalize_pollutant_label
+from .logging_utils import log_scope
 
 
 def _require_cols(df: pd.DataFrame, required: Sequence[str], label: str, logger: Any) -> None:
@@ -83,7 +84,7 @@ def _merge_csvs(
     paths = [paths] if isinstance(paths, (str, Path)) else list(paths)
     frames: List[pd.DataFrame] = []
     for p in paths:
-        logger.debug(f"Reading {label} from {p}")
+        logger.verbose(f"Reading {label} from {p}")
         df = pd.read_csv(p)
         df = normalize_columns(df)
         _require_cols(df, required_cols, f"{label} ({p})", logger)
@@ -254,7 +255,7 @@ def _load_optional_outlet_stats(
 ) -> Optional[pd.DataFrame]:
     """Optionally load per-outlet stats (target or mean), normalizing pollutant labels."""
     if ci_get(cfg, key) is None:
-        logger.debug(f"Optional key {key} not provided; skipping {label}")
+        logger.verbose(f"Optional key {key} not provided; skipping {label}")
         return None
     df = _merge_csvs(ci_get(cfg, key), required_cols, label, logger)
     return _normalize_pollutant_column(df, COL_POLLUTANT, label, logger)
@@ -264,7 +265,7 @@ def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataF
     """Load optional parcel->outlet delivery ratio table."""
     dr_cfg = ci_get(cfg, CFG_DELIVERY_RATIOS)
     if dr_cfg is None:
-        logger.debug("No delivery ratios configured; using default delivery coefficients")
+        logger.verbose("No delivery ratios configured; using default delivery coefficients")
         return None
     dr_path = Path(dr_cfg)
     if not dr_path.exists():
@@ -317,43 +318,47 @@ def _load_pollutant_yield(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants
 
 def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
     """Load, normalize, and validate all inputs; return a data payload for Model."""
-    domain = _load_domain(cfg, logger)
-    parcels = _load_parcels(cfg, domain, logger)
+    logger.info("Loading and validating input datasets")
+    with log_scope(logger=logger):
+        domain = _load_domain(cfg, logger)
+        parcels = _load_parcels(cfg, domain, logger)
 
-    up = _load_parcel_graph(cfg, logger)
-    out = _load_parcel_outlets(cfg, logger)
-    sel = _load_parcel_selection(cfg, parcels, logger)
+        up = _load_parcel_graph(cfg, logger)
+        out = _load_parcel_outlets(cfg, logger)
+        sel = _load_parcel_selection(cfg, parcels, logger)
 
-    # Upstream list mapping
-    parcel_up_map: Dict[str, List[str]] = {}
-    for pid in parcels[COL_PID].astype(str):
-        ups = up[up[COL_PID].astype(str) == str(pid)][COL_PID_UP].astype(str).tolist()
-        parcel_up_map[str(pid)] = ups
+        # Upstream list mapping
+        parcel_up_map: Dict[str, List[str]] = {}
+        for pid in parcels[COL_PID].astype(str):
+            ups = up[up[COL_PID].astype(str) == str(pid)][COL_PID_UP].astype(str).tolist()
+            parcel_up_map[str(pid)] = ups
 
-    # Parcel->outlet mapping
-    parcel_out_map: Dict[str, List[str]] = {}
-    for pid in parcels[COL_PID].astype(str):
-        oids = []
-        row = out[out[COL_PID].astype(str) == str(pid)]
-        if not row.empty:
-            oids = str(row.iloc[0][COL_OIDS]).split(",")
-        parcel_out_map[str(pid)] = [str(x) for x in oids if str(x)]
+        # Parcel->outlet mapping
+        parcel_out_map: Dict[str, List[str]] = {}
+        for pid in parcels[COL_PID].astype(str):
+            oids = []
+            row = out[out[COL_PID].astype(str) == str(pid)]
+            if not row.empty:
+                oids = str(row.iloc[0][COL_OIDS]).split(",")
+            parcel_out_map[str(pid)] = [str(x) for x in oids if str(x)]
 
-    pollutants = _load_pollutants(cfg)
-    cps = _load_cps(cfg)
+        pollutants = _load_pollutants(cfg)
+        cps = _load_cps(cfg)
 
-    outlet_loc = _load_outlet_loc(cfg, domain, logger)
-    outlet_target = _load_optional_outlet_stats(cfg, CFG_OUTLET_TARGET, [COL_OID, COL_POLLUTANT, COL_TARGET], CFG_OUTLET_TARGET, logger)
-    outlet_mean = _load_optional_outlet_stats(cfg, CFG_OUTLET_MEAN, [COL_OID, COL_POLLUTANT, COL_MEAN], CFG_OUTLET_MEAN, logger)
+        outlet_loc = _load_outlet_loc(cfg, domain, logger)
+        outlet_target = _load_optional_outlet_stats(cfg, CFG_OUTLET_TARGET, [COL_OID, COL_POLLUTANT, COL_TARGET], CFG_OUTLET_TARGET, logger)
+        outlet_mean = _load_optional_outlet_stats(cfg, CFG_OUTLET_MEAN, [COL_OID, COL_POLLUTANT, COL_MEAN], CFG_OUTLET_MEAN, logger)
 
-    bmp_eff = _load_bmp_efficiency(cfg, cps, pollutants, logger)
-    bmp_cost = _load_bmp_cost(cfg, cps, logger)
-    pollutant_yield = _load_pollutant_yield(cfg, parcels, pollutants, logger)
-    delivery_ratios = _load_delivery_ratios(cfg, logger)
+        bmp_eff = _load_bmp_efficiency(cfg, cps, pollutants, logger)
+        bmp_cost = _load_bmp_cost(cfg, cps, logger)
+        pollutant_yield = _load_pollutant_yield(cfg, parcels, pollutants, logger)
+        delivery_ratios = _load_delivery_ratios(cfg, logger)
 
-    # Precompute averages for selection heuristics and reporting
-    avg_area_ha = float(parcels["area_ha"].mean())
-    avg_perim_m = float(parcels["perim_m"].mean())
+        # Precompute averages for selection heuristics and reporting
+        avg_area_ha = float(parcels["area_ha"].mean())
+        avg_perim_m = float(parcels["perim_m"].mean())
+
+        logger.info("Input validation complete; assembling data payload")
 
     return dict(
         parcels=parcels,

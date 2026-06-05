@@ -45,7 +45,7 @@ def _sample_yield(self: "Model", parcel_idx: int, pol_idx: int) -> float:
 def _sample_parcel_index(self: "Model") -> int:
     """Choose a parcel index randomly from parcel selection probabilities."""
     idx = self.rng.choice(len(self.parcel_selection_ids), p=self.parcel_selection_probs)
-    self.logger.debug(f"selected parcel idx={idx} with pid={self.parcel_selection_ids[idx]}")
+    self.logger.verbose(f"selected parcel idx={idx} with pid={self.parcel_selection_ids[idx]}")
     return idx
 
 
