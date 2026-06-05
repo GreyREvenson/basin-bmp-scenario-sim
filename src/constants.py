@@ -1,4 +1,11 @@
-"""Central constants for config keys, CSV columns, and axis labels."""
+"""Central constants for configuration keys, validated data payload keys, CSV columns, and output labels.
+
+Conventions
+-----------
+- Units: lengths in meters (m), areas in hectares (ha), costs in USD.
+- Pollutants: canonical labels are defined by POLLUTANT_CANONICAL; aliases map via POLLUTANT_ALIAS_MAP.
+- Outputs: treated_/removed_ prefixes denote per-pollutant loads; cost_usd and total_cost_usd capture costing.
+"""
 
 # Config keys
 CFG_DOMAIN = "domain"
@@ -24,6 +31,15 @@ CFG_RANDOM_SEED = "random_seed"
 CFG_OUTPUTS = "outputs"
 CFG_VERBOSE = "verbose"
 CFG_BUFFER_DEPTH_FT = "buffer_depth_ft"
+CFG_BMP_SEL_PROB_VIA_COSTS = "bmp_sel_prob_via_costs"
+
+# New: BMP failure configuration
+CFG_BMP_FAIL_RATE = "bmp_fail_rate"            # probability [0,1] a BMP fails
+CFG_BMP_FAIL_REDUCTION = "bmp_fail_reduction"  # efficiency scale [0,1] on failure
+
+# New: fractions to split parcel yields by pathway
+CFG_POLLUTANT_YIELD_FRAC_SURFACE = "pollutant_yield_frac_surface"
+CFG_POLLUTANT_YIELD_FRAC_SHALLOW = "pollutant_yield_frac_shallow"
 
 # Data payload keys (used in the validated data dict passed to Model)
 DATA_PARCELS = "parcels"
@@ -69,6 +85,9 @@ COL_NDR_F_TO_S = "ndr_f_to_s"
 COL_NDR_S_TO_O = "ndr_s_to_o"
 PERCENTILE_PREFIX = "p"
 
+# New: optional pathway column
+COL_PATHWAY = "pathway"
+
 # Output and axis constants
 XAXIS_COST = "cost"
 XAXIS_COUNT = "count"
@@ -78,6 +97,8 @@ YAXIS_MEAN = "mean"
 
 # Default values
 DEFAULT_BUFFER_DEPTH_FT = 35.0
+DEFAULT_BMP_FAIL_REDUCTION = 0.25  # used when a failure occurs but reduction not provided
+
 OUTPUT_TREATED_PREFIX = "treated_"
 OUTPUT_REMOVED_PREFIX = "removed_"
 OUTPUT_BASELINE_PREFIX = "baseline_"
@@ -96,6 +117,7 @@ OUTPUT_REMOVED = "removed"
 OUTPUT_COST_USD = "cost_usd"
 OUTPUT_TOTAL_COST_USD = "total_cost_usd"
 OUTPUT_EFFICIENCY = "efficiency"
+OUTPUT_BMP_FAILED = "failed"  # New: per-BMP failure flag in bmps CSVs
 
 # Pollutant canonical labels and alias mapping
 POLLUTANT_CANONICAL = ("TN", "TP", "TSS")
@@ -116,3 +138,6 @@ BMP_CPS_NAME_MAP = {
     590: "Nutrient Management",
     656: "Constructed Wetland",
 }
+
+# Canonical pathway labels
+PATHWAY_VALUES = ("surface", "shallow subsurface", "deep subsurface")

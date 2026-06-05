@@ -28,6 +28,7 @@ from .constants import (
     YAXIS_TARGET,
     YAXIS_TOTAL,
 )
+from .logging_utils import log_scope
 
 
 def make_summary_plots(
@@ -37,24 +38,10 @@ def make_summary_plots(
     outputs_dir: Path,
     logger,
 ) -> None:
-    """Generate summary plots for scenario outcomes.
-
-    Parameters
-    ----------
-    cfg : Dict[str, Any]
-        User configuration dict.
-    data : Dict[str, Any]
-        Validated input payload (pollutants, outlet locations, etc.).
-    scenario_records : Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]
-        Mapping (pollutant, outlet_oid, x_axis, y_axis) -> list of (sid, x, y).
-    outputs_dir : Path
-        Root outputs directory. Plots are saved to outputs/plots/.
-    logger : logging.Logger
-        Logger for messages.
-    """
+    """Generate summary plots for scenario outcomes."""
     pollutants = data[DATA_POLLUTANTS]
     oids = [str(x) for x in data[DATA_OUTLET_LOC][COL_OID].astype(str).tolist()]
-    logger.debug(f"Generating summary plots for pollutants={pollutants} outlets={oids}")
+    logger.verbose(f"Generating summary plots for pollutants={pollutants} outlets={oids}")
 
     x_axes = [XAXIS_COUNT]
     if cfg.get(CFG_BMP_COST):
@@ -69,48 +56,50 @@ def make_summary_plots(
     plots_dir = Path(outputs_dir) / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    for pol in pollutants:
-        for oid in oids:
-            for xax in x_axes:
-                for yax in y_axes:
-                    by_scenario = defaultdict(list)
-                    for (p, o, xa, ya), trip in scenario_records.items():
-                        if p == pol and o == oid and xa == xax and ya == yax:
-                            for (sid, xx, yy) in trip:
-                                by_scenario[sid].append((xx, yy))
-                    if not by_scenario:
-                        continue
+    with log_scope(logger=logger):
+        for pol in pollutants:
+            for oid in oids:
+                for xax in x_axes:
+                    for yax in y_axes:
+                        with log_scope(label=f"plot pol={pol} oid={oid} x={xax} y={yax}", logger=logger):
+                            by_scenario = defaultdict(list)
+                            for (p, o, xa, ya), trip in scenario_records.items():
+                                if p == pol and o == oid and xa == xax and ya == yax:
+                                    for (sid, xx, yy) in trip:
+                                        by_scenario[sid].append((xx, yy))
+                            if not by_scenario:
+                                continue
 
-                    plt.figure(figsize=(7, 5), dpi=200)
-                    ax = plt.gca()
+                            plt.figure(figsize=(7, 5), dpi=200)
+                            ax = plt.gca()
 
-                    # Draw multi-segment lines scenario-by-scenario
-                    lines = []
-                    for sid, pts in sorted(by_scenario.items()):
-                        pts = sorted(pts, key=lambda t: t[0])
-                        xs = [0] + [x for x, _ in pts]
-                        ys = [0] + [y for _, y in pts]
-                        segments = [[(xs[i], ys[i]), (xs[i + 1], ys[i + 1])] for i in range(len(xs) - 1)]
-                        lines.extend(segments)
+                            # Draw multi-segment lines scenario-by-scenario (baseline at 0,0)
+                            lines = []
+                            for sid, pts in sorted(by_scenario.items()):
+                                pts = sorted(pts, key=lambda t: t[0])
+                                xs = [0] + [x for x, _ in pts]
+                                ys = [0] + [y for _, y in pts]
+                                segments = [[(xs[i], ys[i]), (xs[i + 1], ys[i + 1])] for i in range(len(xs) - 1)]
+                                lines.extend(segments)
 
-                    lc = LineCollection(lines, colors="steelblue", linewidths=1.25, alpha=0.5)
-                    ax.add_collection(lc)
-                    ax.autoscale()
+                            lc = LineCollection(lines, colors="steelblue", linewidths=1.25, alpha=0.5)
+                            ax.add_collection(lc)
+                            ax.autoscale()
 
-                    plt.xlabel("total cost (USD)" if xax == XAXIS_COST else "total bmp count")
-                    if yax == YAXIS_TOTAL:
-                        plt.ylabel(f"total {pol} load reduction (delivered)")
-                    elif yax == YAXIS_TARGET:
-                        plt.ylabel(f"{pol} reduction (% of target)")
-                    else:
-                        plt.ylabel(f"{pol} reduction (% of mean load)")
+                            plt.xlabel("total cost (USD)" if xax == XAXIS_COST else "total bmp count")
+                            if yax == YAXIS_TOTAL:
+                                plt.ylabel(f"total {pol} load reduction (delivered)")
+                            elif yax == YAXIS_TARGET:
+                                plt.ylabel(f"{pol} reduction (% of target)")
+                            else:
+                                plt.ylabel(f"{pol} reduction (% of mean load)")
 
-                    plt.title(f"{pol} | outlet {oid} | x={xax} | y={yax}")
-                    plt.grid(True, linestyle=":", linewidth=0.5, alpha=0.6)
+                            plt.title(f"{pol} | outlet {oid} | x={xax} | y={yax}")
+                            plt.grid(True, linestyle=":", linewidth=0.5, alpha=0.6)
 
-                    fname = plots_dir / f"plot_{pol}_oid{oid}_x{xax}_y{yax}.jpg"
-                    plt.tight_layout()
-                    logger.debug(f"Saving plot file={fname} xax={xax} yax={yax} pollutant={pol} oid={oid}")
-                    plt.savefig(fname, format="jpg", dpi=300)
-                    plt.close()
-                    logger.info(f"Saved plot: {fname}")
+                            fname = plots_dir / f"plot_{pol}_oid{oid}_x{xax}_y{yax}.jpg"
+                            plt.tight_layout()
+                            logger.verbose(f"Saving plot file={fname} xax={xax} yax={yax} pollutant={pol} oid={oid}")
+                            plt.savefig(fname, format="jpg", dpi=300)
+                            plt.close()
+                            logger.info(f"Saved plot: {fname}")

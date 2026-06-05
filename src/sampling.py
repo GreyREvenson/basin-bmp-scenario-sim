@@ -1,4 +1,14 @@
-# src/sampling.py
+"""
+Sampling utilities.
+
+Provides:
+- Truncated normal sampling with bounded rejection and deterministic fallback
+- Piecewise-linear percentile sampler (from min/max and arbitrary percentiles)
+- Generic sampling from stats for 'efficiency' and 'yield' with sensible bounds
+"""
+
+from __future__ import annotations
+
 import numpy as np
 from typing import Dict, Optional, TYPE_CHECKING
 
@@ -16,8 +26,10 @@ def _trunc_normal(
 ) -> np.ndarray:
     """Sample from a truncated normal via bounded, vectorized rejection.
 
-    - Bounded number of iterations to avoid unbounded loops under tight truncation.
-    - Falls back to a clipped mean for any remaining unfilled slots.
+    Notes
+    -----
+    - Uses an adaptive batch size and a fixed max_tries to avoid unbounded loops under tight truncation.
+    - Any unfilled draws after max_tries are filled with the clipped mean, ensuring reproducibility.
     """
     n = int(size or 1)
     if sd <= 0:
@@ -45,11 +57,9 @@ def _trunc_normal(
             out[filled : filled + k] = x[:k]
             filled += k
         tries += 1
-        # Grow batch adaptively to accelerate fill-in
         batch = min(max(batch * 2, n - filled), (n - filled) * 8 + 1024)
 
     if filled < n:
-        # Conservative fallback: fill remainder with clipped mean
         fallback = mean
         if low is not None:
             fallback = max(low, fallback)
@@ -65,7 +75,10 @@ def _piecewise_quantile_sample(
     stats: Dict[str, float],
     size: int = 1,
 ) -> np.ndarray:
-    """Sample from a piecewise linear distribution defined by percentiles."""
+    """Sample from a piecewise linear CDF defined by percentiles.
+
+    Requires at least min and max; supports any subset of pX percentiles between them.
+    """
     cols = {str(k).lower(): v for k, v in stats.items()}
 
     pts = []
@@ -110,15 +123,18 @@ def _sample_from_stats(
     stats: Dict[str, float],
     kind: Optional[str] = None,
 ) -> float:
-    """Sample a value from distribution statistics provided by the input data.
+    """Sample a value from distribution statistics.
 
-    Preference order:
-    - Piecewise percentiles when min/max and at least one percentile exist
-    - Truncated normal when mean/sd exist
-    - Uniform when only min/max exist
-    - Optional constraints:
-      kind == "efficiency": [0,1]
-      kind == "yield": [0, +inf)
+    Preference order
+    ----------------
+    1) Piecewise percentiles when min/max and at least one percentile exist
+    2) Truncated normal when mean/sd exist
+    3) Uniform when only min/max exist
+
+    Bounds
+    ------
+    - kind == "efficiency": [0, 1]
+    - kind == "yield": [0, +inf)
     """
     cols = {str(k).lower(): v for k, v in stats.items()}
 
@@ -130,10 +146,7 @@ def _sample_from_stats(
 
     low, high = None, None
     if kind == "efficiency":
-        # Do not allow negative efficiencies unless explicitly requested
-        min_candidates = [cols.get(k) for k in ("min", "minimum", "p0") if k in cols]
-        if not any((m is not None and float(m) < 0) for m in min_candidates):
-            low = 0.0
+        low = 0.0
         high = 1.0
     elif kind == "yield":
         low = 0.0
@@ -145,11 +158,7 @@ def _sample_from_stats(
         lo = float(cols.get("min", cols.get("minimum", cols.get("p0"))))
         hi = float(cols.get("max", cols.get("maximum", cols.get("p100"))))
         sd = max((hi - lo) / 4.0, 1e-12)
-        s = float(
-            self._trunc_normal(mn, sd, low=lo if low is None else max(low, lo), high=hi if high is None else min(high, hi), size=1)[
-                0
-            ]
-        )
+        s = float(self._trunc_normal(mn, sd, low=lo if low is None else max(low, lo), high=hi if high is None else min(high, hi), size=1)[0])
     elif has_min and has_max and not has_mean and not has_sd and not has_percentiles:
         lo = float(cols.get("min", cols.get("minimum", cols.get("p0"))))
         hi = float(cols.get("max", cols.get("maximum", cols.get("p100"))))
