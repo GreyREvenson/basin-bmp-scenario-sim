@@ -68,11 +68,14 @@ The model writes results to the configured `outputs` directory:
 - `log.txt` (driver log for the overall run)
 - `log_s{scenario}.txt` (per-scenario debug logs, one file per scenario)
 
+![Example output plot (aggregate cost vs. aggregate pollutant reduction as percentage of mean annual pollutant load)](examples/east_fork/outputs/plots/plot_TN_oid1_xcost_ymean.jpg)
+
 ## Notes
 
 - Pollutant labels are normalized from aliases such as `nitrogen`, `phosphorus`, and `sediment`.
 - `parcel_out` outlet IDs must exist in `outlet_loc`.
 - If both `bmp_limit_n` and `bmp_limit_usd` are specified, the simulation stops when either limit is reached.
+- Optional representation of BMP failure
 
 ## Parallelization
 
