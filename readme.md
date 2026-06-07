@@ -5,18 +5,32 @@
 ## Description
 
 `basin-bmp-scenario-sim` facilitates Monte-Carlo-based simulation of basin-wide BMP implementation scenarios depicting aggregate costs and impacts on basin-outlet pollutant loads. The model is composed of a series of user-defined statistical distributions for:
-- Parcel selection (i.e., the liklihood that specific parcels or agricultural fields will be selected to implement a BMP) 
+- Parcel selection (i.e., the liklihood that specific parcels or agricultural fields will be selected to implement a BMP)
+  - Parcel selection probabilities are passed as explicit inputs to the model. The user may elect to set selection probabilities by considering, as examples:
+    - Agricultural productivity
+    - Land value
+    - Geospatial siting analysis (e.g., as provided by the Agricultural Conservation Productivity Framework [ACPF])   
 - BMP / conservation practice type (i.e., the liklihood that specific types of BMPs or conservation practices will be implemented)
+  -  BMP-type probabilities are passed as explicit inputs to the model. The user may elect to set BMP-type probabilities by considering, as examples:
+    - Stakeholder preferences
+    - BMP cost (on average)  
 - BMP-specific characteristics (i.e., where a specific type of BMP is implemented, the likelihood of BMP-specific characteristics), e.g.:
   - Wetland area
+    - Currently limited by selected parcel total area
+    - Default minimum wetland area = 0.1 ha (0.25 ac) - reduced to parcel area if parcel area < 0.1 ha
   - Wetland catchment-to-area ratio
+    - Currently <= 100:1 (100 areal-units catchment to 1 areal-unit wetland)
+    - Currently limited by parcel upgraident area 
   - Grassed waterway length
+    - Currently specified as percentages of parcel perimeter length 
   - Portion of parcel draining to the BMP
 - Cost (i.e., the likely BMP implementation costs)
   - Annualized USD per unit area or length
   - May inlude opportunity, construction, maintenance
-- Parcel pollutant yield (i.e., the likly of yield rates (e.g., kg/ha/yr) for specific pollutant types across basin parcels and optinoally per pollutant loss pathway [e.g., surface, shallow subsurface])  
-- BMP efficiency (i.e., the likly effectiveness of specific types of BMPs per pollutant type and optionally per pollutant loss pathway [e.g., surface, shallow subsurface])
+- Parcel pollutant yield (i.e., the likly of yield rates (e.g., kg/ha/yr) for specific pollutant types across basin parcels)
+  - Optionally specify yields per pollutant loss pathway (e.g., surface, shallow surface, tile, deep subsurface)   
+- BMP efficiency (i.e., the likly effectiveness of specific types of BMPs per pollutant type)
+  - Optionally specify effectiveness per pollutant loss pathway (e.g., surface, shallow surface, tile, deep subsurface)
 - BMP failure (i.e., the liklihood that a BMP will fail and the resulting decline in BMP effectiveness) 
 
 ## Configuration
