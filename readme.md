@@ -68,7 +68,15 @@ The model writes results to the configured `outputs` directory:
 - `log.txt` (driver log for the overall run)
 - `log_s{scenario}.txt` (per-scenario debug logs, one file per scenario)
 
-![Example output plot (aggregate cost vs. aggregate pollutant reduction as percentage of mean annual pollutant load)](examples/east_fork/outputs/plots/plot_TN_oid1_xcost_ymean.jpg)
+Example output plots (each line depicts a single bmp scenario):
+
+![TN - cost v % mean annual load](examples/east_fork/outputs/plots/plot_TN_oid1_xcost_ymean.jpg)
+
+![TN - cost v % target load reduction](examples/east_fork/outputs/plots/plot_TN_oid1_xcost_ytarget.jpg)
+
+![TN - count v % mean annual load](examples/east_fork/outputs/plots/plot_TN_oid1_xcount_ymean.jpg)
+
+![TN - count v % target load reduction](examples/east_fork/outputs/plots/plot_TN_oid1_xcount_ytarget.jpg)
 
 ## Notes
 
