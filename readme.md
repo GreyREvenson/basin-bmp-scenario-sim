@@ -68,7 +68,8 @@ The model writes results to the configured `outputs` directory:
 - `log.txt` (driver log for the overall run)
 - `log_s{scenario}.txt` (per-scenario debug logs, one file per scenario)
 
-Example output plots (each line depicts a single bmp scenario):
+## Example output plots:
+(Each line depicts a single BMP scenario)
 
 ![TN - cost v % mean annual load](examples/east_fork/outputs/plots/plot_TN_oid1_xcost_ymean.jpg)
 
