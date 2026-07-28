@@ -71,14 +71,12 @@ def main() -> None:
     outputs_dir = Path(args.outputs or cfg.get(CFG_OUTPUTS, "./outputs"))
     outputs_dir.mkdir(parents=True, exist_ok=True)
 
-    verbose = False if args.quiet else bool(cfg.get(CFG_VERBOSE, True))
-    logger, log_path = make_logger(outputs_dir, verbose=verbose)
+    # 'verbose' controls file verbosity; --quiet only disables console output.
+    verbose = bool(cfg.get(CFG_VERBOSE, True))
+    logger, log_path = make_logger(outputs_dir, verbose=verbose, console=not args.quiet)
     logger.info("Starting model run")
     logger.info(f"Config: {cfg_path}")
-    if log_path is not None:
-        logger.info(f"Logging to: {log_path}")
-    else:
-        logger.info("Logging only to console; per-scenario log files will be created.")
+    logger.info(f"Logging to: {log_path}")
 
     if args.consolidate_only:
         consolidate_transposed_summaries(outputs_dir, logger)
