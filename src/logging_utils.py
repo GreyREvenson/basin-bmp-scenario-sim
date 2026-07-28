@@ -121,6 +121,18 @@ def _make_file_handler(path: Path, verbose: bool) -> logging.Handler:
     return fh
 
 
+def _reset_logger(logger: logging.Logger) -> None:
+    """Remove and close existing handlers/filters before reconfiguration."""
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        try:
+            handler.close()
+        except Exception:
+            # Best effort: keep logger reconfiguration resilient.
+            pass
+    logger.filters = []
+
+
 def make_logger(
     outputs_dir: Path,
     verbose: bool = True,
@@ -150,8 +162,7 @@ def make_logger(
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger("bmp-sim")
-    logger.handlers = []
-    logger.filters = []  # reset filters to avoid duplication on repeated setup
+    _reset_logger(logger)
     logger.propagate = False
 
     # Attach a single indent filter at logger level (applies to all handlers)
@@ -171,7 +182,7 @@ def make_logger(
     if console:
         logger.addHandler(_make_console_handler(verbose=verbose))
 
-    logger.verbose("Driver logger initialized")
+    logger.log(VERBOSE_LEVEL_NUM, "Driver logger initialized")
     return logger, log_path
 
 
@@ -187,8 +198,7 @@ def make_worker_logger(outputs_dir: Path, scenario_id: int, verbose: bool = Fals
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger(f"bmp-sim-s{scenario_id}")
-    logger.handlers = []
-    logger.filters = []
+    _reset_logger(logger)
     logger.propagate = False
 
     # Attach indent filter at logger level
@@ -201,6 +211,6 @@ def make_worker_logger(outputs_dir: Path, scenario_id: int, verbose: bool = Fals
     logger.addHandler(_make_file_handler(log_path, verbose=verbose))
 
     # Initialization message (using VERBOSE)
-    logger.verbose(f"Worker logger initialized for scenario {scenario_id}")
+    logger.log(VERBOSE_LEVEL_NUM, f"Worker logger initialized for scenario {scenario_id}")
 
     return logger
