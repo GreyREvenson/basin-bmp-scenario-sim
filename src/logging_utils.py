@@ -3,7 +3,7 @@ Logging helpers for driver and worker processes.
 
 - Adds a custom VERBOSE level (between INFO and DEBUG) for detailed progress logs.
 - Adds a stack-based indented formatter for all log messages.
-- Driver logger optionally writes to console and/or a file.
+- Driver logger writes to outputs/log.txt (or outputs/logs/s{scenario_id}.txt when scenario_id is provided) and optionally to console (INFO-only).
 - Worker loggers write a dedicated file per scenario under outputs/logs/.
 """
 
@@ -102,10 +102,14 @@ class StackIndentFormatter(logging.Formatter):
 
 
 def _make_console_handler(verbose: bool) -> logging.Handler:
+    """Create a console handler.
+
+    Note: Always INFO-only on console (never VERBOSE), regardless of 'verbose' flag.
+    """
     ch = logging.StreamHandler()
     ch.addFilter(StackIndentFilter(indent_unit="  "))
     ch.setFormatter(StackIndentFormatter("%(indent)s%(message)s"))
-    ch.setLevel(VERBOSE_LEVEL_NUM if verbose else logging.INFO)
+    ch.setLevel(logging.INFO)  # INFO-only on console
     return ch
 
 
@@ -117,10 +121,23 @@ def _make_file_handler(path: Path, verbose: bool) -> logging.Handler:
     return fh
 
 
+def _reset_logger(logger: logging.Logger) -> None:
+    """Remove and close existing handlers/filters before reconfiguration."""
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        try:
+            handler.close()
+        except Exception:
+            # Best effort: keep logger reconfiguration resilient.
+            pass
+    logger.filters = []
+
+
 def make_logger(
     outputs_dir: Path,
     verbose: bool = True,
     scenario_id: Optional[int] = None,
+    console: bool = True,
 ) -> Tuple[logging.Logger, Optional[Path]]:
     """Create a driver logger.
 
@@ -129,22 +146,23 @@ def make_logger(
     outputs_dir : Path
         Root outputs directory.
     verbose : bool, default True
-        If True, also log to console and set logger/handlers to VERBOSE.
+        If True, include VERBOSE messages in log files (driver/workers).
     scenario_id : Optional[int]
-        If provided, the driver also logs to outputs/logs/s{scenario_id}.txt.
+        If provided, writes to outputs/logs/s{scenario_id}.txt; otherwise writes to outputs/log.txt.
+    console : bool, default True
+        If True, also log to console (INFO-only).
 
     Returns
     -------
     (logging.Logger, Optional[Path])
-        The logger and optional log file path if scenario_id is provided.
+        The logger and the log file path.
     """
     outputs_dir = Path(outputs_dir)
     logs_dir = outputs_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger("bmp-sim")
-    logger.handlers = []
-    logger.filters = []  # reset filters to avoid duplication on repeated setup
+    _reset_logger(logger)
     logger.propagate = False
 
     # Attach a single indent filter at logger level (applies to all handlers)
@@ -153,21 +171,18 @@ def make_logger(
     # Default threshold is INFO; when verbose is True, lower to VERBOSE
     logger.setLevel(VERBOSE_LEVEL_NUM if verbose else logging.INFO)
 
-    log_path = None
+    # File handler
     if scenario_id is not None:
         log_path = logs_dir / f"s{scenario_id}.txt"
-        logger.addHandler(_make_file_handler(log_path, verbose=verbose))
-
-    # Console handler: attach only when verbose console logging is desired
-    if verbose:
-        logger.addHandler(_make_console_handler(verbose=True))
     else:
-        # Even when not verbose, emit INFO+ to console
-        logger.addHandler(_make_console_handler(verbose=False))
+        log_path = outputs_dir / "log.txt"
+    logger.addHandler(_make_file_handler(log_path, verbose=verbose))
 
-    # Initialization message (using VERBOSE)
-    logger.verbose("Driver logger initialized")
+    # Console handler: attach only when console True (INFO-only)
+    if console:
+        logger.addHandler(_make_console_handler(verbose=verbose))
 
+    logger.log(VERBOSE_LEVEL_NUM, "Driver logger initialized")
     return logger, log_path
 
 
@@ -183,8 +198,7 @@ def make_worker_logger(outputs_dir: Path, scenario_id: int, verbose: bool = Fals
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger(f"bmp-sim-s{scenario_id}")
-    logger.handlers = []
-    logger.filters = []
+    _reset_logger(logger)
     logger.propagate = False
 
     # Attach indent filter at logger level
@@ -197,6 +211,6 @@ def make_worker_logger(outputs_dir: Path, scenario_id: int, verbose: bool = Fals
     logger.addHandler(_make_file_handler(log_path, verbose=verbose))
 
     # Initialization message (using VERBOSE)
-    logger.verbose(f"Worker logger initialized for scenario {scenario_id}")
+    logger.log(VERBOSE_LEVEL_NUM, f"Worker logger initialized for scenario {scenario_id}")
 
     return logger
