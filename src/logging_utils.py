@@ -3,7 +3,7 @@ Logging helpers for driver and worker processes.
 
 - Adds a custom VERBOSE level (between INFO and DEBUG) for detailed progress logs.
 - Adds a stack-based indented formatter for all log messages.
-- Driver logger optionally writes to console and/or a file.
+- Driver logger writes to outputs/log.txt and optionally to console (INFO-only).
 - Worker loggers write a dedicated file per scenario under outputs/logs/.
 """
 
@@ -102,10 +102,14 @@ class StackIndentFormatter(logging.Formatter):
 
 
 def _make_console_handler(verbose: bool) -> logging.Handler:
+    """Create a console handler.
+
+    Note: Always INFO-only on console (never VERBOSE), regardless of 'verbose' flag.
+    """
     ch = logging.StreamHandler()
     ch.addFilter(StackIndentFilter(indent_unit="  "))
     ch.setFormatter(StackIndentFormatter("%(indent)s%(message)s"))
-    ch.setLevel(VERBOSE_LEVEL_NUM if verbose else logging.INFO)
+    ch.setLevel(logging.INFO)  # INFO-only on console
     return ch
 
 
@@ -121,6 +125,7 @@ def make_logger(
     outputs_dir: Path,
     verbose: bool = True,
     scenario_id: Optional[int] = None,
+    console: bool = True,
 ) -> Tuple[logging.Logger, Optional[Path]]:
     """Create a driver logger.
 
@@ -129,14 +134,16 @@ def make_logger(
     outputs_dir : Path
         Root outputs directory.
     verbose : bool, default True
-        If True, also log to console and set logger/handlers to VERBOSE.
+        If True, include VERBOSE messages in log files (driver/workers).
     scenario_id : Optional[int]
-        If provided, the driver also logs to outputs/logs/s{scenario_id}.txt.
+        If provided, writes to outputs/logs/s{scenario_id}.txt; otherwise writes to outputs/log.txt.
+    console : bool, default True
+        If True, also log to console (INFO-only).
 
     Returns
     -------
     (logging.Logger, Optional[Path])
-        The logger and optional log file path if scenario_id is provided.
+        The logger and the log file path.
     """
     outputs_dir = Path(outputs_dir)
     logs_dir = outputs_dir / "logs"
@@ -153,21 +160,18 @@ def make_logger(
     # Default threshold is INFO; when verbose is True, lower to VERBOSE
     logger.setLevel(VERBOSE_LEVEL_NUM if verbose else logging.INFO)
 
-    log_path = None
+    # File handler
     if scenario_id is not None:
         log_path = logs_dir / f"s{scenario_id}.txt"
-        logger.addHandler(_make_file_handler(log_path, verbose=verbose))
-
-    # Console handler: attach only when verbose console logging is desired
-    if verbose:
-        logger.addHandler(_make_console_handler(verbose=True))
     else:
-        # Even when not verbose, emit INFO+ to console
-        logger.addHandler(_make_console_handler(verbose=False))
+        log_path = outputs_dir / "log.txt"
+    logger.addHandler(_make_file_handler(log_path, verbose=verbose))
 
-    # Initialization message (using VERBOSE)
+    # Console handler: attach only when console True (INFO-only)
+    if console:
+        logger.addHandler(_make_console_handler(verbose=verbose))
+
     logger.verbose("Driver logger initialized")
-
     return logger, log_path
 
 
