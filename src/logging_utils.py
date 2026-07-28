@@ -3,7 +3,7 @@ Logging helpers for driver and worker processes.
 
 - Adds a custom VERBOSE level (between INFO and DEBUG) for detailed progress logs.
 - Adds a stack-based indented formatter for all log messages.
-- Driver logger writes to outputs/log.txt and optionally to console (INFO-only).
+- Driver logger writes to outputs/log.txt (or outputs/logs/s{scenario_id}.txt when scenario_id is provided) and optionally to console (INFO-only).
 - Worker loggers write a dedicated file per scenario under outputs/logs/.
 """
 
