@@ -1,0 +1,7 @@
+pid,parameter,value,units,group_id
+*,annual_precip_in,42.0,in/year,east_fork_weather
+*,rain_days,120.0,days/year,east_fork_weather
+*,rain_correction_fraction,0.90,fraction,east_fork_weather
+*,runoff_day_fraction,0.35,fraction,east_fork_weather
+*,cn,78.0,dimensionless,east_fork_soils
+*,ia_ratio,0.20,fraction,east_fork_soils

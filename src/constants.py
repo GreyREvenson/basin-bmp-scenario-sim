@@ -33,6 +33,17 @@ CFG_VERBOSE = "verbose"
 CFG_BUFFER_DEPTH_FT = "buffer_depth_ft"
 CFG_BMP_SEL_PROB_VIA_COSTS = "bmp_sel_prob_via_costs"
 
+# Optional PLET/RUSLE load-generation block
+CFG_LOAD_GENERATION = "load_generation"
+LOAD_MODE_STATISTICAL = "statistical"
+LOAD_MODE_PLET_RUSLE = "plet_rusle"
+LOAD_PLET_INPUTS = "plet_inputs"
+LOAD_RUSLE_INPUTS = "rusle_inputs"
+LOAD_CONCENTRATIONS = "pollutant_concentrations"
+LOAD_PROCESS_MODE = "process_parameter_mode"
+LOAD_PROCESS_EFFECTS = "bmp_parameter_effects"
+LOAD_PROCESS_FALLBACK = "process_parameter_fallback"
+
 # New: BMP failure configuration
 CFG_BMP_FAIL_RATE = "bmp_fail_rate"            # probability [0,1] a BMP fails
 CFG_BMP_FAIL_REDUCTION = "bmp_fail_reduction"  # efficiency scale [0,1] on failure
@@ -61,6 +72,11 @@ DATA_N_SCENARIOS = "n_scenarios"
 DATA_RANDOM_SEED = "random_seed"
 DATA_AVG_AREA_HA = "avg_area_ha"
 DATA_AVG_PERIM_M = "avg_perim_m"
+DATA_LOAD_GENERATION = "load_generation"
+DATA_PLET_INPUTS = "plet_inputs"
+DATA_RUSLE_INPUTS = "rusle_inputs"
+DATA_POLLUTANT_CONCENTRATIONS = "pollutant_concentrations"
+DATA_BMP_PARAMETER_EFFECTS = "bmp_parameter_effects"
 
 # Common column names
 COL_PID = "pid"

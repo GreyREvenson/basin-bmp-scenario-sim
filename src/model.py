@@ -1,12 +1,4 @@
-"""
-Scenario orchestration (parallel execution and per-scenario outputs).
-
-Coordinates:
-- Preparing lookup structures for fast scenario execution
-- Running scenarios in parallel
-- Writing per-scenario CSVs and logs
-- Producing transposed per-scenario summaries with an "All CPS" column
-"""
+"""Run the full simulation workflow and write scenario output files."""
 
 from __future__ import annotations
 
@@ -33,6 +25,12 @@ from src.bmp import (
 )
 from src.cost import _estimate_costs_for_probabilities, _get_bmp_cost, _select_cost_rate_median
 from src.logging_utils import make_worker_logger, log_scope
+from src.load_generation import (
+    apply_process_parameter_bmp,
+    calculate_load_diagnostics,
+    has_process_effects,
+    initialize_plet_rusle_state,
+)
 from src.parcel import (
     _get_delivery_coeffs,
     _get_parcel_metadata,
@@ -81,6 +79,15 @@ from src.constants import (
     DATA_PARCEL_UP_MAP,
     DATA_PARCELS,
     DATA_POLLUTANT_YIELD,
+    DATA_LOAD_GENERATION,
+    DATA_PLET_INPUTS,
+    DATA_RUSLE_INPUTS,
+    DATA_POLLUTANT_CONCENTRATIONS,
+    DATA_BMP_PARAMETER_EFFECTS,
+    LOAD_MODE_PLET_RUSLE,
+    LOAD_MODE_STATISTICAL,
+    LOAD_PROCESS_MODE,
+    LOAD_PROCESS_FALLBACK,
     DATA_POLLUTANTS,
     OUTPUT_BUFFER_AREA,
     OUTPUT_CATCHMENT_RATIO,
@@ -101,9 +108,14 @@ from src.constants import (
 
 
 class Model:
-    """Main simulation orchestrator for running multiple scenarios."""
+    """Main controller for the simulation.
+
+    It prepares data, runs scenarios, and collects files needed for summaries
+    and plots.
+    """
 
     def __init__(self, cfg: Dict[str, Any], data: Dict[str, Any], logger: logging.Logger) -> None:
+        """Set up model settings, helpers, and lookup tables."""
         self.cfg = cfg
         self.data = data
         self.logger = logger
@@ -149,7 +161,7 @@ class Model:
         self._prepare_lookup_tables()
 
     def _prepare_lookup_tables(self) -> None:
-        """Assemble arrays and mappings used during scenario execution."""
+        """Build quick lookup tables so each scenario can run faster."""
         with log_scope(label="prepare_lookup_tables", logger=self.logger):
             parcels = self.data[DATA_PARCELS]
             self.parcel_ids = parcels["pid"].astype(str).tolist()
@@ -169,6 +181,22 @@ class Model:
             sel = self.data[DATA_PARCEL_P]
             self.parcel_selection_ids = sel["pid"].astype(str).tolist()
             self.parcel_selection_probs = sel["probability"].astype(float).values
+            self.selection_source_idxs = [self.pid_to_index[pid] for pid in self.parcel_selection_ids]
+            self.selection_pid_to_index = {pid: idx for idx, pid in enumerate(self.parcel_selection_ids)}
+            self.selection_area_ha = [self.parcel_area_ha[idx] for idx in self.selection_source_idxs]
+            self.selection_perim_m = [self.parcel_perim_m[idx] for idx in self.selection_source_idxs]
+
+            # Translate outlet/upstream mappings to the selectable parcel index
+            # space used by scenario arrays.  This also makes parcel_p subsets safe.
+            self.selection_out_oids = [
+                self.parcel_out_oids[idx] for idx in self.selection_source_idxs
+            ]
+            self.selection_up_idxs = []
+            for pid in self.parcel_selection_ids:
+                up_pids = pu_map.get(pid, [])
+                self.selection_up_idxs.append(
+                    [self.selection_pid_to_index[u] for u in up_pids if u in self.selection_pid_to_index]
+                )
 
             # Outlet IDs and optional targets/means
             self.outlet_oids = list(self.data[DATA_OUTLET_LOC]["oid"].astype(str).tolist())
@@ -210,13 +238,38 @@ class Model:
                 else:
                     self.bmp_efficiency_stats[cps_key][pol_key] = stats
 
-            # Yield stats per parcel x pollutant
-            pol_y = self.data[DATA_POLLUTANT_YIELD]
+            # Load-generation mode and optional PLET/RUSLE inputs
+            self.load_generation = dict(self.data.get(DATA_LOAD_GENERATION) or {})
+            self.load_generation_mode = str(
+                self.load_generation.get("mode", LOAD_MODE_STATISTICAL)
+            ).strip().lower()
+            self.process_parameter_mode = bool(
+                self.load_generation.get(LOAD_PROCESS_MODE, False)
+            )
+            self.process_parameter_fallback = str(
+                self.load_generation.get(LOAD_PROCESS_FALLBACK, "efficiency")
+            ).strip().lower()
+            self.plet_inputs = self.data.get(DATA_PLET_INPUTS)
+            self.rusle_inputs = self.data.get(DATA_RUSLE_INPUTS)
+            self.pollutant_concentrations = self.data.get(DATA_POLLUTANT_CONCENTRATIONS)
+            self.bmp_parameter_effects = self.data.get(DATA_BMP_PARAMETER_EFFECTS)
+
+            # Statistical mode uses parcel x pollutant yield distributions.
+            # PLET/RUSLE mode derives these yields inside each scenario instead.
             self.pollutant_yield_stats = [[None] * len(self.pollutants) for _ in range(len(self.parcel_ids))]
-            for _, row in pol_y.iterrows():
-                i = self.pid_to_index[str(row["pid"])]
-                j = self.pollutant_to_index[str(row[COL_POLLUTANT])]
-                self.pollutant_yield_stats[i][j] = {k: row[k] for k in row.index if k not in ("pid", COL_POLLUTANT)}
+            pol_y = self.data.get(DATA_POLLUTANT_YIELD)
+            if pol_y is not None:
+                for _, row in pol_y.iterrows():
+                    i = self.pid_to_index[str(row["pid"])]
+                    j = self.pollutant_to_index[str(row[COL_POLLUTANT])]
+                    self.pollutant_yield_stats[i][j] = {
+                        k: row[k] for k in row.index if k not in ("pid", COL_POLLUTANT)
+                    }
+            elif self.load_generation_mode != LOAD_MODE_PLET_RUSLE:
+                raise ValueError("pollutant_yield is required in statistical load-generation mode")
+            self.selection_pollutant_yield_stats = [
+                self.pollutant_yield_stats[idx] for idx in self.selection_source_idxs
+            ]
 
             # BMP selection probabilities (possibly via costs or explicit table)
             bmp_probs = self._get_bmp_selection_probs(self.cfg.get(CFG_BMP_SEL))
@@ -230,17 +283,17 @@ class Model:
             )
 
     def _shared_payload(self) -> Dict[str, Any]:
-        """Create a read-only payload for worker processes."""
+        """Package shared data so worker processes can run scenarios."""
         return dict(
             cfg=self.cfg,
             data=self.data,
-            parcel_ids=self.parcel_ids,
-            pid_to_index=self.pid_to_index,  # ensure workers have PID->index mapping
+            parcel_ids=self.parcel_selection_ids,
+            pid_to_index=self.selection_pid_to_index,
             pollutants=self.pollutants,
-            parcel_area_ha=np.asarray(self.parcel_area_ha, dtype=float),
-            parcel_perim_m=np.asarray(self.parcel_perim_m, dtype=float),
-            parcel_out_oids=self.parcel_out_oids,
-            parcel_up_idxs=self.parcel_up_idxs,
+            parcel_area_ha=np.asarray(self.selection_area_ha, dtype=float),
+            parcel_perim_m=np.asarray(self.selection_perim_m, dtype=float),
+            parcel_out_oids=self.selection_out_oids,
+            parcel_up_idxs=self.selection_up_idxs,
             parcel_selection_ids=self.parcel_selection_ids,
             parcel_selection_probs=np.asarray(self.parcel_selection_probs, dtype=float),
             outlet_oids=self.outlet_oids,
@@ -248,7 +301,15 @@ class Model:
             outlet_mean_map=self.outlet_mean_map,
             delivery_coeffs=self.delivery_coeffs,
             bmp_efficiency_stats=self.bmp_efficiency_stats,
-            pollutant_yield_stats=self.pollutant_yield_stats,
+            pollutant_yield_stats=self.selection_pollutant_yield_stats,
+            load_generation=self.load_generation,
+            load_generation_mode=self.load_generation_mode,
+            process_parameter_mode=self.process_parameter_mode,
+            process_parameter_fallback=self.process_parameter_fallback,
+            plet_inputs=self.plet_inputs,
+            rusle_inputs=self.rusle_inputs,
+            pollutant_concentrations=self.pollutant_concentrations,
+            bmp_parameter_effects=self.bmp_parameter_effects,
             bmp_cps=self.bmp_cps,
             bmp_selection_probs=self.bmp_selection_probs,
             avg_area_ha=self.data.get(DATA_AVG_AREA_HA, 0.0),
@@ -260,7 +321,7 @@ class Model:
         )
 
     def run_all_scenarios(self) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
-        """Run all scenarios (possibly in parallel) and return plotting records."""
+        """Run every scenario and return the data used to make cross-scenario plots."""
         outputs_dir = Path(self.cfg.get(CFG_OUTPUTS, "./outputs"))
         outputs_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir = outputs_dir
@@ -290,9 +351,10 @@ class Model:
 
 
 class _ScenarioContext:
-    """Lightweight worker context object for a single scenario."""
+    """Lightweight object that holds what one worker needs for one scenario."""
 
     def __init__(self, cfg: Dict[str, Any], shared: Dict[str, Any], logger, seed: int) -> None:
+        """Create one scenario context with its own random number generator."""
         self.cfg = cfg
         self.logger = logger
         self.rng = default_rng(seed)
@@ -331,7 +393,7 @@ def _run_one_scenario(
     seed: int,
     outputs_dir: Path,
 ) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
-    """Execute one scenario and write its outputs."""
+    """Run one scenario, save its output files, and return its plot points."""
     sid = sidx + 1
     logger = make_worker_logger(
         outputs_dir,
@@ -344,17 +406,23 @@ def _run_one_scenario(
         logger.info(f"=== scenario {sid} start ===")
 
         n_pol = len(ctx.pollutants)
-        baseline = np.zeros((len(ctx.parcel_selection_ids), n_pol), dtype=float)
-        yields = np.zeros_like(baseline)
-
-        # Sample baseline parcel yields for selection set
+        process_state = None
         pid_to_parcel_idx = {str(pid): ctx.pid_to_index[str(pid)] for pid in ctx.parcel_selection_ids}
-        for i, pid in enumerate(ctx.parcel_selection_ids):
-            parcel_idx = pid_to_parcel_idx[str(pid)]
-            for pol_idx in range(n_pol):
-                y = ctx._sample_yield(parcel_idx, pol_idx)
-                baseline[i, pol_idx] = y
-                yields[i, pol_idx] = y
+
+        if ctx.load_generation_mode == LOAD_MODE_PLET_RUSLE:
+            baseline, process_state = initialize_plet_rusle_state(ctx)
+            yields = baseline.copy()
+            logger.info("Generated baseline parcel yields with stochastic PLET/RUSLE inputs")
+        else:
+            baseline = np.zeros((len(ctx.parcel_selection_ids), n_pol), dtype=float)
+            yields = np.zeros_like(baseline)
+            # Sample baseline parcel yields for selection set.
+            for i, pid in enumerate(ctx.parcel_selection_ids):
+                parcel_source_idx = pid_to_parcel_idx[str(pid)]
+                for pol_idx in range(n_pol):
+                    y = ctx._sample_yield(parcel_source_idx, pol_idx)
+                    baseline[i, pol_idx] = y
+                    yields[i, pol_idx] = y
 
         # Limits
         limit_n = cfg.get("bmp_limit_n")
@@ -375,6 +443,7 @@ def _run_one_scenario(
         records: Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]] = defaultdict(list)
         scenario_bmps: List[Dict[str, Any]] = []
         scenario_parcels: List[Dict[str, Any]] = []
+        scenario_load_parameters: List[Dict[str, Any]] = []
         cumul: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
         # Initialize summary collector once per scenario
@@ -410,17 +479,48 @@ def _run_one_scenario(
 
             # Renormalize probabilities over the allowed CPS subset
             probs_sub = ctx.bmp_selection_probs[allowed_idx]
-            probs_sub = probs_sub / probs_sub.sum()
+            probs_sum = float(np.sum(probs_sub))
+            if not np.isfinite(probs_sum) or probs_sum <= 0.0:
+                idle_tries += 1
+                if idle_tries >= max_idle_tries:
+                    logger.info("No selectable CPS probabilities remain across parcels; stopping early.")
+                    break
+                logger.warning(
+                    f"Skipping parcel pid={pid}: remaining BMP probabilities are non-finite or sum to zero."
+                )
+                continue
+            probs_sub = probs_sub / probs_sum
             sel = ctx.rng.choice(len(allowed_idx), p=probs_sub)
             cps = int(ctx.bmp_cps[allowed_idx[sel]])
 
             # Scope each BMP placement for deeper indentation
             with log_scope(label=f"apply bmp cps={cps} pid={pid}", logger=logger):
-                # Sample per-pathway efficiencies per pollutant
-                eff_maps = [ctx._sample_efficiency_map(cps, pol_idx) for pol_idx in range(n_pol)]
+                use_process_parameters = bool(
+                    ctx.process_parameter_mode
+                    and process_state is not None
+                    and has_process_effects(ctx, cps)
+                )
+                suppress_efficiency = bool(
+                    ctx.process_parameter_mode
+                    and not use_process_parameters
+                    and ctx.process_parameter_fallback == "none"
+                )
 
-                # Optional BMP failure draw and efficiency scaling
+                # Process-mode CPS entries do not need an efficiency row.
+                if use_process_parameters or suppress_efficiency:
+                    eff_maps = [
+                        {"surface": 0.0, "shallow subsurface": 0.0, "deep subsurface": 0.0}
+                        for _ in range(n_pol)
+                    ]
+                else:
+                    eff_maps = [
+                        ctx._sample_efficiency_map(cps, pol_idx) for pol_idx in range(n_pol)
+                    ]
+
+                # Optional BMP failure draw.  The same scale is applied to
+                # efficiency effects or to process-parameter changes.
                 failed_flag = False
+                process_effect_scale = 1.0
                 fr_cfg = ctx.cfg.get(CFG_BMP_FAIL_RATE, 0.0)
                 fail_rate = float(fr_cfg if fr_cfg is not None else 0.0)
                 if fail_rate > 0.0:
@@ -431,8 +531,11 @@ def _run_one_scenario(
                         reduction = float(red_cfg if red_cfg is not None else DEFAULT_BMP_FAIL_REDUCTION)
                         reduction = max(0.0, min(1.0, reduction))
                         eff_maps = [{k: float(v) * reduction for k, v in emap.items()} for emap in eff_maps]
+                        process_effect_scale = reduction
                         failed_flag = True
                         ctx.logger.verbose(f"BMP failure triggered for cps={cps}; scaling efficiencies by {reduction:.2f}")
+
+                geometry_eff_maps = eff_maps
 
                 # Per-BMP record
                 bmp_rec: Dict[str, Any] = dict(
@@ -449,21 +552,44 @@ def _run_one_scenario(
                         OUTPUT_CATCHMENT_RATIO: None,
                     },
                 )
-                # Record failure flag for CSVs and summaries
+                # Record failure and load-application mode for CSVs/summaries.
                 bmp_rec[OUTPUT_BMP_FAILED] = bool(failed_flag)
+                bmp_rec["load_generation_mode"] = str(ctx.load_generation_mode)
+                bmp_rec["bmp_application_mode"] = (
+                    "process_parameter"
+                    if use_process_parameters
+                    else ("none" if suppress_efficiency else "efficiency")
+                )
 
                 bmp_outputs = {OUTPUT_TREATED: np.zeros(n_pol, dtype=float), OUTPUT_REMOVED: np.zeros(n_pol, dtype=float)}
 
                 # Apply BMP
                 if cps in (656, 657):
-                    ctx._simulate_wetland(parcel_idx, eff_maps, yields, bmp_rec, bmp_outputs)
+                    ctx._simulate_wetland(parcel_idx, geometry_eff_maps, yields, bmp_rec, bmp_outputs)
                     quantity = float(bmp_rec[OUTPUT_WETLAND_AREA])
                 elif cps in (412,):
-                    ctx._simulate_grassed(parcel_idx, eff_maps, yields, bmp_rec, bmp_outputs)
+                    ctx._simulate_grassed(parcel_idx, geometry_eff_maps, yields, bmp_rec, bmp_outputs)
                     quantity = float(bmp_rec[OUTPUT_BUFFER_AREA]) if bmp_rec[OUTPUT_BUFFER_AREA] else 0.0
                 else:
-                    ctx._simulate_infield(parcel_idx, eff_maps, yields, bmp_rec, bmp_outputs)
+                    ctx._simulate_infield(parcel_idx, geometry_eff_maps, yields, bmp_rec, bmp_outputs)
                     quantity = float(ctx.parcel_area_ha[parcel_idx])
+
+                if use_process_parameters:
+                    treated, removed, _ = apply_process_parameter_bmp(
+                        ctx,
+                        process_state,
+                        yields,
+                        cps,
+                        parcel_idx,
+                        bmp_rec,
+                        effect_scale=process_effect_scale,
+                    )
+                    bmp_outputs[OUTPUT_TREATED] = treated
+                    bmp_outputs[OUTPUT_REMOVED] = removed
+                elif suppress_efficiency:
+                    # Geometry/cost are still simulated, but no load effect is
+                    # applied when process fallback is explicitly disabled.
+                    bmp_outputs[OUTPUT_REMOVED] = np.zeros(n_pol, dtype=float)
 
                 # Costing and totals
                 cost_this = ctx._get_bmp_cost(cps, quantity)
@@ -481,8 +607,9 @@ def _run_one_scenario(
                 scenario_bmps.append(bmp_rec)
 
                 # Add to summary collector
-                pidx_base = pid_to_parcel_idx.get(str(pid), parcel_idx)
-                pid_baseline_yields = {pol: float(baseline[pidx_base, i]) for i, pol in enumerate(ctx.pollutants)}
+                pid_baseline_yields = {
+                    pol: float(baseline[parcel_idx, i]) for i, pol in enumerate(ctx.pollutants)
+                }
                 collector.add_bmp_record(bmp_rec, pid_baseline_yields)
 
                 # Delivered reductions for plots
@@ -524,19 +651,47 @@ def _run_one_scenario(
                 row[f"final_{pol}"] = float(yields[parcel_idx, pol_idx])
             scenario_parcels.append(row)
 
+        # Realized stochastic PLET/RUSLE inputs and derived diagnostics.
+        if process_state is not None:
+            for parcel_idx, pid_i in enumerate(ctx.parcel_selection_ids):
+                initial_params = process_state.baseline_parameters[parcel_idx]
+                final_params = process_state.parameters[parcel_idx]
+                initial_conc = process_state.baseline_concentrations[parcel_idx]
+                final_conc = process_state.concentrations[parcel_idx]
+                row: Dict[str, Any] = {"scenario": sid, "pid": str(pid_i)}
+                for key in sorted(set(initial_params) | set(final_params)):
+                    row[f"initial_{key}"] = initial_params.get(key)
+                    row[f"final_{key}"] = final_params.get(key)
+                for pol in sorted(set(initial_conc) | set(final_conc)):
+                    label = str(pol).lower()
+                    row[f"initial_concentration_{label}_mg_l"] = initial_conc.get(pol)
+                    row[f"final_concentration_{label}_mg_l"] = final_conc.get(pol)
+                for key, value in calculate_load_diagnostics(initial_params).items():
+                    row[f"initial_{key}"] = value
+                for key, value in calculate_load_diagnostics(final_params).items():
+                    row[f"final_{key}"] = value
+                scenario_load_parameters.append(row)
+
         # Write CSVs and the transposed summary with “All CPS” roll‑up
         bmps_dir = outputs_dir / "bmps"
         parcels_dir = outputs_dir / "parcels"
+        load_parameters_dir = outputs_dir / "load_parameters"
         summaries_dir = outputs_dir / "summaries"
-        for d in (bmps_dir, parcels_dir, summaries_dir):
+        output_dirs = [bmps_dir, parcels_dir, summaries_dir]
+        if scenario_load_parameters:
+            output_dirs.append(load_parameters_dir)
+        for d in output_dirs:
             d.mkdir(parents=True, exist_ok=True)
 
         bmps_path = bmps_dir / f"s{sid}.csv"
         parcels_path = parcels_dir / f"s{sid}.csv"
         summary_path = summaries_dir / f"s{sid}.csv"
+        load_parameters_path = load_parameters_dir / f"s{sid}.csv"
 
         pd.DataFrame(scenario_bmps).to_csv(bmps_path, index=False)
         pd.DataFrame(scenario_parcels).to_csv(parcels_path, index=False)
+        if scenario_load_parameters:
+            pd.DataFrame(scenario_load_parameters).to_csv(load_parameters_path, index=False)
 
         summary_df = collector.generate_summary_dataframe()
         rollup = collector.generate_rollup_summary()
@@ -556,6 +711,8 @@ def _run_one_scenario(
 
         logger.info(f"Wrote per-scenario BMPs: {bmps_path}")
         logger.info(f"Wrote per-scenario parcels: {parcels_path}")
+        if scenario_load_parameters:
+            logger.info(f"Wrote realized PLET/RUSLE parameters: {load_parameters_path}")
         logger.info(f"Wrote transposed BMP summary with All CPS: {summary_path}")
         logger.info(f"=== scenario {sid} end (cost={total_cost:.2f}, bmp={total_bmp}) ===")
     return records

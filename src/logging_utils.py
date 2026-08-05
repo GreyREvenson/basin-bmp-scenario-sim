@@ -1,11 +1,4 @@
-"""
-Logging helpers for driver and worker processes.
-
-- Adds a custom VERBOSE level (between INFO and DEBUG) for detailed progress logs.
-- Adds a stack-based indented formatter for all log messages.
-- Driver logger writes to outputs/log.txt (or outputs/logs/s{scenario_id}.txt when scenario_id is provided) and optionally to console (INFO-only).
-- Worker loggers write a dedicated file per scenario under outputs/logs/.
-"""
+"""Set up logging so run progress is easy to read in files and console."""
 
 from __future__ import annotations
 
@@ -21,7 +14,7 @@ logging.addLevelName(VERBOSE_LEVEL_NUM, "VERBOSE")
 
 
 def _verbose(self: logging.Logger, msg: str, *args, **kwargs) -> None:
-    """Logger.verbose(msg, ...) -> log at VERBOSE level."""
+    """Log a message at the custom VERBOSE level."""
     if self.isEnabledFor(VERBOSE_LEVEL_NUM):
         self.log(VERBOSE_LEVEL_NUM, msg, *args, **kwargs)
 
@@ -36,6 +29,7 @@ _TL.depth = 0
 
 
 def _get_depth() -> int:
+    """Return current indent depth for this thread."""
     d = getattr(_TL, "depth", 0)
     try:
         return int(d)
@@ -44,28 +38,18 @@ def _get_depth() -> int:
 
 
 def push_indent(n: int = 1) -> None:
-    """Increase the current indentation depth by n (default 1)."""
+    """Increase log indentation by ``n`` levels."""
     setattr(_TL, "depth", max(0, _get_depth() + int(n)))
 
 
 def pop_indent(n: int = 1) -> None:
-    """Decrease the current indentation depth by n (default 1)."""
+    """Decrease log indentation by ``n`` levels."""
     setattr(_TL, "depth", max(0, _get_depth() - int(n)))
 
 
 @contextmanager
 def log_scope(label: Optional[str] = None, logger: Optional[logging.Logger] = None, level: int = VERBOSE_LEVEL_NUM):
-    """Context manager that indents logs within the scope and optionally logs BEGIN/END.
-
-    Parameters
-    ----------
-    label : Optional[str]
-        If provided with logger, logs 'BEGIN {label}' and 'END {label}'.
-    logger : Optional[logging.Logger]
-        Logger to emit BEGIN/END lines to.
-    level : int
-        Logging level for BEGIN/END; defaults to VERBOSE.
-    """
+    """Temporarily indent logs for a block, and optionally log BEGIN/END lines."""
     if label and logger is not None:
         logger.log(level, f"BEGIN {label}")
     push_indent(1)
@@ -78,12 +62,14 @@ def log_scope(label: Optional[str] = None, logger: Optional[logging.Logger] = No
 
 
 class StackIndentFilter(logging.Filter):
-    """Injects an 'indent' attribute based on the current thread-local depth."""
+    """Add indentation text to each log record."""
     def __init__(self, indent_unit: str = "  "):
+        """Set the text used for one indent level."""
         super().__init__()
         self.indent_unit = indent_unit
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Attach indentation text before the message is formatted."""
         depth = _get_depth()
         # Precompute indent string for the formatter
         record.indent = self.indent_unit * depth
@@ -91,21 +77,16 @@ class StackIndentFilter(logging.Filter):
 
 
 class StackIndentFormatter(logging.Formatter):
-    """Formatter that respects an 'indent' attribute inserted by StackIndentFilter.
-
-    If 'indent' is missing, it defaults to empty string.
-    """
+    """Format log records while keeping any indentation text."""
     def format(self, record: logging.LogRecord) -> str:
+        """Format one log line and handle missing indentation safely."""
         if not hasattr(record, "indent"):
             record.indent = ""
         return super().format(record)
 
 
 def _make_console_handler(verbose: bool) -> logging.Handler:
-    """Create a console handler.
-
-    Note: Always INFO-only on console (never VERBOSE), regardless of 'verbose' flag.
-    """
+    """Create the console logger handler (INFO level only)."""
     ch = logging.StreamHandler()
     ch.addFilter(StackIndentFilter(indent_unit="  "))
     ch.setFormatter(StackIndentFormatter("%(indent)s%(message)s"))
@@ -114,6 +95,7 @@ def _make_console_handler(verbose: bool) -> logging.Handler:
 
 
 def _make_file_handler(path: Path, verbose: bool) -> logging.Handler:
+    """Create a file logger handler with indentation-aware formatting."""
     fh = logging.FileHandler(path, mode="w", encoding="utf-8")
     fh.addFilter(StackIndentFilter(indent_unit="  "))
     fh.setFormatter(StackIndentFormatter("%(asctime)s | %(levelname)s | %(indent)s%(message)s"))
@@ -122,7 +104,7 @@ def _make_file_handler(path: Path, verbose: bool) -> logging.Handler:
 
 
 def _reset_logger(logger: logging.Logger) -> None:
-    """Remove and close existing handlers/filters before reconfiguration."""
+    """Clear existing handlers so logger setup can start fresh."""
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
         try:
@@ -139,24 +121,7 @@ def make_logger(
     scenario_id: Optional[int] = None,
     console: bool = True,
 ) -> Tuple[logging.Logger, Optional[Path]]:
-    """Create a driver logger.
-
-    Parameters
-    ----------
-    outputs_dir : Path
-        Root outputs directory.
-    verbose : bool, default True
-        If True, include VERBOSE messages in log files (driver/workers).
-    scenario_id : Optional[int]
-        If provided, writes to outputs/logs/s{scenario_id}.txt; otherwise writes to outputs/log.txt.
-    console : bool, default True
-        If True, also log to console (INFO-only).
-
-    Returns
-    -------
-    (logging.Logger, Optional[Path])
-        The logger and the log file path.
-    """
+    """Create the main logger used by the run driver."""
     outputs_dir = Path(outputs_dir)
     logs_dir = outputs_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -187,12 +152,7 @@ def make_logger(
 
 
 def make_worker_logger(outputs_dir: Path, scenario_id: int, verbose: bool = False) -> logging.Logger:
-    """Create a per-scenario logger writing into outputs/logs/s{scenario_id}.txt.
-
-    Notes
-    -----
-    Workers do not log to console to avoid interleaving stdout with the driver.
-    """
+    """Create a logger for one scenario worker process."""
     outputs_dir = Path(outputs_dir)
     logs_dir = outputs_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)

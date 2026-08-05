@@ -1,15 +1,4 @@
-"""
-BMP simulation utilities.
-
-Implements stochastic selection of BMP types and parcel-level simulation of
-constructed wetlands, grassed waterways/buffers, and in-field practices.
-
-Units and conventions
----------------------
-- Areas in hectares (ha), lengths in meters (m), depths in feet (ft) in config and converted to m.
-- Parcel yields are in load per unit area (e.g., mass/ha).
-- Side effects: simulators mutate the yields array in place and populate per-BMP records and per-pollutant results.
-"""
+"""Pick BMPs and apply their effects to parcel pollutant loads."""
 
 from __future__ import annotations
 
@@ -46,7 +35,10 @@ FT_TO_M = 0.3048  # meters per foot
 
 
 def _select_bmp_type(self: "Model") -> int:
-    """Choose a BMP type code from the precomputed probability distribution."""
+    """Randomly choose which BMP type to place next.
+
+    The chance for each BMP comes from the probability table prepared earlier.
+    """
     idx = self.rng.choice(len(self.bmp_cps), p=self.bmp_selection_probs)
     cps = int(self.bmp_cps[idx])
     self.logger.verbose(f"selected bmp {cps} ({self._get_bmp_name(cps)})")
@@ -60,7 +52,7 @@ def _get_bmp_name(self: "Model", cps: Union[int, str]) -> str:
 
 
 def _sample_efficiency(self: "Model", cps: Union[int, str], pol_idx: int) -> float:
-    """Legacy: sample a single BMP efficiency for a CPS/pollutant in [0, 1]."""
+    """Older helper that picks one effectiveness value between 0 and 1."""
     stats = self.bmp_efficiency_stats[int(cps)][pol_idx]
     eff = self._sample_from_stats(stats, kind="efficiency")
     self.logger.verbose(f"selected efficiency value {eff:.2f} for pollutant={self.pollutants[pol_idx]}")
@@ -68,25 +60,28 @@ def _sample_efficiency(self: "Model", cps: Union[int, str], pol_idx: int) -> flo
 
 
 def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) -> Dict[str, float]:
-    """Sample per-pathway efficiencies for a CPS/pollutant.
-
-    Returns dict with keys: 'surface', 'shallow subsurface', 'deep subsurface'.
-    When pathway stats are not present, all keys use the same sampled value.
-    """
+    """Pick effectiveness values for surface, shallow, and deep flow paths."""
     entry = self.bmp_efficiency_stats[int(cps)][pol_idx]
-    if isinstance(entry, dict):  # pathway-aware
+    pathway_names = ("surface", "shallow subsurface", "deep subsurface")
+    is_pathway_entry = (
+        isinstance(entry, dict)
+        and any(path in entry for path in pathway_names)
+        and all(isinstance(value, dict) for value in entry.values())
+    )
+    if is_pathway_entry:
         out: Dict[str, float] = {}
-        for path in ("surface", "shallow subsurface", "deep subsurface"):
+        for path in pathway_names:
             stats = entry.get(path)
             if stats is None:
-                # Fallback: reuse any available stats; else 0.0
-                stats = next(iter(entry.values())) if entry else {"mean": 0.0, "min": 0.0, "max": 0.0}
+                # Fallback: reuse any available pathway stats; else 0.0.
+                stats = next(iter(entry.values())) if entry else {"value": 0.0}
             out[path] = float(self._sample_from_stats(stats, kind="efficiency"))
         return out
-    else:
-        # Legacy single efficiency applied uniformly
-        val = float(self._sample_from_stats(entry, kind="efficiency"))
-        return {"surface": val, "shallow subsurface": val, "deep subsurface": val}
+
+    # Legacy single efficiency distribution applied uniformly to all pathways.
+    stats = entry if isinstance(entry, dict) else {"value": float(entry or 0.0)}
+    val = float(self._sample_from_stats(stats, kind="efficiency"))
+    return {"surface": val, "shallow subsurface": val, "deep subsurface": val}
 
 
 def _simulate_wetland(
@@ -98,7 +93,7 @@ def _simulate_wetland(
     bmp_outputs: Dict[str, np.ndarray],
     cps: Union[int, str] = 656,
 ) -> None:
-    """Simulate a constructed wetland BMP and update parcel yields."""
+    """Apply a wetland BMP and update affected parcel loads directly."""
     with log_scope(label="simulate_wetland", logger=self.logger):
         self.logger.verbose("calling simulate_wetland")
 
@@ -194,7 +189,7 @@ def _simulate_grassed(
     bmp_rec: Dict[str, Any],
     bmp_outputs: Dict[str, np.ndarray],
 ) -> None:
-    """Simulate a grassed waterway/buffer BMP and update parcel yields."""
+    """Apply a grassed waterway/buffer BMP to one parcel."""
     with log_scope(label="simulate_grassed", logger=self.logger):
         self.logger.verbose("calling simulate_grassed")
 
@@ -253,7 +248,7 @@ def _simulate_infield(
     bmp_rec: Dict[str, Any],
     bmp_outputs: Dict[str, np.ndarray],
 ) -> None:
-    """Simulate an in-field BMP and update the parcel yield state."""
+    """Apply an in-field BMP to the selected parcel."""
     with log_scope(label="simulate_infield", logger=self.logger):
         self.logger.verbose("calling _simulate_infield")
 
@@ -283,8 +278,9 @@ def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.D
 
     Behavior
     --------
-    - If an explicit probability file is provided via cfg, use it directly (normalized).
-    - Otherwise, derive weights from estimated costs so lower-cost BMPs are more likely.
+    - If a probability CSV is provided, use it.
+    - Otherwise, optionally estimate probabilities from costs.
+    - If neither is available, use equal chance for each BMP type.
     """
     if bmp_sel_path:
         df = pd.read_csv(bmp_sel_path)

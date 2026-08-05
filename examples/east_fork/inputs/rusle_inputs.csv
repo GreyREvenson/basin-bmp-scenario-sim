@@ -1,0 +1,10 @@
+pid,parameter,value,units,group_id
+*,r,175.0,index,east_fork_erosivity
+*,k,0.32,ton acre hour/(acre foot ton inch),east_fork_soils
+*,ls,1.80,dimensionless,east_fork_topography
+*,c,0.22,dimensionless,east_fork_cover
+*,p,0.70,dimensionless,east_fork_practice
+*,sdr,0.20,fraction,east_fork_delivery
+*,sediment_n_pct,0.08,percent,east_fork_soils
+*,sediment_p_pct,0.045,percent,east_fork_soils
+*,enrichment_ratio,1.50,dimensionless,east_fork_soils

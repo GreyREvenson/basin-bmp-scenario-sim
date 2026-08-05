@@ -1,12 +1,4 @@
-"""
-Utility helpers (stateless).
-
-Contains small utilities used across the codebase:
-- Case-insensitive config lookup
-- DataFrame column normalization
-- Pollutant label normalization to canonical names
-- Percentile key parsing
-"""
+"""Small shared helper functions used in many places."""
 
 from __future__ import annotations
 
@@ -14,12 +6,12 @@ from typing import Any, Dict, Iterable, Mapping
 
 
 def ci_get(d: Mapping[str, Any], key: str, default: Any = None) -> Any:
-    """Return a value from a mapping using a case-insensitive key lookup.
+    """Look up a dictionary key without caring about uppercase/lowercase.
 
     Parameters
     ----------
     d : Mapping[str, Any]
-        Source dictionary-like object.
+        Input dictionary-like object.
     key : str
         Key to look up, case-insensitively.
     default : Any, optional
@@ -38,29 +30,24 @@ def ci_get(d: Mapping[str, Any], key: str, default: Any = None) -> Any:
 
 
 def normalize_columns(df: Any) -> Any:
-    """Normalize DataFrame column labels to lowercase strings (in place).
+    """Rename table columns to lowercase text (in place).
 
     Parameters
     ----------
     df : pandas.DataFrame
-        Input frame; its columns are mutated.
+        Input table; its column names are changed directly.
 
     Returns
     -------
     pandas.DataFrame
-        The same frame for chaining.
-
-    Notes
-    -----
-    Used during CSV ingestion to ensure consistent, case-insensitive matching
-    of required columns.
+        The same table object, returned for convenience.
     """
     df.columns = [str(c).strip().lower() for c in df.columns]
     return df
 
 
 def normalize_pollutant_label(label: str) -> str:
-    """Normalize a pollutant label to a canonical form.
+    """Convert a pollutant name to the standard code used by this model.
 
     Parameters
     ----------
@@ -70,7 +57,7 @@ def normalize_pollutant_label(label: str) -> str:
     Returns
     -------
     str
-        Canonical label recognized by the model ('TN', 'TP', 'TSS').
+        Standard pollutant code ('TN', 'TP', 'TSS').
 
     Raises
     ------
@@ -86,7 +73,7 @@ def normalize_pollutant_label(label: str) -> str:
 
 
 def parse_percent_keys(cols: Iterable[Any]) -> Dict[int, Any]:
-    """Parse percentile-style column labels (e.g., 'p5', 'p50', 'p95').
+    """Find percentile-style column names like p10, p50, or p95.
 
     Parameters
     ----------
@@ -96,7 +83,7 @@ def parse_percent_keys(cols: Iterable[Any]) -> Dict[int, Any]:
     Returns
     -------
     Dict[int, Any]
-        Mapping from percentile integer (5, 50, 95, 100, ...) to the original label.
+        Map from percentile number to the original column label.
     """
     import re
 

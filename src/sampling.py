@@ -1,11 +1,4 @@
-"""
-Sampling utilities.
-
-Provides:
-- Truncated normal sampling with bounded rejection and deterministic fallback
-- Piecewise-linear percentile sampler (from min/max and arbitrary percentiles)
-- Generic sampling from stats for 'efficiency' and 'yield' with sensible bounds
-"""
+"""Helper functions for drawing random values from input ranges/statistics."""
 
 from __future__ import annotations
 
@@ -24,13 +17,7 @@ def _trunc_normal(
     high: Optional[float] = None,
     size: Optional[int] = None,
 ) -> np.ndarray:
-    """Sample from a truncated normal via bounded, vectorized rejection.
-
-    Notes
-    -----
-    - Uses an adaptive batch size and a fixed max_tries to avoid unbounded loops under tight truncation.
-    - Any unfilled draws after max_tries are filled with the clipped mean, ensuring reproducibility.
-    """
+    """Draw random values near a mean, while keeping them inside min/max bounds."""
     n = int(size or 1)
     if sd <= 0:
         val = mean
@@ -75,10 +62,7 @@ def _piecewise_quantile_sample(
     stats: Dict[str, float],
     size: int = 1,
 ) -> np.ndarray:
-    """Sample from a piecewise linear CDF defined by percentiles.
-
-    Requires at least min and max; supports any subset of pX percentiles between them.
-    """
+    """Draw random values using percentile points (like min, p50, max)."""
     cols = {str(k).lower(): v for k, v in stats.items()}
 
     pts = []
@@ -123,18 +107,10 @@ def _sample_from_stats(
     stats: Dict[str, float],
     kind: Optional[str] = None,
 ) -> float:
-    """Sample a value from distribution statistics.
+    """Pick one random value from a row of numbers.
 
-    Preference order
-    ----------------
-    1) Piecewise percentiles when min/max and at least one percentile exist
-    2) Truncated normal when mean/sd exist
-    3) Uniform when only min/max exist
-
-    Bounds
-    ------
-    - kind == "efficiency": [0, 1]
-    - kind == "yield": [0, +inf)
+    The function automatically chooses a sampling method based on what columns
+    are available (for example value, mean/sd, min/max, or percentiles).
     """
     cols = {str(k).lower(): v for k, v in stats.items()}
 
@@ -151,7 +127,9 @@ def _sample_from_stats(
     elif kind == "yield":
         low = 0.0
 
-    if has_min and has_max and has_percentiles:
+    if "value" in cols:
+        s = float(cols["value"])
+    elif has_min and has_max and has_percentiles:
         s = float(self._piecewise_quantile_sample(cols, size=1)[0])
     elif has_min and has_max and has_mean and not has_sd:
         mn = float(cols.get("mean", cols.get("average", cols.get("avg"))))

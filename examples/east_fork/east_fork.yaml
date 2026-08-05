@@ -22,6 +22,16 @@ cps: [340,329,590,412,656]
 pollutant_yield: ./examples/east_fork/inputs/pollutant_yield.csv
 bmp_efficiency: ./examples/east_fork/inputs/bmp_efficiency.csv
 
+# Optional process-based load generation inputs
+load_generation:
+  mode: plet_rusle
+  plet_inputs: ./examples/east_fork/inputs/plet_inputs.csv
+  rusle_inputs: ./examples/east_fork/inputs/rusle_inputs.csv
+  pollutant_concentrations: ./examples/east_fork/inputs/pollutant_concentrations.csv
+  process_parameter_mode: true
+  bmp_parameter_effects: ./examples/east_fork/inputs/bmp_parameter_effects.csv
+  process_parameter_fallback: efficiency
+
 # Optional distributions (enable cost-limited runs, selection weighting, and plotting x-axis)
 bmp_cost: ./examples/east_fork/inputs/bmp_cost.csv
 
@@ -31,10 +41,10 @@ outlet_target: ./examples/east_fork/inputs/outlet_target.csv
 outlet_mean: ./examples/east_fork/inputs/outlet_mean.csv
 
 # number of scenarios to run
-n_scenarios: 1000
+n_scenarios: 1
 
 # per-scenario bmp limits
-bmp_limit_n: 1000
+bmp_limit_n: 500
 #bmp_limit_usd: 5000000
 
 # optional assumed buffer depth (ft) for grassed waterways

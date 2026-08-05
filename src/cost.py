@@ -1,11 +1,4 @@
-"""
-Costing helpers.
-
-- _get_bmp_cost computes per-BMP total cost at runtime using realized quantity
-  and a sampled rate from the cost stats table.
-- _estimate_costs_for_probabilities computes selection weights using inverse
-  expected costs based on average quantity heuristics.
-"""
+"""Estimate BMP costs and use those costs to help pick BMP types."""
 
 from __future__ import annotations
 
@@ -41,10 +34,13 @@ def _get_bmp_cost(
     cps: Union[int, str],
     quantity: float,
 ) -> float:
-    """Estimate cost (USD) for a realized BMP instance."""
+    """Estimate how much one BMP placement costs in dollars."""
     with log_scope(label=f"get_bmp_cost cps={cps}", logger=self.logger):
         self.logger.verbose("calling _get_bmp_cost")
-        bmp_cost_df = self.data[DATA_BMP_COST]
+        bmp_cost_df = self.data.get(DATA_BMP_COST)
+        if bmp_cost_df is None or bmp_cost_df.empty:
+            self.logger.verbose("no BMP cost table configured; returning cost=$0.0")
+            return 0.0
         bmp_cost_df = bmp_cost_df[bmp_cost_df[COL_CPS].astype(int) == int(cps)]
         if bmp_cost_df.empty:
             self.logger.verbose(f"no cost entry found for cps={cps}; returning cost=$0.0")
@@ -56,7 +52,7 @@ def _get_bmp_cost(
         stats: Dict[str, float] = {
             k: row[k]
             for k in row.index
-            if k in ("mean", "sd", "min", "max") or (str(k).startswith("p") and str(k)[1:].isdigit())
+            if k in ("value", "mean", "sd", "min", "max") or (str(k).startswith("p") and str(k)[1:].isdigit())
         }
         rate_value = float(self._sample_from_stats(stats, kind=None))
         self.logger.verbose(f"sampled cost rate {rate_value:.4f} for cps={cps}, unit={unit}")
@@ -101,7 +97,7 @@ def _select_cost_rate_median(
     row: pd.Series,
     cps: Optional[Union[int, str]] = None,
 ) -> float:
-    """Select a representative BMP cost rate for probability estimation."""
+    """Pick one typical cost rate from a cost table row."""
     with log_scope(label=f"select_cost_rate_median cps={cps}", logger=self.logger):
         self.logger.verbose("calling _select_cost_rate_median")
         cols = {str(k).lower(): v for k, v in row.items()}
@@ -124,7 +120,7 @@ def _select_cost_rate_median(
 
 
 def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
-    """Estimate BMP selection probabilities via inverse expected cost."""
+    """Build BMP selection chances so lower-cost options are chosen more often."""
     with log_scope(label="estimate_costs_for_probabilities", logger=self.logger):
         self.logger.verbose("calling _estimate_costs_for_probabilities")
         rows: list[Dict[str, float]] = []

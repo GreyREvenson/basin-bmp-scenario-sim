@@ -1,0 +1,3 @@
+pid,pollutant,value,units,group_id
+*,TN,3.00,mg/L,east_fork_runoff
+*,TP,0.35,mg/L,east_fork_runoff

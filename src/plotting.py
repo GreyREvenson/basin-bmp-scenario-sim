@@ -1,10 +1,4 @@
-"""
-Plotting utilities for cross-scenario comparisons.
-
-Generates line plots that compare cumulative delivered reductions by pollutant
-and outlet, using either BMP count or cost on x-axis, and absolute or normalized
-reductions on y-axis.
-"""
+"""Create output plot images that compare results across scenarios."""
 
 from __future__ import annotations
 
@@ -38,7 +32,7 @@ def make_summary_plots(
     outputs_dir: Path,
     logger,
 ) -> None:
-    """Generate summary plots for scenario outcomes."""
+    """Write one line plot image for each pollutant/outlet chart combination."""
     pollutants = data[DATA_POLLUTANTS]
     oids = [str(x) for x in data[DATA_OUTLET_LOC][COL_OID].astype(str).tolist()]
     logger.verbose(f"Generating summary plots for pollutants={pollutants} outlets={oids}")

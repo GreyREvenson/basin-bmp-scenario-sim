@@ -1,13 +1,4 @@
-"""
-Command-line runner for the BMP scenario model.
-
-Supports
---------
-- Running scenarios based on a YAML config
-- Generating per-scenario CSVs and plots
-- Optionally consolidating all transposed summaries into a single CSV
-- A consolidate-only mode that performs only the consolidation step
-"""
+"""Run the model from the command line using a YAML settings file."""
 
 from __future__ import annotations
 
@@ -24,12 +15,12 @@ from src.plotting import make_summary_plots
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments.
+    """Read command-line options for this script.
 
     Returns
     -------
     argparse.Namespace
-        Parsed command-line arguments.
+        Parsed command-line options.
     """
     p = argparse.ArgumentParser(description="Run the BMP scenario model using a YAML configuration file.")
     p.add_argument("config", help="Path to the YAML configuration file")
@@ -51,12 +42,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """Entrypoint: load config, run scenarios or consolidate summaries.
-
-    Side effects
-    ------------
-    Writes per-scenario CSVs, plots, and optionally a consolidated summary to the outputs directory.
-    """
+    """Load settings, run scenarios, make plots, and optionally merge summaries."""
     args = parse_args()
     cfg_path = Path(args.config)
     if not cfg_path.exists():
