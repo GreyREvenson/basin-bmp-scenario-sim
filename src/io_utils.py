@@ -145,7 +145,7 @@ def _validate_stats_table(df: pd.DataFrame, label: str) -> None:
         or any(str(c).lower().startswith("p") and str(c)[1:].isdigit() for c in cols)
     )
     if not ok:
-        raise ValueError(f"{label} must provide mean/sd or min/max or percentiles")
+        raise ValueError(f"{label} must provide value, mean/sd, min/max, or percentiles")
 
 
 
