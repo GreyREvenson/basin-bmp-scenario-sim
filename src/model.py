@@ -363,6 +363,9 @@ class _ScenarioContext:
         for k, v in shared.items():
             setattr(self, k, v)
 
+        # Keep a direct PID->selection-index map for repeated lookups.
+        self.pid_to_index = {str(pid): int(idx) for pid, idx in self.pid_to_index.items()}
+
         # Bind helpers with self as first arg
         self._sample_from_stats = types.MethodType(_sample_from_stats, self)
         self._piecewise_quantile_sample = types.MethodType(_piecewise_quantile_sample, self)
@@ -407,7 +410,6 @@ def _run_one_scenario(
 
         n_pol = len(ctx.pollutants)
         process_state = None
-        pid_to_parcel_idx = {str(pid): ctx.pid_to_index[str(pid)] for pid in ctx.parcel_selection_ids}
 
         if ctx.load_generation_mode == LOAD_MODE_PLET_RUSLE:
             baseline, process_state = initialize_plet_rusle_state(ctx)
@@ -418,7 +420,7 @@ def _run_one_scenario(
             yields = np.zeros_like(baseline)
             # Sample baseline parcel yields for selection set.
             for i, pid in enumerate(ctx.parcel_selection_ids):
-                parcel_source_idx = pid_to_parcel_idx[str(pid)]
+                parcel_source_idx = ctx.pid_to_index[str(pid)]
                 for pol_idx in range(n_pol):
                     y = ctx._sample_yield(parcel_source_idx, pol_idx)
                     baseline[i, pol_idx] = y

@@ -412,7 +412,7 @@ def _affected_fractions(ctx: Any, cps: int, parcel_idx: int, bmp_rec: Mapping[st
             1.0 + float(bmp_rec.get("catchment_to_wetland_ratio", 0.0) or 0.0)
         )
         remaining = max(0.0, target_area)
-        index_by_pid = {str(pid): i for i, pid in enumerate(ctx.parcel_selection_ids)}
+        index_by_pid = ctx.pid_to_index
         affected: List[Tuple[int, float]] = []
         for pid in impacted:
             idx = index_by_pid.get(str(pid))
