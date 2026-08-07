@@ -31,10 +31,10 @@ outlet_target: ./examples/east_fork/inputs/outlet_target.csv
 outlet_mean: ./examples/east_fork/inputs/outlet_mean.csv
 
 # number of scenarios to run
-n_scenarios: 1000
+n_scenarios: 20
 
 # per-scenario bmp limits
-bmp_limit_n: 1000
+bmp_limit_n: 200
 #bmp_limit_usd: 5000000
 
 # optional assumed buffer depth (ft) for grassed waterways
