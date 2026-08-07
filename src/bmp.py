@@ -64,10 +64,18 @@ def _apply_pathway_reduction(
     if pathway_yields is None:
         return 0.0
 
+    skip_groundwater = bool(
+        str(getattr(self, "load_generation_mode", "")).strip().lower() == "plet_rusle"
+        and str(getattr(self, "pathway_mode", "")).strip().lower() == "derive_from_plet"
+        and bool(getattr(self, "groundwater_loads", False))
+        and not bool(getattr(self, "load_generation", {}).get("treat_groundwater_with_bmps", False))
+        and str(self.pollutants[pol_idx]).upper() in {"TN", "TP"}
+    )
+
     removed = 0.0
     for path_idx, path in enumerate(PATHWAY_ORDER):
         current = float(pathway_yields[parcel_idx, pol_idx, path_idx])
-        eff = float(eff_map.get(path, 0.0))
+        eff = 0.0 if (skip_groundwater and path == "deep subsurface") else float(eff_map.get(path, 0.0))
         new_value = current * (1.0 - treatment_fraction * eff)
         removed += max(0.0, current - new_value)
         pathway_yields[parcel_idx, pol_idx, path_idx] = max(0.0, new_value)
