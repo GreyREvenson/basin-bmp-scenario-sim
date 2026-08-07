@@ -14,7 +14,9 @@ from joblib import Parallel, delayed
 from numpy.random import SeedSequence, default_rng
 
 from src.bmp import (
+    _apply_pathway_reduction,
     _get_bmp_name,
+    _get_pathway_yields,
     _get_bmp_selection_probs,
     _sample_efficiency,          # legacy scalar sampler (kept for backward-compat)
     _sample_efficiency_map,      # per-pathway sampler
@@ -83,12 +85,20 @@ from src.constants import (
     DATA_PLET_INPUTS,
     DATA_RUSLE_INPUTS,
     DATA_POLLUTANT_CONCENTRATIONS,
+    DATA_GROUNDWATER_CONCENTRATIONS,
     DATA_BMP_PARAMETER_EFFECTS,
+    LOAD_GROUNDWATER_LOADS,
+    LOAD_PATHWAY_MODE,
+    LOAD_PATHWAY_MODE_DERIVED,
+    LOAD_PATHWAY_MODE_FIXED,
     LOAD_MODE_PLET_RUSLE,
     LOAD_MODE_STATISTICAL,
     LOAD_PROCESS_MODE,
     LOAD_PROCESS_FALLBACK,
     DATA_POLLUTANTS,
+    DIR_OUTLET_TRAJECTORIES,
+    DIR_SCENARIO_METRICS,
+    FILE_ALL_SCENARIOS_PARQUET,
     OUTPUT_BUFFER_AREA,
     OUTPUT_CATCHMENT_RATIO,
     OUTPUT_COST_USD,
@@ -105,6 +115,52 @@ from src.constants import (
     YAXIS_TARGET,
     YAXIS_TOTAL,
 )
+
+
+def _write_parquet_atomic(df: pd.DataFrame, path: Path, *, logger: logging.Logger) -> None:
+    """Write a parquet file atomically."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    try:
+        df.to_parquet(tmp_path, index=False)
+        tmp_path.replace(path)
+    except (ImportError, ModuleNotFoundError) as ex:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise RuntimeError(
+            "Parquet output is required but no parquet engine is installed. "
+            "Install pyarrow or fastparquet in the active environment."
+        ) from ex
+
+
+def _flatten_plot_records(
+    merged: Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]
+) -> pd.DataFrame:
+    """Convert in-memory plotting records into a normalized trajectory table."""
+    rows: List[Dict[str, Any]] = []
+    step_counters: Dict[Tuple[int, str, str, str, str], int] = defaultdict(int)
+    for (pol, oid, xax, yax), points in merged.items():
+        for sid, xval, yval in points:
+            counter_key = (int(sid), str(pol), str(oid), str(xax), str(yax))
+            step_counters[counter_key] += 1
+            rows.append(
+                {
+                    "scenario": int(sid),
+                    "pollutant": str(pol),
+                    "oid": str(oid),
+                    "x_axis": str(xax),
+                    "y_axis": str(yax),
+                    "step": int(step_counters[counter_key]),
+                    "x_value": float(xval),
+                    "y_value": float(yval),
+                }
+            )
+    if not rows:
+        return pd.DataFrame(
+            columns=["scenario", "pollutant", "oid", "x_axis", "y_axis", "step", "x_value", "y_value"]
+        )
+    df = pd.DataFrame(rows)
+    return df.sort_values(["scenario", "pollutant", "oid", "x_axis", "y_axis", "step"]).reset_index(drop=True)
 
 
 class Model:
@@ -130,6 +186,8 @@ class Model:
 
         self._select_bmp_type = types.MethodType(_select_bmp_type, self)
         self._get_bmp_name = types.MethodType(_get_bmp_name, self)
+        self._get_pathway_yields = types.MethodType(_get_pathway_yields, self)
+        self._apply_pathway_reduction = types.MethodType(_apply_pathway_reduction, self)
         self._sample_efficiency = types.MethodType(_sample_efficiency, self)          # legacy
         self._sample_efficiency_map = types.MethodType(_sample_efficiency_map, self)  # pathway-aware
         self._simulate_wetland = types.MethodType(_simulate_wetland, self)
@@ -252,7 +310,14 @@ class Model:
             self.plet_inputs = self.data.get(DATA_PLET_INPUTS)
             self.rusle_inputs = self.data.get(DATA_RUSLE_INPUTS)
             self.pollutant_concentrations = self.data.get(DATA_POLLUTANT_CONCENTRATIONS)
+            self.groundwater_concentrations = self.data.get(DATA_GROUNDWATER_CONCENTRATIONS)
             self.bmp_parameter_effects = self.data.get(DATA_BMP_PARAMETER_EFFECTS)
+            self.pathway_mode = str(
+                self.load_generation.get(LOAD_PATHWAY_MODE, LOAD_PATHWAY_MODE_FIXED)
+            ).strip().lower()
+            self.groundwater_loads = bool(
+                self.load_generation.get(LOAD_GROUNDWATER_LOADS, False)
+            )
 
             # Statistical mode uses parcel x pollutant yield distributions.
             # PLET/RUSLE mode derives these yields inside each scenario instead.
@@ -309,7 +374,10 @@ class Model:
             plet_inputs=self.plet_inputs,
             rusle_inputs=self.rusle_inputs,
             pollutant_concentrations=self.pollutant_concentrations,
+            groundwater_concentrations=self.groundwater_concentrations,
             bmp_parameter_effects=self.bmp_parameter_effects,
+            pathway_mode=self.pathway_mode,
+            groundwater_loads=self.groundwater_loads,
             bmp_cps=self.bmp_cps,
             bmp_selection_probs=self.bmp_selection_probs,
             avg_area_ha=self.data.get(DATA_AVG_AREA_HA, 0.0),
@@ -347,6 +415,12 @@ class Model:
         for recs in results:
             for k, v in recs.items():
                 merged[k].extend(v)
+
+        traj_dir = outputs_dir / DIR_OUTLET_TRAJECTORIES
+        traj_parquet = traj_dir / FILE_ALL_SCENARIOS_PARQUET
+        traj_df = _flatten_plot_records(merged)
+        _write_parquet_atomic(traj_df, traj_parquet, logger=self.logger)
+        self.logger.info(f"Wrote canonical outlet trajectories parquet: {traj_parquet}")
         return merged
 
 
@@ -373,6 +447,8 @@ class _ScenarioContext:
 
         self._select_bmp_type = types.MethodType(_select_bmp_type, self)
         self._get_bmp_name = types.MethodType(_get_bmp_name, self)
+        self._get_pathway_yields = types.MethodType(_get_pathway_yields, self)
+        self._apply_pathway_reduction = types.MethodType(_apply_pathway_reduction, self)
         self._sample_efficiency = types.MethodType(_sample_efficiency, self)            # legacy
         self._sample_efficiency_map = types.MethodType(_sample_efficiency_map, self)    # pathway-aware
         self._simulate_wetland = types.MethodType(_simulate_wetland, self)
@@ -414,6 +490,7 @@ def _run_one_scenario(
         if ctx.load_generation_mode == LOAD_MODE_PLET_RUSLE:
             baseline, process_state = initialize_plet_rusle_state(ctx)
             yields = baseline.copy()
+            ctx.current_pathway_yields = process_state.pathway_yields
             logger.info("Generated baseline parcel yields with stochastic PLET/RUSLE inputs")
         else:
             baseline = np.zeros((len(ctx.parcel_selection_ids), n_pol), dtype=float)
@@ -660,6 +737,8 @@ def _run_one_scenario(
                 final_params = process_state.parameters[parcel_idx]
                 initial_conc = process_state.baseline_concentrations[parcel_idx]
                 final_conc = process_state.concentrations[parcel_idx]
+                initial_gw_conc = process_state.baseline_groundwater_concentrations[parcel_idx]
+                final_gw_conc = process_state.groundwater_concentrations[parcel_idx]
                 row: Dict[str, Any] = {"scenario": sid, "pid": str(pid_i)}
                 for key in sorted(set(initial_params) | set(final_params)):
                     row[f"initial_{key}"] = initial_params.get(key)
@@ -668,53 +747,54 @@ def _run_one_scenario(
                     label = str(pol).lower()
                     row[f"initial_concentration_{label}_mg_l"] = initial_conc.get(pol)
                     row[f"final_concentration_{label}_mg_l"] = final_conc.get(pol)
+                for pol in sorted(set(initial_gw_conc) | set(final_gw_conc)):
+                    label = str(pol).lower()
+                    row[f"initial_groundwater_concentration_{label}_mg_l"] = initial_gw_conc.get(pol)
+                    row[f"final_groundwater_concentration_{label}_mg_l"] = final_gw_conc.get(pol)
+                for pol_idx, pol in enumerate(ctx.pollutants):
+                    label = str(pol).lower()
+                    row[f"initial_surface_{label}_kg_ha"] = float(process_state.baseline_pathway_yields[parcel_idx, pol_idx, 0])
+                    row[f"initial_shallow_{label}_kg_ha"] = float(process_state.baseline_pathway_yields[parcel_idx, pol_idx, 1])
+                    row[f"initial_deep_{label}_kg_ha"] = float(process_state.baseline_pathway_yields[parcel_idx, pol_idx, 2])
+                    row[f"final_surface_{label}_kg_ha"] = float(process_state.pathway_yields[parcel_idx, pol_idx, 0])
+                    row[f"final_shallow_{label}_kg_ha"] = float(process_state.pathway_yields[parcel_idx, pol_idx, 1])
+                    row[f"final_deep_{label}_kg_ha"] = float(process_state.pathway_yields[parcel_idx, pol_idx, 2])
                 for key, value in calculate_load_diagnostics(initial_params).items():
                     row[f"initial_{key}"] = value
                 for key, value in calculate_load_diagnostics(final_params).items():
                     row[f"final_{key}"] = value
                 scenario_load_parameters.append(row)
 
-        # Write CSVs and the transposed summary with “All CPS” roll‑up
+        # Build summary tables once, then write parquet outputs.
+        summary_df = collector.generate_summary_dataframe()
+        rollup = collector.generate_rollup_summary()
+        summary_with_rollup = pd.concat([summary_df, pd.DataFrame([rollup])], ignore_index=True)
+
+        # Write per-scenario parquet tables.
         bmps_dir = outputs_dir / "bmps"
         parcels_dir = outputs_dir / "parcels"
         load_parameters_dir = outputs_dir / "load_parameters"
-        summaries_dir = outputs_dir / "summaries"
-        output_dirs = [bmps_dir, parcels_dir, summaries_dir]
+        metrics_dir = outputs_dir / DIR_SCENARIO_METRICS
+        output_dirs = [bmps_dir, parcels_dir, metrics_dir]
         if scenario_load_parameters:
             output_dirs.append(load_parameters_dir)
         for d in output_dirs:
             d.mkdir(parents=True, exist_ok=True)
 
-        bmps_path = bmps_dir / f"s{sid}.csv"
-        parcels_path = parcels_dir / f"s{sid}.csv"
-        summary_path = summaries_dir / f"s{sid}.csv"
-        load_parameters_path = load_parameters_dir / f"s{sid}.csv"
-
-        pd.DataFrame(scenario_bmps).to_csv(bmps_path, index=False)
-        pd.DataFrame(scenario_parcels).to_csv(parcels_path, index=False)
+        bmps_parquet = bmps_dir / f"s{sid}.parquet"
+        parcels_parquet = parcels_dir / f"s{sid}.parquet"
+        metrics_parquet = metrics_dir / f"s{sid}.parquet"
+        _write_parquet_atomic(pd.DataFrame(scenario_bmps), bmps_parquet, logger=logger)
+        _write_parquet_atomic(pd.DataFrame(scenario_parcels), parcels_parquet, logger=logger)
+        _write_parquet_atomic(summary_with_rollup, metrics_parquet, logger=logger)
         if scenario_load_parameters:
-            pd.DataFrame(scenario_load_parameters).to_csv(load_parameters_path, index=False)
+            load_parameters_parquet = load_parameters_dir / f"s{sid}.parquet"
+            _write_parquet_atomic(pd.DataFrame(scenario_load_parameters), load_parameters_parquet, logger=logger)
 
-        summary_df = collector.generate_summary_dataframe()
-        rollup = collector.generate_rollup_summary()
-        summary_with_rollup = pd.concat([summary_df, pd.DataFrame([rollup])], ignore_index=True)
-
-        col_labels = []
-        for _, r in summary_with_rollup.iterrows():
-            if str(r["cps_name"]) == "All CPS":
-                col_labels.append(f"s{int(r['scenario'])}-All CPS")
-            else:
-                col_labels.append(f"s{int(r['scenario'])}-{str(r['cps_name'])}({int(r['cps'])})")
-
-        tdf = summary_with_rollup.T
-        tdf.columns = col_labels
-        tdf = tdf.reset_index().rename(columns={"index": "field"})
-        tdf.to_csv(summary_path, index=False)
-
-        logger.info(f"Wrote per-scenario BMPs: {bmps_path}")
-        logger.info(f"Wrote per-scenario parcels: {parcels_path}")
+        logger.info(f"Wrote per-scenario BMPs parquet: {bmps_parquet}")
+        logger.info(f"Wrote per-scenario parcels parquet: {parcels_parquet}")
         if scenario_load_parameters:
-            logger.info(f"Wrote realized PLET/RUSLE parameters: {load_parameters_path}")
-        logger.info(f"Wrote transposed BMP summary with All CPS: {summary_path}")
+            logger.info(f"Wrote realized PLET/RUSLE parameters parquet: {load_parameters_parquet}")
+        logger.info(f"Wrote canonical scenario metrics parquet: {metrics_parquet}")
         logger.info(f"=== scenario {sid} end (cost={total_cost:.2f}, bmp={total_bmp}) ===")
     return records

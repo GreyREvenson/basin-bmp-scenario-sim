@@ -1,0 +1,19 @@
+cps,parameter,operation,value,units,notes
+340,cn,reduce,0.03,fraction,cover crop improves infiltration
+340,c,reduce,0.25,fraction,cover crop reduces cover-management factor
+340,sediment_n_pct,reduce,0.10,fraction,cover crop reduces sediment-bound nitrogen export
+340,sediment_p_pct,reduce,0.10,fraction,cover crop reduces sediment-bound phosphorus export
+329,c,reduce,0.45,fraction,no-till reduces cover-management factor
+329,p,reduce,0.10,fraction,no-till improves conservation practice factor
+590,concentration_tn,reduce,0.30,fraction,nutrient management reduces runoff nitrogen concentration
+590,concentration_tp,reduce,0.20,fraction,nutrient management reduces runoff phosphorus concentration
+412,cn,reduce,0.06,fraction,grassed waterway modestly reduces runoff curve number in treated area
+412,sediment_delivery_multiplier,reduce,0.15,fraction,grassed waterway reduces sediment delivery from treated flow paths
+412,concentration_tss,reduce,0.20,fraction,grassed waterway captures suspended sediment in treated runoff
+412,concentration_tn,reduce,0.08,fraction,grassed waterway modestly reduces nitrogen concentration in treated runoff
+412,concentration_tp,reduce,0.12,fraction,grassed waterway modestly reduces phosphorus concentration in treated runoff
+656,runoff_multiplier,reduce,0.20,fraction,constructed wetland reduces effective annual runoff from contributing area
+656,sediment_delivery_multiplier,reduce,0.45,fraction,constructed wetland traps a substantial fraction of delivered sediment
+656,concentration_tss,reduce,0.55,fraction,constructed wetland strongly reduces suspended sediment concentration
+656,concentration_tn,reduce,0.28,fraction,constructed wetland reduces total nitrogen concentration
+656,concentration_tp,reduce,0.35,fraction,constructed wetland reduces total phosphorus concentration

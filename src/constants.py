@@ -33,6 +33,11 @@ CFG_VERBOSE = "verbose"
 CFG_BUFFER_DEPTH_FT = "buffer_depth_ft"
 CFG_BMP_SEL_PROB_VIA_COSTS = "bmp_sel_prob_via_costs"
 
+# Canonical output folders/files
+DIR_SCENARIO_METRICS = "scenario_metrics"
+DIR_OUTLET_TRAJECTORIES = "outlet_trajectories"
+FILE_ALL_SCENARIOS_PARQUET = "all_scenarios.parquet"
+
 # Optional PLET/RUSLE load-generation block
 CFG_LOAD_GENERATION = "load_generation"
 LOAD_MODE_STATISTICAL = "statistical"
@@ -40,6 +45,12 @@ LOAD_MODE_PLET_RUSLE = "plet_rusle"
 LOAD_PLET_INPUTS = "plet_inputs"
 LOAD_RUSLE_INPUTS = "rusle_inputs"
 LOAD_CONCENTRATIONS = "pollutant_concentrations"
+LOAD_GROUNDWATER_CONCENTRATIONS = "groundwater_concentrations"
+LOAD_PATHWAY_MODE = "pathway_mode"
+LOAD_PATHWAY_MODE_FIXED = "fixed_fractions"
+LOAD_PATHWAY_MODE_DERIVED = "derive_from_plet"
+LOAD_GROUNDWATER_LOADS = "groundwater_loads"
+LOAD_TREAT_GROUNDWATER_WITH_BMPS = "treat_groundwater_with_bmps"
 LOAD_PROCESS_MODE = "process_parameter_mode"
 LOAD_PROCESS_EFFECTS = "bmp_parameter_effects"
 LOAD_PROCESS_FALLBACK = "process_parameter_fallback"
@@ -76,6 +87,7 @@ DATA_LOAD_GENERATION = "load_generation"
 DATA_PLET_INPUTS = "plet_inputs"
 DATA_RUSLE_INPUTS = "rusle_inputs"
 DATA_POLLUTANT_CONCENTRATIONS = "pollutant_concentrations"
+DATA_GROUNDWATER_CONCENTRATIONS = "groundwater_concentrations"
 DATA_BMP_PARAMETER_EFFECTS = "bmp_parameter_effects"
 
 # Common column names

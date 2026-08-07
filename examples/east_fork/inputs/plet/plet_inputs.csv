@@ -5,3 +5,7 @@ pid,parameter,value,units,group_id
 *,runoff_day_fraction,0.35,fraction,east_fork_weather
 *,cn,78.0,dimensionless,east_fork_soils
 *,ia_ratio,0.20,fraction,east_fork_soils
+*,infiltration_fraction,0.18,fraction,east_fork_soils
+*,irrigated_fraction,0.00,fraction,east_fork_management
+*,irrigation_depth_in,0.00,in/event,east_fork_management
+*,irrigation_frequency,0.00,events/year,east_fork_management

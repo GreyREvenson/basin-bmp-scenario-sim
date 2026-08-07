@@ -31,6 +31,7 @@
   - Optionally specify yields per pollutant loss pathway (e.g., surface, shallow surface, tile, deep subsurface)   
 - BMP efficiency (i.e., the likely effectiveness of specific types of BMPs per pollutant type)
   - Optionally specify effectiveness per pollutant loss pathway (e.g., surface, shallow surface, tile, deep subsurface)
+- In `plet_rusle` mode, runoff-derived pathway loads can now be either user-specified via fixed pathway fractions or derived from PLET-style runoff, infiltration, shallow-groundwater, and optional irrigation inputs.
 - BMP failure (i.e., the likelihood  that a BMP will fail and the resulting decline in BMP effectiveness) 
 
 ## Configuration
@@ -57,13 +58,21 @@ Optional configuration keys:
 - `outlet_target`: CSV of outlet pollutant reduction targets
 - `outlet_mean`: CSV of outlet mean load metrics
 - `buffer_depth_ft`: buffer depth in feet for grassed BMPs
+- `load_generation.pathway_mode`: `fixed_fractions` (legacy behavior) or `derive_from_plet`
+- `load_generation.groundwater_loads`: include shallow-groundwater nutrient loads derived from infiltration
+- `load_generation.groundwater_concentrations`: required when `groundwater_loads: true`
+- `load_generation.treat_groundwater_with_bmps`: if `false`, groundwater loads are routed to the deep pathway so BMPs do not reduce them, matching default PLET behavior
+- `load_generation.plet_inputs` may now include optional `infiltration_fraction`, `irrigated_fraction`, `irrigation_depth_in`, and `irrigation_frequency`
 
 ## Outputs
 
 The model writes results to the configured `outputs` directory:
 
-- `bmps.csv` (aggregated across all scenarios, includes `scenario` and `cps_name`)
-- `parcels.csv` (aggregated across all scenarios, includes `scenario`)
+- `bmps/s{scenario}.parquet` (per-BMP placement records)
+- `parcels/s{scenario}.parquet` (per-parcel baseline/final loads)
+- `load_parameters/s{scenario}.parquet` (when PLET/RUSLE diagnostics are available)
+- `scenario_metrics/s{scenario}.parquet` (canonical per-scenario metrics, non-transposed)
+- `outlet_trajectories/all_scenarios.parquet` (canonical outlet trajectory table used for plotting)
 - `plot_*` files for summary visualizations
 - `log.txt` (driver log for the overall run)
 - `log_s{scenario}.txt` (per-scenario debug logs, one file per scenario)
@@ -85,6 +94,7 @@ Each line depicts a single BMP scenario (n = 1000)
 - `parcel_out` outlet IDs must exist in `outlet_loc`.
 - If both `bmp_limit_n` and `bmp_limit_usd` are specified, the simulation stops when either limit is reached.
 - Optional representation of BMP failure
+- In `derive_from_plet` pathway mode, parcel diagnostics written under `outputs/load_parameters/` now include initial/final surface, shallow, and deep pathway loads plus shallow-groundwater concentrations.
 
 ## Parallelization
 

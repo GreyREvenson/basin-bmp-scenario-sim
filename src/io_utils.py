@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
@@ -37,6 +36,12 @@ from .constants import (
     LOAD_PLET_INPUTS,
     LOAD_RUSLE_INPUTS,
     LOAD_CONCENTRATIONS,
+    LOAD_GROUNDWATER_CONCENTRATIONS,
+    LOAD_PATHWAY_MODE,
+    LOAD_PATHWAY_MODE_FIXED,
+    LOAD_PATHWAY_MODE_DERIVED,
+    LOAD_GROUNDWATER_LOADS,
+    LOAD_TREAT_GROUNDWATER_WITH_BMPS,
     LOAD_PROCESS_MODE,
     LOAD_PROCESS_EFFECTS,
     LOAD_PROCESS_FALLBACK,
@@ -192,6 +197,18 @@ def _load_pollutant_concentrations(path: Any, pollutants: List[str], logger: Any
     return df
 
 
+def _load_groundwater_concentrations(path: Any, pollutants: List[str], logger: Any) -> Optional[pd.DataFrame]:
+    """Load optional shallow-groundwater concentrations by parcel."""
+    if path is None:
+        return None
+    df = _merge_csvs(path, [COL_PID, COL_POLLUTANT], LOAD_GROUNDWATER_CONCENTRATIONS, logger)
+    df = _normalize_pollutant_column(df, COL_POLLUTANT, LOAD_GROUNDWATER_CONCENTRATIONS, logger)
+    df[COL_PID] = df[COL_PID].astype(str)
+    df = df[df[COL_POLLUTANT].isin(pollutants)].copy()
+    _validate_stats_rows(df, LOAD_GROUNDWATER_CONCENTRATIONS)
+    return df
+
+
 def _load_process_effects(path: Any, cps: List[int], logger: Any) -> Optional[pd.DataFrame]:
     """Load optional BMP rules that change process values."""
     if path is None:
@@ -289,6 +306,16 @@ def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: A
     p_cfg = ci_get(cfg, CFG_PARCEL_P)
     if p_cfg is not None:
         df = _merge_csvs(p_cfg, [COL_PID, COL_PROBABILITY], CFG_PARCEL_P, logger)
+        probs = pd.to_numeric(df[COL_PROBABILITY], errors="coerce")
+        invalid = (~np.isfinite(probs)) | (probs < 0.0)
+        if invalid.any():
+            bad_rows = df.loc[invalid, [COL_PID, COL_PROBABILITY]]
+            preview = bad_rows.head(5).to_dict(orient="records")
+            raise ValueError(
+                f"{CFG_PARCEL_P} contains invalid probability values (must be finite and >= 0). "
+                f"Example rows: {preview}"
+            )
+        df[COL_PROBABILITY] = probs.astype(float)
         parcel_pids = set(parcels[COL_PID].astype(str))
         pid_mask = df[COL_PID].astype(str).isin(parcel_pids)
         removed = df[~pid_mask]
@@ -312,7 +339,9 @@ def _load_outlet_loc(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any)
     if not outlet_path.exists():
         raise FileNotFoundError(f"Outlet location not found: {outlet_path}")
     outlet_loc = gpd.read_file(outlet_path).to_crs(domain.crs)
-    return outlet_loc.rename(columns={c: c.lower() for c in outlet_loc.columns})
+    outlet_loc = outlet_loc.rename(columns={c: c.lower() for c in outlet_loc.columns})
+    _require_cols(outlet_loc, [COL_OID], CFG_OUTLET_LOC, logger)
+    return outlet_loc
 
 
 def _load_optional_outlet_stats(
@@ -405,11 +434,12 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         # Parcel->outlet mapping
         parcel_out_map: Dict[str, List[str]] = {}
         for pid in parcels[COL_PID].astype(str):
-            oids = []
-            row = out[out[COL_PID].astype(str) == str(pid)]
-            if not row.empty:
-                oids = str(row.iloc[0][COL_OIDS]).split(",")
-            parcel_out_map[str(pid)] = [str(x) for x in oids if str(x)]
+            oids: List[str] = []
+            rows = out[out[COL_PID].astype(str) == str(pid)]
+            if not rows.empty:
+                for value in rows[COL_OIDS].tolist():
+                    oids.extend([str(x).strip() for x in str(value).split(",") if str(x).strip()])
+            parcel_out_map[str(pid)] = list(dict.fromkeys(oids))
 
         pollutants = _load_pollutants(cfg)
         cps = _load_cps(cfg)
@@ -429,9 +459,19 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
 
         process_mode = bool(load_generation.get(LOAD_PROCESS_MODE, False))
         process_fallback = str(load_generation.get(LOAD_PROCESS_FALLBACK, "efficiency")).strip().lower()
+        pathway_mode = str(load_generation.get(LOAD_PATHWAY_MODE, LOAD_PATHWAY_MODE_FIXED)).strip().lower()
+        groundwater_loads = bool(load_generation.get(LOAD_GROUNDWATER_LOADS, False))
+        treat_groundwater_with_bmps = bool(load_generation.get(LOAD_TREAT_GROUNDWATER_WITH_BMPS, False))
         if process_fallback not in {"efficiency", "none"}:
             raise ValueError("process_parameter_fallback must be 'efficiency' or 'none'")
+        if pathway_mode not in {LOAD_PATHWAY_MODE_FIXED, LOAD_PATHWAY_MODE_DERIVED}:
+            raise ValueError(
+                "load_generation.pathway_mode must be 'fixed_fractions' or 'derive_from_plet'"
+            )
         load_generation[LOAD_PROCESS_FALLBACK] = process_fallback
+        load_generation[LOAD_PATHWAY_MODE] = pathway_mode
+        load_generation[LOAD_GROUNDWATER_LOADS] = groundwater_loads
+        load_generation[LOAD_TREAT_GROUNDWATER_WITH_BMPS] = treat_groundwater_with_bmps
 
         if ci_get(cfg, CFG_BMP_EFFICIENCY) is None:
             if process_mode:
@@ -445,6 +485,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         plet_inputs = None
         rusle_inputs = None
         pollutant_concentrations = None
+        groundwater_concentrations = None
         bmp_parameter_effects = None
         if load_mode == LOAD_MODE_PLET_RUSLE:
             plet_inputs = _load_parameter_stats_table(
@@ -458,9 +499,16 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             pollutant_concentrations = _load_pollutant_concentrations(
                 load_generation.get(LOAD_CONCENTRATIONS), pollutants, logger
             )
+            groundwater_concentrations = _load_groundwater_concentrations(
+                load_generation.get(LOAD_GROUNDWATER_CONCENTRATIONS), pollutants, logger
+            )
             if any(p in {"TN", "TP"} for p in pollutants) and pollutant_concentrations is None:
                 raise ValueError(
                     "load_generation.pollutant_concentrations is required for TN or TP in plet_rusle mode"
+                )
+            if groundwater_loads and any(p in {"TN", "TP"} for p in pollutants) and groundwater_concentrations is None:
+                raise ValueError(
+                    "load_generation.groundwater_concentrations is required when groundwater_loads is true"
                 )
             pollutant_yield = None
         else:
@@ -501,6 +549,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         plet_inputs=plet_inputs,
         rusle_inputs=rusle_inputs,
         pollutant_concentrations=pollutant_concentrations,
+        groundwater_concentrations=groundwater_concentrations,
         bmp_parameter_effects=bmp_parameter_effects,
         bmp_limit_n=ci_get(cfg, CFG_BMP_LIMIT_N),
         bmp_limit_usd=ci_get(cfg, CFG_BMP_LIMIT_USD),
@@ -510,49 +559,3 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         avg_perim_m=avg_perim_m,
         parallel=ci_get(cfg, CFG_PARALLEL),
     )
-
-
-def consolidate_transposed_summaries(outputs_dir: Path, logger) -> Path:
-    """Combine all scenario summary files into one easy-to-open CSV."""
-    outputs_dir = Path(outputs_dir)
-    summaries_dir = outputs_dir / "summaries"
-    summaries_dir.mkdir(parents=True, exist_ok=True)
-    out_path = summaries_dir / "all_scenarios.csv"
-
-    files = sorted(p for p in summaries_dir.glob("s*.csv") if p.name != out_path.name)
-    if not files:
-        logger.info("No per-scenario summaries found to consolidate.")
-        pd.DataFrame({"field": []}).to_csv(out_path, index=False)
-        return out_path
-
-    logger.info(f"Consolidating {len(files)} per-scenario summaries into {out_path}")
-
-    combined = None
-    for p in files:
-        df = pd.read_csv(p)
-        if "field" not in df.columns:
-            logger.warning(f"Skipping {p} (no 'field' column)")
-            continue
-        df = df.set_index("field")
-        combined = df if combined is None else combined.join(df, how="outer")
-
-    if combined is None or combined.empty:
-        logger.warning("No valid per-scenario summary data found; writing empty file.")
-        pd.DataFrame({"field": []}).to_csv(out_path, index=False)
-        return out_path
-
-    def col_key(cname: str):
-        """Help sort columns by scenario number and then BMP label."""
-        m = re.match(r"s(\d+)-(.*)", str(cname))
-        if not m:
-            return (10**9, 1, str(cname))
-        sid = int(m.group(1))
-        tail = m.group(2)
-        is_all = 0 if tail.strip() == "All CPS" else 1
-        return (sid, is_all, tail)
-
-    ordered_cols = sorted([c for c in combined.columns], key=col_key)
-    combined = combined[ordered_cols].reset_index()
-    combined.to_csv(out_path, index=False)
-    logger.info(f"Wrote consolidated transposed summaries: {out_path}")
-    return out_path

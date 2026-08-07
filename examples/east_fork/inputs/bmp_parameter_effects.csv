@@ -1,9 +1,0 @@
-cps,parameter,operation,value,units,notes
-340,cn,reduce,0.03,fraction,cover crop improves infiltration
-340,c,reduce,0.25,fraction,cover crop reduces cover-management factor
-340,sediment_n_pct,reduce,0.10,fraction,cover crop reduces sediment-bound nitrogen export
-340,sediment_p_pct,reduce,0.10,fraction,cover crop reduces sediment-bound phosphorus export
-329,c,reduce,0.45,fraction,no-till reduces cover-management factor
-329,p,reduce,0.10,fraction,no-till improves conservation practice factor
-590,concentration_tn,reduce,0.30,fraction,nutrient management reduces runoff nitrogen concentration
-590,concentration_tp,reduce,0.20,fraction,nutrient management reduces runoff phosphorus concentration

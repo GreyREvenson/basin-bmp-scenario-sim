@@ -1,6 +1,6 @@
 # East Fork comparison run using new PLET/RUSLE load generation
 verbose: True
-outputs: ./examples/east_fork/outputs_compare_plet_20260806
+outputs: ./examples/east_fork/outputs
 
 random_seed: 42
 
@@ -20,11 +20,15 @@ bmp_efficiency: ./examples/east_fork/inputs/bmp_efficiency.csv
 
 load_generation:
   mode: plet_rusle
-  plet_inputs: ./examples/east_fork/inputs/plet_inputs.csv
-  rusle_inputs: ./examples/east_fork/inputs/rusle_inputs.csv
-  pollutant_concentrations: ./examples/east_fork/inputs/pollutant_concentrations.csv
+  plet_inputs: ./examples/east_fork/inputs/plet/plet_inputs.csv
+  rusle_inputs: ./examples/east_fork/inputs/plet/rusle_inputs.csv
+  pollutant_concentrations: ./examples/east_fork/inputs/plet/pollutant_concentrations.csv
+  groundwater_concentrations: ./examples/east_fork/inputs/plet/groundwater_concentrations.csv
+  pathway_mode: derive_from_plet
+  groundwater_loads: true
+  treat_groundwater_with_bmps: false
   process_parameter_mode: true
-  bmp_parameter_effects: ./examples/east_fork/inputs/bmp_parameter_effects.csv
+  bmp_parameter_effects: ./examples/east_fork/inputs/plet/bmp_parameter_effects.csv
   process_parameter_fallback: efficiency
 
 bmp_cost: ./examples/east_fork/inputs/bmp_cost.csv

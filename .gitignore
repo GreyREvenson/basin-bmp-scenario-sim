@@ -171,3 +171,6 @@ src/__pycache__
 /examples/east_fork/outputs/parcels
 /examples/east_fork/outputs/summaries
 /examples/east_fork/outputs/logs
+/examples/east_fork/outputs/outlet_trajectories
+/examples/east_fork/outputs/scenario_metrics
+/examples/east_fork/outputs/log.txt

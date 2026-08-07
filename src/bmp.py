@@ -32,6 +32,46 @@ ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
 ParcelUpListFn = Callable[[Union[int, str]], List[str]]
 
 FT_TO_M = 0.3048  # meters per foot
+PATHWAY_ORDER = ("surface", "shallow subsurface", "deep subsurface")
+
+
+def _get_pathway_yields(self: "Model", parcel_idx: int, pol_idx: int, total_yield: float) -> Dict[str, float]:
+    """Return the current parcel yield split by flow pathway."""
+    pathway_yields = getattr(self, "current_pathway_yields", None)
+    if pathway_yields is not None:
+        values = pathway_yields[parcel_idx, pol_idx, :]
+        return {PATHWAY_ORDER[i]: float(values[i]) for i in range(len(PATHWAY_ORDER))}
+
+    y_surf = total_yield * float(self.pollutant_yield_frac_surface)
+    y_shal = total_yield * float(self.pollutant_yield_frac_shallow)
+    y_deep = max(0.0, total_yield - (y_surf + y_shal))
+    return {
+        "surface": float(y_surf),
+        "shallow subsurface": float(y_shal),
+        "deep subsurface": float(y_deep),
+    }
+
+
+def _apply_pathway_reduction(
+    self: "Model",
+    parcel_idx: int,
+    pol_idx: int,
+    treatment_fraction: float,
+    eff_map: Dict[str, float],
+) -> float:
+    """Apply pathway-specific reduction and update current pathway yields in place."""
+    pathway_yields = getattr(self, "current_pathway_yields", None)
+    if pathway_yields is None:
+        return 0.0
+
+    removed = 0.0
+    for path_idx, path in enumerate(PATHWAY_ORDER):
+        current = float(pathway_yields[parcel_idx, pol_idx, path_idx])
+        eff = float(eff_map.get(path, 0.0))
+        new_value = current * (1.0 - treatment_fraction * eff)
+        removed += max(0.0, current - new_value)
+        pathway_yields[parcel_idx, pol_idx, path_idx] = max(0.0, new_value)
+    return float(removed)
 
 
 def _select_bmp_type(self: "Model") -> int:
@@ -161,21 +201,22 @@ def _simulate_wetland(
 
             for pol_idx, pollutant in enumerate(self.pollutants):
                 y = float(yields[p_idx, pol_idx])
-                y_surf = y * float(self.pollutant_yield_frac_surface)
-                y_shal = y * float(self.pollutant_yield_frac_shallow)
-                y_deep = max(0.0, y - (y_surf + y_shal))
+                components = self._get_pathway_yields(p_idx, pol_idx, y)
                 emap = eff_maps[pol_idx]
 
                 treated = y * (A * frac)
                 removed = (A * frac) * (
-                    y_surf * emap["surface"] +
-                    y_shal * emap["shallow subsurface"] +
-                    y_deep * emap["deep subsurface"]
+                    components["surface"] * emap["surface"] +
+                    components["shallow subsurface"] * emap["shallow subsurface"] +
+                    components["deep subsurface"] * emap["deep subsurface"]
                 )
+                removed_rate = self._apply_pathway_reduction(p_idx, pol_idx, frac, emap)
 
                 bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
                 bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-                y_new = y - removed / A
+                y_new = removed_rate if getattr(self, "current_pathway_yields", None) is not None else (y - removed / A)
+                if getattr(self, "current_pathway_yields", None) is not None:
+                    y_new = float(np.sum(self.current_pathway_yields[p_idx, pol_idx, :]))
                 yields[p_idx, pol_idx] = max(0.0, y_new)
 
             remaining -= A
@@ -222,21 +263,20 @@ def _simulate_grassed(
         A = float(self.parcel_area_ha[parcel_idx])
         for pol_idx, pollutant in enumerate(self.pollutants):
             y = float(yields[parcel_idx, pol_idx])
-            y_surf = y * float(self.pollutant_yield_frac_surface)
-            y_shal = y * float(self.pollutant_yield_frac_shallow)
-            y_deep = max(0.0, y - (y_surf + y_shal))
+            components = self._get_pathway_yields(parcel_idx, pol_idx, y)
             emap = eff_maps[pol_idx]
 
             treated = y * (A * frac_treated)
             removed = (A * frac_treated) * (
-                y_surf * emap["surface"] +
-                y_shal * emap["shallow subsurface"] +
-                y_deep * emap["deep subsurface"]
+                components["surface"] * emap["surface"] +
+                components["shallow subsurface"] * emap["shallow subsurface"] +
+                components["deep subsurface"] * emap["deep subsurface"]
             )
+            self._apply_pathway_reduction(parcel_idx, pol_idx, frac_treated, emap)
 
             bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
             bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-            y_new = y - removed / A
+            y_new = float(np.sum(self.current_pathway_yields[parcel_idx, pol_idx, :])) if getattr(self, "current_pathway_yields", None) is not None else (y - removed / A)
             yields[parcel_idx, pol_idx] = max(0.0, y_new)
 
 
@@ -255,21 +295,20 @@ def _simulate_infield(
         A = float(self.parcel_area_ha[parcel_idx])
         for pol_idx, pollutant in enumerate(self.pollutants):
             y = float(yields[parcel_idx, pol_idx])
-            y_surf = y * float(self.pollutant_yield_frac_surface)
-            y_shal = y * float(self.pollutant_yield_frac_shallow)
-            y_deep = max(0.0, y - (y_surf + y_shal))
+            components = self._get_pathway_yields(parcel_idx, pol_idx, y)
             emap = eff_maps[pol_idx]
 
             treated = y * A
             removed = A * (
-                y_surf * emap["surface"] +
-                y_shal * emap["shallow subsurface"] +
-                y_deep * emap["deep subsurface"]
+                components["surface"] * emap["surface"] +
+                components["shallow subsurface"] * emap["shallow subsurface"] +
+                components["deep subsurface"] * emap["deep subsurface"]
             )
+            self._apply_pathway_reduction(parcel_idx, pol_idx, 1.0, emap)
 
             bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
             bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-            y_new = y - removed / A
+            y_new = float(np.sum(self.current_pathway_yields[parcel_idx, pol_idx, :])) if getattr(self, "current_pathway_yields", None) is not None else (y - removed / A)
             yields[parcel_idx, pol_idx] = max(0.0, y_new)
 
 
