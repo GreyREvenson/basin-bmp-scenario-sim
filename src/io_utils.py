@@ -277,6 +277,11 @@ def _load_parcels(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) ->
     parcels = parcels.rename(columns={c: c.lower() for c in parcels.columns})
     if "pid" not in parcels.columns:
         raise ValueError("Parcels must include a 'pid' column")
+    if parcels.empty:
+        raise ValueError("No parcels remain after clipping to the domain")
+    if parcels["pid"].astype(str).duplicated().any():
+        dup_pids = sorted(parcels.loc[parcels["pid"].astype(str).duplicated(), "pid"].astype(str).unique().tolist())
+        raise ValueError(f"Parcel IDs must be unique after clipping; duplicates found: {dup_pids}")
     parcels["area_m2"] = parcels.geometry.area
     parcels["perim_m"] = parcels.geometry.length
     parcels["area_ha"] = parcels["area_m2"] / 10000.0
@@ -303,6 +308,8 @@ def _load_parcel_outlets(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
 
 def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: Any) -> pd.DataFrame:
     """Load parcel selection chances, or create equal chances if none are provided."""
+    if parcels.empty:
+        raise ValueError("No parcels available for selection")
     p_cfg = ci_get(cfg, CFG_PARCEL_P)
     if p_cfg is not None:
         df = _merge_csvs(p_cfg, [COL_PID, COL_PROBABILITY], CFG_PARCEL_P, logger)
@@ -324,6 +331,9 @@ def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: A
             logger.warning(f"{CFG_PARCEL_P}: some PIDs not found in parcels after clipping; they were removed")
         if df.empty:
             raise ValueError(f"{CFG_PARCEL_P} has no {COL_PID}s that exist in parcels after clipping")
+        if df[COL_PID].astype(str).duplicated().any():
+            dup_pids = sorted(df.loc[df[COL_PID].astype(str).duplicated(), COL_PID].astype(str).unique().tolist())
+            raise ValueError(f"{CFG_PARCEL_P} must contain one row per parcel; duplicates found: {dup_pids}")
         total_prob = df[COL_PROBABILITY].sum()
         if total_prob <= 0:
             raise ValueError(f"{CFG_PARCEL_P} probabilities sum to zero or negative")

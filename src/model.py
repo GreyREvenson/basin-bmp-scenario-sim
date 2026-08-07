@@ -223,6 +223,10 @@ class Model:
         with log_scope(label="prepare_lookup_tables", logger=self.logger):
             parcels = self.data[DATA_PARCELS]
             self.parcel_ids = parcels["pid"].astype(str).tolist()
+            if len(set(self.parcel_ids)) != len(self.parcel_ids):
+                pid_series = pd.Series(self.parcel_ids)
+                dup_pids = sorted(pid_series[pid_series.duplicated()].unique().tolist())
+                raise ValueError(f"Duplicate parcel IDs found in loaded parcels: {dup_pids}")
             self.pid_to_index = {pid: idx for idx, pid in enumerate(self.parcel_ids)}
             self.pollutants = list(self.data[DATA_POLLUTANTS])
             self.pollutant_to_index = {p: i for i, p in enumerate(self.pollutants)}

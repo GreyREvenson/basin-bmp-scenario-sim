@@ -337,6 +337,25 @@ def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.D
             df[COL_PROBABILITY] = df["pr"]
         elif COL_PROBABILITY not in df.columns and "p" in df.columns:
             df[COL_PROBABILITY] = df["p"]
+        required = {COL_CPS, COL_PROBABILITY}
+        if not required.issubset(df.columns):
+            raise ValueError(
+                f"bmp selection file must contain {sorted(required)} or an accepted probability alias"
+            )
+        probs = pd.to_numeric(df[COL_PROBABILITY], errors="coerce")
+        invalid = (~np.isfinite(probs)) | (probs < 0.0)
+        if invalid.any():
+            bad_rows = df.loc[invalid, [COL_CPS, COL_PROBABILITY]].head(5).to_dict(orient="records")
+            raise ValueError(
+                "bmp selection probabilities must be finite and nonnegative; "
+                f"example bad rows: {bad_rows}"
+            )
+        df[COL_PROBABILITY] = probs.astype(float)
+        expected_cps = {int(c) for c in self.data[DATA_CPS]}
+        found_cps = set(df[COL_CPS].astype(int).tolist())
+        missing = sorted(expected_cps - found_cps)
+        if missing:
+            raise ValueError(f"bmp selection file is missing probability rows for cps values: {missing}")
         s = df[COL_PROBABILITY].sum()
         if s <= 0:
             raise ValueError("bmp_sel probabilities sum to zero or negative")

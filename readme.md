@@ -75,7 +75,7 @@ The model writes results to the configured `outputs` directory:
 - `outlet_trajectories/all_scenarios.parquet` (canonical outlet trajectory table used for plotting)
 - `plot_*` files for summary visualizations
 - `log.txt` (driver log for the overall run)
-- `log_s{scenario}.txt` (per-scenario debug logs, one file per scenario)
+- `logs/s{scenario}.txt` (per-scenario debug logs, one file per scenario)
 
 ## Example output plots
 Each line depicts a single BMP scenario (n = 1000)
@@ -91,6 +91,8 @@ Each line depicts a single BMP scenario (n = 1000)
 ## Notes
 
 - Pollutant labels are normalized from aliases such as `nitrogen`, `phosphorus`, and `sediment`.
+- Parcel IDs must be unique after clipping to the domain, and `parcel_p` must list each parcel once.
+- BMP selection probabilities must be finite, nonnegative, and cover every configured CPS code.
 - `parcel_out` outlet IDs must exist in `outlet_loc`.
 - If both `bmp_limit_n` and `bmp_limit_usd` are specified, the simulation stops when either limit is reached.
 - Optional representation of BMP failure
@@ -113,7 +115,7 @@ parallel:
   temp_folder: "/tmp/bmp-loky"
 ```
 
-When running with multiple workers, the driver writes `outputs/log.txt` while each scenario worker writes its own `outputs/log_s{scenario}.txt` file (e.g. `log_s1.txt`).
+When running with multiple workers, the driver writes `outputs/log.txt` while each scenario worker writes its own `outputs/logs/s{scenario}.txt` file (e.g. `logs/s1.txt`).
 
 ## Reproducibility (random seed)
 
