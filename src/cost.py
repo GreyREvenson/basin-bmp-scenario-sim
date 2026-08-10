@@ -1,4 +1,8 @@
-"""Estimate BMP costs and use those costs to help pick BMP types."""
+"""BMP costing and cost-based selection helpers.
+
+This module estimates BMP placement costs from cost tables and derives
+selection probabilities that favor lower-cost BMPs when configured to do so.
+"""
 
 from __future__ import annotations
 
@@ -34,7 +38,22 @@ def _get_bmp_cost(
     cps: Union[int, str],
     quantity: float,
 ) -> float:
-    """Estimate how much one BMP placement costs in dollars."""
+    """Estimate the cost of one BMP placement.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    cps : int or str
+        BMP CPS code.
+    quantity : float
+        Realized BMP quantity used for costing, such as area or length.
+
+    Returns
+    -------
+    float
+        Estimated BMP placement cost in USD.
+    """
     with log_scope(label=f"get_bmp_cost cps={cps}", logger=self.logger):
         self.logger.verbose("calling _get_bmp_cost")
         bmp_cost_df = self.data.get(DATA_BMP_COST)
@@ -97,7 +116,27 @@ def _select_cost_rate_median(
     row: pd.Series,
     cps: Optional[Union[int, str]] = None,
 ) -> float:
-    """Pick one typical cost rate from a cost table row."""
+    """Select a representative cost rate from one cost row.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    row : pandas.Series
+        Cost table row.
+    cps : int or str, optional
+        BMP CPS code used for logging.
+
+    Returns
+    -------
+    float
+        Representative cost rate.
+
+    Raises
+    ------
+    ValueError
+        If no representative rate can be inferred from the row.
+    """
     with log_scope(label=f"select_cost_rate_median cps={cps}", logger=self.logger):
         self.logger.verbose("calling _select_cost_rate_median")
         cols = {str(k).lower(): v for k, v in row.items()}
@@ -120,7 +159,27 @@ def _select_cost_rate_median(
 
 
 def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
-    """Build BMP selection chances so lower-cost options are chosen more often."""
+    """Estimate BMP selection probabilities from cost heuristics.
+
+    The function computes a representative total cost for each BMP type and
+    assigns probabilities inversely proportional to those costs.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Two-column dataframe containing CPS codes and normalized selection
+        probabilities.
+
+    Raises
+    ------
+    ValueError
+        If no usable cost information exists for probability estimation.
+    """
     with log_scope(label="estimate_costs_for_probabilities", logger=self.logger):
         self.logger.verbose("calling _estimate_costs_for_probabilities")
         rows: list[Dict[str, float]] = []

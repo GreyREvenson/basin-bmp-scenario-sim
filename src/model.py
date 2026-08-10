@@ -1,4 +1,9 @@
-"""Run the full simulation workflow and write scenario output files."""
+"""Run the simulation workflow and write scenario output files.
+
+This module coordinates scenario execution, applies BMPs, collects summary
+outputs, and writes the per-scenario and cross-scenario result tables used by
+the rest of the application.
+"""
 
 from __future__ import annotations
 
@@ -118,7 +123,26 @@ from src.constants import (
 
 
 def _write_parquet_atomic(df: pd.DataFrame, path: Path, *, logger: logging.Logger) -> None:
-    """Write a parquet file atomically."""
+    """Write a parquet file atomically.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Dataframe to write.
+    path : pathlib.Path
+        Destination parquet path.
+    logger : logging.Logger
+        Logger retained for interface consistency.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    RuntimeError
+        If no parquet engine is available.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(f"{path.name}.tmp")
     try:
@@ -136,7 +160,18 @@ def _write_parquet_atomic(df: pd.DataFrame, path: Path, *, logger: logging.Logge
 def _flatten_plot_records(
     merged: Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]
 ) -> pd.DataFrame:
-    """Convert in-memory plotting records into a normalized trajectory table."""
+    """Convert plot records into a normalized trajectory table.
+
+    Parameters
+    ----------
+    merged : dict[tuple[str, str, str, str], list[tuple[int, float, float]]]
+        Plot records keyed by pollutant, outlet, x-axis, and y-axis.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Normalized trajectory table sorted by scenario and axis fields.
+    """
     rows: List[Dict[str, Any]] = []
     step_counters: Dict[Tuple[int, str, str, str, str], int] = defaultdict(int)
     for (pol, oid, xax, yax), points in merged.items():
@@ -166,12 +201,31 @@ def _flatten_plot_records(
 class Model:
     """Main controller for the simulation.
 
-    It prepares data, runs scenarios, and collects files needed for summaries
-    and plots.
+    The model prepares data, binds helper methods, runs one or more scenarios,
+    and writes the output files consumed by summary and plotting workflows.
     """
 
     def __init__(self, cfg: Dict[str, Any], data: Dict[str, Any], logger: logging.Logger) -> None:
-        """Set up model settings, helpers, and lookup tables."""
+        """Initialize the model and bind helper methods.
+
+        Parameters
+        ----------
+        cfg : dict[str, Any]
+            Scenario configuration mapping.
+        data : dict[str, Any]
+            Validated input data bundle.
+        logger : logging.Logger
+            Logger used for model-level messages.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If configured pathway fractions are invalid.
+        """
         self.cfg = cfg
         self.data = data
         self.logger = logger
@@ -219,7 +273,21 @@ class Model:
         self._prepare_lookup_tables()
 
     def _prepare_lookup_tables(self) -> None:
-        """Build quick lookup tables so each scenario can run faster."""
+        """Build lookup tables used during scenario execution.
+
+        The method derives parcel indices, outlet mappings, selection
+        probabilities, BMP effectiveness structures, and load-generation
+        configuration values from the validated input data.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If parcel IDs are duplicated or required input tables are missing.
+        """
         with log_scope(label="prepare_lookup_tables", logger=self.logger):
             parcels = self.data[DATA_PARCELS]
             self.parcel_ids = parcels["pid"].astype(str).tolist()
@@ -352,7 +420,14 @@ class Model:
             )
 
     def _shared_payload(self) -> Dict[str, Any]:
-        """Package shared data so worker processes can run scenarios."""
+        """Package shared data for worker processes.
+
+        Returns
+        -------
+        dict[str, Any]
+            Serializable data bundle containing the model state needed by
+            worker processes.
+        """
         return dict(
             cfg=self.cfg,
             data=self.data,
@@ -393,7 +468,17 @@ class Model:
         )
 
     def run_all_scenarios(self) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
-        """Run every scenario and return the data used to make cross-scenario plots."""
+        """Run all scenarios and return cross-scenario trajectory data.
+
+        The method spawns workers when configured, executes each scenario,
+        merges their plot records, and writes the canonical outlet trajectory
+        parquet file.
+
+        Returns
+        -------
+        dict[tuple[str, str, str, str], list[tuple[int, float, float]]]
+            Plot records keyed by pollutant, outlet, x-axis, and y-axis.
+        """
         outputs_dir = Path(self.cfg.get(CFG_OUTPUTS, "./outputs"))
         outputs_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir = outputs_dir
@@ -429,10 +514,31 @@ class Model:
 
 
 class _ScenarioContext:
-    """Lightweight object that holds what one worker needs for one scenario."""
+    """Lightweight container for one worker's scenario state.
+
+    The context mirrors the methods and attributes expected by the helper
+    functions so each worker can run a scenario without needing the full
+    ``Model`` instance.
+    """
 
     def __init__(self, cfg: Dict[str, Any], shared: Dict[str, Any], logger, seed: int) -> None:
-        """Create one scenario context with its own random number generator."""
+        """Create a scenario context with its own random number generator.
+
+        Parameters
+        ----------
+        cfg : dict[str, Any]
+            Scenario configuration mapping.
+        shared : dict[str, Any]
+            Shared model payload produced by :meth:`Model._shared_payload`.
+        logger : Any
+            Worker logger used for scenario output.
+        seed : int
+            Seed for the worker-specific random number generator.
+
+        Returns
+        -------
+        None
+        """
         self.cfg = cfg
         self.logger = logger
         self.rng = default_rng(seed)
@@ -476,7 +582,26 @@ def _run_one_scenario(
     seed: int,
     outputs_dir: Path,
 ) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
-    """Run one scenario, save its output files, and return its plot points."""
+    """Run one scenario and write its output files.
+
+    Parameters
+    ----------
+    shared : dict[str, Any]
+        Shared model payload used to construct the worker context.
+    cfg : dict[str, Any]
+        Scenario configuration mapping.
+    sidx : int
+        Zero-based scenario index.
+    seed : int
+        Seed for the worker-specific random number generator.
+    outputs_dir : pathlib.Path
+        Directory where scenario outputs should be written.
+
+    Returns
+    -------
+    dict[tuple[str, str, str, str], list[tuple[int, float, float]]]
+        Plot records for the scenario.
+    """
     sid = sidx + 1
     logger = make_worker_logger(
         outputs_dir,

@@ -1,4 +1,11 @@
-"""Pick BMPs and apply their effects to parcel pollutant loads."""
+"""BMP selection and load-reduction helpers.
+
+This module contains the logic used to choose best management practices
+(BMPs), sample their effectiveness, and apply their impacts to parcel-level
+pollutant loads. The functions are implemented as model helpers and operate
+on shared model state such as parcel geometry, pollutant yields, and
+simulation outputs.
+"""
 
 from __future__ import annotations
 
@@ -36,7 +43,31 @@ PATHWAY_ORDER = ("surface", "shallow subsurface", "deep subsurface")
 
 
 def _get_pathway_yields(self: "Model", parcel_idx: int, pol_idx: int, total_yield: float) -> Dict[str, float]:
-    """Return the current parcel yield split by flow pathway."""
+    """Return the parcel yield split across flow pathways.
+
+    The model may already track pathway-specific yields in
+    ``self.current_pathway_yields``. When present, those values are returned
+    directly. Otherwise, the total yield is partitioned using the model's
+    configured surface and shallow-subsurface fractions, with any remainder
+    assigned to deep subsurface flow.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    parcel_idx : int
+        Index of the parcel within the model arrays.
+    pol_idx : int
+        Index of the pollutant within ``self.pollutants``.
+    total_yield : float
+        Total parcel yield for the pollutant.
+
+    Returns
+    -------
+    dict[str, float]
+        Mapping from pathway name to yield contribution. Keys are ``surface``,
+        ``shallow subsurface``, and ``deep subsurface``.
+    """
     pathway_yields = getattr(self, "current_pathway_yields", None)
     if pathway_yields is not None:
         values = pathway_yields[parcel_idx, pol_idx, :]
@@ -59,7 +90,32 @@ def _apply_pathway_reduction(
     treatment_fraction: float,
     eff_map: Dict[str, float],
 ) -> float:
-    """Apply pathway-specific reduction and update current pathway yields in place."""
+    """Apply pathway-specific BMP reduction to in-memory pathway yields.
+
+    The reduction is applied only when the model is tracking pathway-specific
+    loads. Each pathway is reduced by ``treatment_fraction * eff_map[path]``.
+    When groundwater treatment is disabled for the current configuration,
+    deep subsurface load is left unchanged for TN/TP under the PLET-RUSLE
+    pathway-derived workflow.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    parcel_idx : int
+        Index of the parcel being treated.
+    pol_idx : int
+        Index of the pollutant being treated.
+    treatment_fraction : float
+        Fraction of the parcel or drainage area treated by the BMP.
+    eff_map : dict[str, float]
+        Pathway-specific effectiveness values keyed by pathway name.
+
+    Returns
+    -------
+    float
+        Total load removed across all pathways.
+    """
     pathway_yields = getattr(self, "current_pathway_yields", None)
     if pathway_yields is None:
         return 0.0
@@ -83,9 +139,16 @@ def _apply_pathway_reduction(
 
 
 def _select_bmp_type(self: "Model") -> int:
-    """Randomly choose which BMP type to place next.
+    """Randomly choose the next BMP CPS code.
 
-    The chance for each BMP comes from the probability table prepared earlier.
+    The selection is made from the probability table produced by
+    :func:`_get_bmp_selection_probs` and stored on the model as
+    ``self.bmp_selection_probs``.
+
+    Returns
+    -------
+    int
+        Selected BMP CPS code.
     """
     idx = self.rng.choice(len(self.bmp_cps), p=self.bmp_selection_probs)
     cps = int(self.bmp_cps[idx])
@@ -94,13 +157,45 @@ def _select_bmp_type(self: "Model") -> int:
 
 
 def _get_bmp_name(self: "Model", cps: Union[int, str]) -> str:
-    """Return the human-readable name for the BMP CPS code."""
+    """Return a human-readable BMP name for a CPS code.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    cps : int or str
+        BMP CPS identifier.
+
+    Returns
+    -------
+    str
+        Known BMP name when available, otherwise ``"CPS {code}"``.
+    """
     key = int(cps)
     return BMP_CPS_NAME_MAP.get(key, f"CPS {key}")
 
 
 def _sample_efficiency(self: "Model", cps: Union[int, str], pol_idx: int) -> float:
-    """Older helper that picks one effectiveness value between 0 and 1."""
+    """Sample a single legacy BMP effectiveness value.
+
+    This helper supports older data structures where BMP effectiveness is
+    represented as one scalar distribution per pollutant rather than as
+    pathway-specific values.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    cps : int or str
+        BMP CPS identifier.
+    pol_idx : int
+        Index of the pollutant within ``self.pollutants``.
+
+    Returns
+    -------
+    float
+        Sampled effectiveness value in the ``[0, 1]`` range.
+    """
     stats = self.bmp_efficiency_stats[int(cps)][pol_idx]
     eff = self._sample_from_stats(stats, kind="efficiency")
     self.logger.verbose(f"selected efficiency value {eff:.2f} for pollutant={self.pollutants[pol_idx]}")
@@ -108,7 +203,29 @@ def _sample_efficiency(self: "Model", cps: Union[int, str], pol_idx: int) -> flo
 
 
 def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) -> Dict[str, float]:
-    """Pick effectiveness values for surface, shallow, and deep flow paths."""
+    """Sample BMP effectiveness values for each flow pathway.
+
+    The function supports both the newer pathway-specific efficiency format
+    and the older single-distribution format. When pathway-specific
+    statistics are available, each pathway is sampled independently. When only
+    a single distribution is available, the sampled value is reused for all
+    pathways.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    cps : int or str
+        BMP CPS identifier.
+    pol_idx : int
+        Index of the pollutant within ``self.pollutants``.
+
+    Returns
+    -------
+    dict[str, float]
+        Effectiveness values for ``surface``, ``shallow subsurface``, and
+        ``deep subsurface``.
+    """
     entry = self.bmp_efficiency_stats[int(cps)][pol_idx]
     pathway_names = ("surface", "shallow subsurface", "deep subsurface")
     is_pathway_entry = (
@@ -141,7 +258,34 @@ def _simulate_wetland(
     bmp_outputs: Dict[str, np.ndarray],
     cps: Union[int, str] = 656,
 ) -> None:
-    """Apply a wetland BMP and update affected parcel loads directly."""
+    """Apply a wetland BMP and update parcel loads.
+
+    The wetland treatment area is sampled from heuristic area statistics and
+    clipped to the parcel area. The function then allocates the wetland to a
+    contributing set of upstream parcels, computes the impacted drainage area,
+    and applies pathway-specific reductions to each affected parcel.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    parcel_idx : int
+        Index of the parcel receiving the wetland BMP.
+    eff_maps : sequence of dict[str, float]
+        Effectiveness maps, one per pollutant, keyed by pathway name.
+    yields : numpy.ndarray
+        Parcel-by-pollutant yield array updated in place.
+    bmp_rec : dict[str, Any]
+        Record for the current BMP placement, updated with wetland metadata.
+    bmp_outputs : dict[str, numpy.ndarray]
+        Accumulators for treated and removed pollutant loads.
+    cps : int or str, optional
+        BMP CPS code associated with the wetland. Default is ``656``.
+
+    Returns
+    -------
+    None
+    """
     with log_scope(label="simulate_wetland", logger=self.logger):
         self.logger.verbose("calling simulate_wetland")
 
@@ -238,7 +382,31 @@ def _simulate_grassed(
     bmp_rec: Dict[str, Any],
     bmp_outputs: Dict[str, np.ndarray],
 ) -> None:
-    """Apply a grassed waterway/buffer BMP to one parcel."""
+    """Apply a grassed buffer BMP to the selected parcel.
+
+    The buffer length is sampled as a fraction of parcel perimeter, converted
+    to area using the configured buffer depth, and then used to compute the
+    treated and removed pollutant loads for the parcel.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    parcel_idx : int
+        Index of the parcel receiving the BMP.
+    eff_maps : sequence of dict[str, float]
+        Effectiveness maps, one per pollutant, keyed by pathway name.
+    yields : numpy.ndarray
+        Parcel-by-pollutant yield array updated in place.
+    bmp_rec : dict[str, Any]
+        Record for the current BMP placement, updated with buffer metadata.
+    bmp_outputs : dict[str, numpy.ndarray]
+        Accumulators for treated and removed pollutant loads.
+
+    Returns
+    -------
+    None
+    """
     with log_scope(label="simulate_grassed", logger=self.logger):
         self.logger.verbose("calling simulate_grassed")
 
@@ -296,7 +464,32 @@ def _simulate_infield(
     bmp_rec: Dict[str, Any],
     bmp_outputs: Dict[str, np.ndarray],
 ) -> None:
-    """Apply an in-field BMP to the selected parcel."""
+    """Apply an in-field BMP to the selected parcel.
+
+    In-field BMPs are treated as covering the whole parcel. The function
+    therefore applies each pollutant's pathway-specific effectiveness across
+    the full parcel area and updates both the output accumulators and the
+    yield array in place.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    parcel_idx : int
+        Index of the parcel receiving the BMP.
+    eff_maps : sequence of dict[str, float]
+        Effectiveness maps, one per pollutant, keyed by pathway name.
+    yields : numpy.ndarray
+        Parcel-by-pollutant yield array updated in place.
+    bmp_rec : dict[str, Any]
+        Record for the current BMP placement.
+    bmp_outputs : dict[str, numpy.ndarray]
+        Accumulators for treated and removed pollutant loads.
+
+    Returns
+    -------
+    None
+    """
     with log_scope(label="simulate_infield", logger=self.logger):
         self.logger.verbose("calling _simulate_infield")
 
@@ -321,13 +514,30 @@ def _simulate_infield(
 
 
 def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.DataFrame:
-    """Return BMP type selection probabilities.
+    """Build the BMP selection probability table.
 
-    Behavior
-    --------
-    - If a probability CSV is provided, use it.
-    - Otherwise, optionally estimate probabilities from costs.
-    - If neither is available, use equal chance for each BMP type.
+    The function first attempts to read an explicit probability CSV. If no
+    file is provided, it may estimate probabilities from cost heuristics when
+    enabled in the configuration. Otherwise, all BMP types receive equal
+    probability.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    bmp_sel_path : str or None
+        Optional path to a CSV file containing BMP selection probabilities.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Two-column dataframe with ``COL_CPS`` and ``COL_PROBABILITY``.
+
+    Raises
+    ------
+    ValueError
+        If the probability file is malformed, incomplete, or contains invalid
+        probability values.
     """
     if bmp_sel_path:
         df = pd.read_csv(bmp_sel_path)

@@ -1,7 +1,9 @@
-"""Create parcel pollution numbers and update them when BMPs are applied.
+"""Build parcel pollutant loads and update them as BMPs are applied.
 
-This file turns input tables into yearly pollutant loads for each parcel.
-It also updates those loads when a BMP changes runoff or other settings.
+This module converts scenario input tables into parcel-level annual pollutant
+loads, splits those loads across flow pathways, and recalculates the affected
+values when BMP rules or treatment fractions change. It contains the core load
+generation logic used by the scenario simulator.
 """
 
 from __future__ import annotations
@@ -68,14 +70,37 @@ _REQUIRED_RUSLE = ("r", "k", "ls", "c", "p")
 
 @dataclass
 class LoadState:
-    """Store each parcel's current values while one scenario is running.
+    """Container for per-parcel scenario state.
 
-    You can think of this as a live worksheet:
-    - current values
-    - starting values
-    - and parcel order/IDs
+    The state stores current sampled values, baseline values, parcel ordering,
+    and pathway-level yields so that BMP application can update the scenario in
+    place while still preserving the original starting point.
 
-    As BMPs are applied, this object is updated and used to recalculate loads.
+    Attributes
+    ----------
+    parcel_ids : list[str]
+        Parcel identifiers in the same order used by the numeric arrays.
+    parameters : list[dict[str, float]]
+        Current sampled parameter values for each parcel.
+    concentrations : list[dict[str, float]]
+        Current runoff concentrations for each parcel.
+    groundwater_concentrations : list[dict[str, float]]
+        Current groundwater concentrations for each parcel.
+    has_rusle : list[bool]
+        Flags indicating whether each parcel has complete RUSLE inputs.
+    pollutants : list[str]
+        Pollutants tracked by the simulation.
+    pathway_yields : numpy.ndarray
+        Current pathway-specific parcel yields with shape
+        ``(n_parcels, n_pollutants, n_pathways)``.
+    baseline_parameters : list[dict[str, float]]
+        Snapshot of the original parameter values.
+    baseline_concentrations : list[dict[str, float]]
+        Snapshot of the original runoff concentrations.
+    baseline_groundwater_concentrations : list[dict[str, float]]
+        Snapshot of the original groundwater concentrations.
+    baseline_pathway_yields : numpy.ndarray or None
+        Snapshot of the original pathway-specific yields.
     """
 
     parcel_ids: List[str]
@@ -92,15 +117,34 @@ class LoadState:
 
     @property
     def index_by_pid(self) -> Dict[str, int]:
-        """Return a quick map from parcel ID to its position in the lists."""
+        """Map parcel IDs to their positional index.
+
+        Returns
+        -------
+        dict[str, int]
+            Dictionary mapping each parcel ID to its index in the state
+            arrays.
+        """
         return {pid: i for i, pid in enumerate(self.parcel_ids)}
 
 
 def canonical_parameter_name(value: Any) -> str:
-    """Convert different spellings of the same input name to one standard name.
+    """Normalize an input parameter label to the internal canonical name.
 
-    Example: ``"curve number"``, ``"curve_number"``, and ``"cn"`` all resolve
-    to ``"cn"`` so the rest of the model uses one consistent key.
+    The loader accepts multiple spellings and aliases for user-authored input
+    tables. This helper collapses those variants to a single lowercase,
+    underscore-delimited key so the rest of the module can work with one
+    consistent naming scheme.
+
+    Parameters
+    ----------
+    value : Any
+        Raw parameter name from an input table.
+
+    Returns
+    -------
+    str
+        Canonical parameter name.
     """
 
     label = str(value).strip().lower().replace("-", "_").replace(" ", "_")
@@ -115,7 +159,33 @@ def plet_runoff_depth_in(
     cn: float,
     ia_ratio: float = 0.0,
 ) -> Tuple[float, float, float]:
-    """Calculate event runoff and yearly runoff depth (in inches)."""
+    """Calculate event rainfall and runoff depths using a CN-style equation.
+
+    The function computes a representative storm event depth, the associated
+    runoff depth, and annualized storm runoff depth using annual precipitation,
+    rain-day frequency, and curve number assumptions.
+
+    Parameters
+    ----------
+    annual_precip_in : float
+        Annual precipitation depth in inches.
+    rain_days : float
+        Number of rain days per year.
+    rain_correction_fraction : float
+        Fraction of annual precipitation attributed to runoff-producing events.
+    runoff_day_fraction : float
+        Fraction of rain days that generate runoff.
+    cn : float
+        Curve number used to estimate retention.
+    ia_ratio : float, optional
+        Initial abstraction ratio applied to retention. Default is ``0.0``.
+
+    Returns
+    -------
+    tuple[float, float, float]
+        Event rainfall depth, event runoff depth, and annual runoff depth in
+        inches.
+    """
 
     annual_precip_in = max(0.0, float(annual_precip_in))
     rain_days = max(0.0, float(rain_days))
@@ -143,7 +213,18 @@ def plet_runoff_depth_in(
 
 
 def plet_sediment_delivery_ratio(watershed_area_mi2: float) -> float:
-    """Estimate how much sediment reaches the outlet based on watershed size."""
+    """Estimate sediment delivery ratio from watershed size.
+
+    Parameters
+    ----------
+    watershed_area_mi2 : float
+        Watershed area in square miles.
+
+    Returns
+    -------
+    float
+        Estimated sediment delivery ratio clipped to ``[0, 1]``.
+    """
 
     area_mi2 = max(float(watershed_area_mi2), 1.0e-12)
     area_acres = area_mi2 * ACRES_PER_SQUARE_MILE
@@ -155,7 +236,24 @@ def plet_sediment_delivery_ratio(watershed_area_mi2: float) -> float:
 
 
 def rusle_sediment_yield_kg_ha(parameters: Mapping[str, float]) -> float:
-    """Estimate yearly sediment load per hectare using RUSLE-style inputs."""
+    """Estimate annual sediment yield per hectare from RUSLE inputs.
+
+    Parameters
+    ----------
+    parameters : Mapping[str, float]
+        Mapping containing the required RUSLE factors and optional delivery
+        modifiers.
+
+    Returns
+    -------
+    float
+        Annual sediment yield in kilograms per hectare.
+
+    Raises
+    ------
+    ValueError
+        If neither ``sdr`` nor ``watershed_area_mi2`` is provided.
+    """
 
     if not all(name in parameters for name in _REQUIRED_RUSLE):
         return 0.0
@@ -176,7 +274,22 @@ def rusle_sediment_yield_kg_ha(parameters: Mapping[str, float]) -> float:
 
 
 def plet_annual_irrigation_runoff_in(parameters: Mapping[str, float]) -> float:
-    """Estimate optional irrigation runoff depth using the same CN runoff equation."""
+    """Estimate annual irrigation runoff depth.
+
+    The calculation uses the same curve-number runoff equation as the storm
+    runoff helper, then scales the per-event runoff by irrigation frequency and
+    the irrigated fraction.
+
+    Parameters
+    ----------
+    parameters : Mapping[str, float]
+        Mapping containing irrigation and curve-number parameters.
+
+    Returns
+    -------
+    float
+        Annual irrigation runoff depth in inches.
+    """
     irrigation_depth_in = max(0.0, float(parameters.get("irrigation_depth_in", 0.0)))
     irrigation_frequency = max(0.0, float(parameters.get("irrigation_frequency", 0.0)))
     irrigated_fraction = float(np.clip(parameters.get("irrigated_fraction", 1.0), 0.0, 1.0))
@@ -196,7 +309,19 @@ def plet_annual_irrigation_runoff_in(parameters: Mapping[str, float]) -> float:
 
 
 def plet_annual_surface_runoff_in(parameters: Mapping[str, float]) -> Tuple[float, float, float, float]:
-    """Estimate annual surface runoff depth including optional irrigation runoff."""
+    """Estimate annual surface runoff depth including irrigation runoff.
+
+    Parameters
+    ----------
+    parameters : Mapping[str, float]
+        Mapping containing runoff and irrigation parameters.
+
+    Returns
+    -------
+    tuple[float, float, float, float]
+        Event rainfall depth, event runoff depth, annual storm runoff depth,
+        and annual total runoff depth.
+    """
     event_rainfall, event_runoff, annual_storm_runoff = plet_runoff_depth_in(
         parameters["annual_precip_in"],
         parameters["rain_days"],
@@ -212,7 +337,19 @@ def plet_annual_surface_runoff_in(parameters: Mapping[str, float]) -> Tuple[floa
 
 
 def plet_annual_infiltration_in(parameters: Mapping[str, float]) -> float:
-    """Estimate annual groundwater infiltration depth from an optional infiltration fraction."""
+    """Estimate annual infiltration depth from precipitation.
+
+    Parameters
+    ----------
+    parameters : Mapping[str, float]
+        Mapping that may contain ``infiltration_fraction``,
+        ``annual_precip_in``, and ``groundwater_multiplier``.
+
+    Returns
+    -------
+    float
+        Annual infiltration depth in inches.
+    """
     infiltration_fraction = float(np.clip(parameters.get("infiltration_fraction", 0.0), 0.0, 1.0))
     annual_precip = max(0.0, float(parameters.get("annual_precip_in", 0.0)))
     infiltration = annual_precip * infiltration_fraction
@@ -221,7 +358,20 @@ def plet_annual_infiltration_in(parameters: Mapping[str, float]) -> float:
 
 
 def _stats_from_row(row: Mapping[str, Any], exclude: Iterable[str]) -> Dict[str, float]:
-    """Pull only number fields used for random sampling from one table row."""
+    """Extract sampling statistics from a table row.
+
+    Parameters
+    ----------
+    row : Mapping[str, Any]
+        Source row containing values and sampling statistics.
+    exclude : Iterable[str]
+        Column names that should not be considered as numeric statistics.
+
+    Returns
+    -------
+    dict[str, float]
+        Numeric statistics suitable for sampling.
+    """
     excluded = {str(x).lower() for x in exclude}
     stats: Dict[str, float] = {}
     for key, value in row.items():
@@ -236,7 +386,22 @@ def _stats_from_row(row: Mapping[str, Any], exclude: Iterable[str]) -> Dict[str,
 
 
 def _sample_stats(ctx: Any, stats: Mapping[str, float], *, nonnegative: bool = False) -> float:
-    """Pick one value from the row's numbers, optionally forcing it to be nonnegative."""
+    """Sample a single numeric value from statistics.
+
+    Parameters
+    ----------
+    ctx : Any
+        Object providing ``_sample_from_stats``.
+    stats : Mapping[str, float]
+        Sampling statistics or a fixed ``value`` entry.
+    nonnegative : bool, optional
+        If ``True``, clamp the returned value at zero. Default is ``False``.
+
+    Returns
+    -------
+    float
+        Sampled numeric value.
+    """
     if "value" in stats:
         value = float(stats["value"])
     else:
@@ -245,10 +410,22 @@ def _sample_stats(ctx: Any, stats: Mapping[str, float], *, nonnegative: bool = F
 
 
 def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
-    """Return the table rows that apply to one parcel.
+    """Return the rows from a table that apply to one parcel.
 
-    Rows with ``pid="*"`` act as defaults.
-    Rows for the exact parcel ID override those defaults.
+    Rows with ``pid="*"`` act as defaults. Rows for the exact parcel ID
+    override those defaults for matching parameters.
+
+    Parameters
+    ----------
+    table : pandas.DataFrame or None
+        Input table containing parcel-specific rows.
+    pid : str
+        Parcel identifier.
+
+    Returns
+    -------
+    list[pandas.Series]
+        Matching rows in evaluation order.
     """
     if table is None or table.empty:
         return []
@@ -270,7 +447,24 @@ def _sample_parameter_table(
     *,
     cache_prefix: str,
 ) -> List[Dict[str, float]]:
-    """Build one sampled parameter set for each parcel."""
+    """Build sampled parameter dictionaries for each parcel.
+
+    Parameters
+    ----------
+    ctx : Any
+        Context object providing sampling helpers and input tables.
+    table : pandas.DataFrame or None
+        Source table containing parameter rows.
+    parcel_ids : sequence of str
+        Parcel identifiers to sample.
+    cache_prefix : str
+        Prefix used to separate cached samples for different input tables.
+
+    Returns
+    -------
+    list[dict[str, float]]
+        Sampled parameter values for each parcel.
+    """
     sampled: List[Dict[str, float]] = []
     cache: Dict[Tuple[str, str, str], float] = {}
     for pid in parcel_ids:
@@ -294,7 +488,22 @@ def _sample_parameter_table(
 
 
 def _sample_concentrations(ctx: Any, table: Optional[pd.DataFrame], parcel_ids: Sequence[str]) -> List[Dict[str, float]]:
-    """Build one sampled concentration set for each parcel."""
+    """Build sampled concentration dictionaries for each parcel.
+
+    Parameters
+    ----------
+    ctx : Any
+        Context object providing sampling helpers.
+    table : pandas.DataFrame or None
+        Source table containing pollutant concentration rows.
+    parcel_ids : sequence of str
+        Parcel identifiers to sample.
+
+    Returns
+    -------
+    list[dict[str, float]]
+        Sampled concentrations for each parcel.
+    """
     sampled: List[Dict[str, float]] = []
     cache: Dict[Tuple[str, str], float] = {}
     if table is None:
@@ -326,7 +535,19 @@ def _sample_concentrations(ctx: Any, table: Optional[pd.DataFrame], parcel_ids: 
 
 
 def calculate_load_diagnostics(parameters: Mapping[str, float]) -> Dict[str, float]:
-    """Return helpful intermediate values for checking and reporting."""
+    """Calculate intermediate load-generation diagnostics.
+
+    Parameters
+    ----------
+    parameters : Mapping[str, float]
+        Parameter mapping used for runoff, infiltration, and sediment
+        calculations.
+
+    Returns
+    -------
+    dict[str, float]
+        Diagnostic values useful for reporting and debugging.
+    """
 
     event_rainfall, event_runoff, annual_storm_runoff, annual_runoff = plet_annual_surface_runoff_in(parameters)
     has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
@@ -354,7 +575,43 @@ def calculate_pathway_yields(
     groundwater_loads: bool = False,
     treat_groundwater_with_bmps: bool = False,
 ) -> np.ndarray:
-    """Calculate parcel yields split by surface, shallow, and deep pathways."""
+    """Calculate pathway-specific parcel yields.
+
+    The calculation supports two modes. In ``derive_from_plet`` mode, yields
+    are derived directly from runoff, infiltration, and groundwater
+    concentrations. In ``fixed_fractions`` mode, a total load is partitioned
+    across the three pathways using the supplied fractions.
+
+    Parameters
+    ----------
+    parameters : Mapping[str, float]
+        Parcel parameters used to compute runoff and other drivers.
+    concentrations : Mapping[str, float]
+        Runoff concentrations keyed by pollutant name.
+    groundwater_concentrations : Mapping[str, float] or None
+        Groundwater concentrations keyed by pollutant name.
+    pollutants : sequence of str
+        Pollutants to calculate.
+    pathway_mode : str, optional
+        Either ``"fixed_fractions"`` or ``"derive_from_plet"``. Default is
+        ``"fixed_fractions"``.
+    surface_fraction : float, optional
+        Fraction of load assigned to surface flow in fixed-fraction mode.
+    shallow_fraction : float, optional
+        Fraction of load assigned to shallow subsurface flow in fixed-fraction
+        mode.
+    groundwater_loads : bool, optional
+        Whether groundwater concentrations should contribute to pollutant
+        loads. Default is ``False``.
+    treat_groundwater_with_bmps : bool, optional
+        Whether BMPs treat groundwater loads in pathway-derived mode.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape ``(n_pollutants, 3)`` containing surface, shallow
+        subsurface, and deep subsurface loads.
+    """
 
     missing = [name for name in _REQUIRED_PLET if name not in parameters]
     if missing:
@@ -429,7 +686,34 @@ def calculate_parcel_yields(
     groundwater_loads: bool = False,
     treat_groundwater_with_bmps: bool = False,
 ) -> np.ndarray:
-    """Calculate yearly pollutant load per hectare for the requested pollutants."""
+    """Calculate total parcel pollutant loads per hectare.
+
+    Parameters
+    ----------
+    parameters : Mapping[str, float]
+        Parcel parameters used to derive the pathway loads.
+    concentrations : Mapping[str, float]
+        Runoff concentrations keyed by pollutant name.
+    pollutants : sequence of str
+        Pollutants to calculate.
+    groundwater_concentrations : Mapping[str, float] or None, optional
+        Groundwater concentrations keyed by pollutant name.
+    pathway_mode : str, optional
+        See :func:`calculate_pathway_yields`.
+    surface_fraction : float, optional
+        See :func:`calculate_pathway_yields`.
+    shallow_fraction : float, optional
+        See :func:`calculate_pathway_yields`.
+    groundwater_loads : bool, optional
+        See :func:`calculate_pathway_yields`.
+    treat_groundwater_with_bmps : bool, optional
+        See :func:`calculate_pathway_yields`.
+
+    Returns
+    -------
+    numpy.ndarray
+        Total annual loads per pollutant.
+    """
 
     pathway_yields = calculate_pathway_yields(
         parameters,
@@ -446,7 +730,28 @@ def calculate_parcel_yields(
 
 
 def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
-    """Create the starting load state and baseline parcel loads for a scenario."""
+    """Create the initial parcel load state for a scenario.
+
+    This function samples parcel-level parameters and concentrations, verifies
+    that required inputs are present, computes baseline pathway yields, and
+    returns both the total load array and the mutable scenario state.
+
+    Parameters
+    ----------
+    ctx : Any
+        Scenario context containing the input tables, pollutant list, and
+        configuration flags.
+
+    Returns
+    -------
+    tuple[numpy.ndarray, LoadState]
+        Baseline parcel loads and the corresponding mutable load state.
+
+    Raises
+    ------
+    ValueError
+        If required inputs are missing or incomplete for any parcel.
+    """
 
     parcel_ids = [str(pid) for pid in ctx.parcel_selection_ids]
     plet = _sample_parameter_table(ctx, ctx.plet_inputs, parcel_ids, cache_prefix="plet")
@@ -532,7 +837,21 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
 
 
 def has_process_effects(ctx: Any, cps: int) -> bool:
-    """Return True when this BMP type has any process-effect rules configured."""
+    """Check whether a BMP has process-effect rules configured.
+
+    Parameters
+    ----------
+    ctx : Any
+        Context object containing the process-effect table.
+    cps : int
+        BMP CPS code to query.
+
+    Returns
+    -------
+    bool
+        ``True`` when at least one rule exists for the BMP, otherwise
+        ``False``.
+    """
     table = getattr(ctx, "bmp_parameter_effects", None)
     if table is None or table.empty:
         return False
@@ -540,7 +859,24 @@ def has_process_effects(ctx: Any, cps: int) -> bool:
 
 
 def _affected_fractions(ctx: Any, cps: int, parcel_idx: int, bmp_rec: Mapping[str, Any]) -> List[Tuple[int, float]]:
-    """Return which parcels are affected and what share of each parcel is treated."""
+    """Determine which parcels are treated and by what fraction.
+
+    Parameters
+    ----------
+    ctx : Any
+        Scenario context containing parcel metadata.
+    cps : int
+        BMP CPS code.
+    parcel_idx : int
+        Index of the parcel where the BMP is placed.
+    bmp_rec : Mapping[str, Any]
+        BMP placement record containing BMP-specific metadata.
+
+    Returns
+    -------
+    list[tuple[int, float]]
+        Pairs of parcel index and treated fraction.
+    """
     if int(cps) in (656, 657):
         impacted = [str(ctx.parcel_selection_ids[parcel_idx])]
         extra = str(bmp_rec.get("impacted_pids", "") or "")
@@ -570,7 +906,22 @@ def _affected_fractions(ctx: Any, cps: int, parcel_idx: int, bmp_rec: Mapping[st
 
 
 def _get_effect_value(state: LoadState, idx: int, parameter: str) -> float:
-    """Read one current value from the scenario state."""
+    """Read a current value from the scenario state.
+
+    Parameters
+    ----------
+    state : LoadState
+        Mutable scenario state.
+    idx : int
+        Parcel index.
+    parameter : str
+        Parameter name, concentration name, or groundwater concentration name.
+
+    Returns
+    -------
+    float
+        Current value for the requested field.
+    """
     if parameter.startswith("groundwater_concentration_"):
         pollutant = parameter.removeprefix("groundwater_concentration_").upper()
         return float(state.groundwater_concentrations[idx].get(pollutant, 0.0))
@@ -581,7 +932,26 @@ def _get_effect_value(state: LoadState, idx: int, parameter: str) -> float:
 
 
 def _set_effect_value(state: LoadState, idx: int, parameter: str, value: float) -> None:
-    """Save one updated value back to the scenario state, with safe limits."""
+    """Write an updated value back to the scenario state.
+
+    Values are clipped to safe bounds for concentration and parameter fields
+    so that downstream recalculations remain numerically stable.
+
+    Parameters
+    ----------
+    state : LoadState
+        Mutable scenario state.
+    idx : int
+        Parcel index.
+    parameter : str
+        Parameter name, concentration name, or groundwater concentration name.
+    value : float
+        New value to store.
+
+    Returns
+    -------
+    None
+    """
     if parameter.startswith("groundwater_concentration_"):
         pollutant = parameter.removeprefix("groundwater_concentration_").upper()
         state.groundwater_concentrations[idx][pollutant] = max(0.0, float(value))
@@ -606,7 +976,25 @@ def _set_effect_value(state: LoadState, idx: int, parameter: str, value: float) 
 
 
 def _sample_effect_value(ctx: Any, row: Mapping[str, Any]) -> float:
-    """Pick one effect amount from a BMP effect table row."""
+    """Sample a BMP process-effect value from one table row.
+
+    Parameters
+    ----------
+    ctx : Any
+        Context object providing ``_sample_from_stats``.
+    row : Mapping[str, Any]
+        Process-effect table row.
+
+    Returns
+    -------
+    float
+        Sampled effect value.
+
+    Raises
+    ------
+    ValueError
+        If the row does not contain any usable numeric statistics.
+    """
     stats = _stats_from_row(row, {"cps", "parameter", "operation", "units", "notes"})
     if not stats:
         raise ValueError(
@@ -625,10 +1013,39 @@ def apply_process_parameter_bmp(
     *,
     effect_scale: float = 1.0,
 ) -> Tuple[np.ndarray, np.ndarray, List[Dict[str, Any]]]:
-    """Apply a BMP's rule-based changes and recalculate affected parcel loads.
+    """Apply rule-based BMP effects and recalculate parcel loads.
 
-    Returns how much load was treated, how much was removed, and a list of the
-    exact value changes that were made.
+    The function applies all configured process-effect rows for the BMP,
+    updates the mutable scenario state, recalculates the affected pathway
+    yields, and returns aggregate treated and removed loads plus a detailed
+    change log.
+
+    Parameters
+    ----------
+    ctx : Any
+        Scenario context containing pollutant lists and effect tables.
+    state : LoadState
+        Mutable scenario state updated in place.
+    yields : numpy.ndarray
+        Current total parcel yields updated in place.
+    cps : int
+        BMP CPS code.
+    parcel_idx : int
+        Index of the parcel receiving the BMP.
+    bmp_rec : MutableMapping[str, Any]
+        BMP record updated with JSON-encoded process change details.
+    effect_scale : float, optional
+        Fraction of the sampled effect to apply. Default is ``1.0``.
+
+    Returns
+    -------
+    tuple[numpy.ndarray, numpy.ndarray, list[dict[str, Any]]]
+        Treated loads, removed loads, and a list of change records.
+
+    Raises
+    ------
+    ValueError
+        If a process-effect operation is not supported.
     """
 
     table = ctx.bmp_parameter_effects

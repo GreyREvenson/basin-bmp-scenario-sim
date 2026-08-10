@@ -1,4 +1,8 @@
-"""Create output plot images that compare results across scenarios."""
+"""Create cross-scenario summary plots.
+
+This module turns scenario trajectory data into line plots comparing BMP
+sequences across pollutants, outlets, and x/y-axis combinations.
+"""
 
 from __future__ import annotations
 
@@ -36,7 +40,18 @@ from .constants import DIR_OUTLET_TRAJECTORIES, FILE_ALL_SCENARIOS_PARQUET
 def _build_denominator_maps(
     data: Dict[str, Any],
 ) -> Tuple[Dict[Tuple[str, str], float], Dict[Tuple[str, str], float]]:
-    """Build (oid, pollutant)->value maps for target and mean denominators."""
+    """Build denominator lookup maps for outlet plots.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        Validated data bundle containing optional outlet summary tables.
+
+    Returns
+    -------
+    tuple[dict[tuple[str, str], float], dict[tuple[str, str], float]]
+        Target and mean denominator maps keyed by outlet ID and pollutant.
+    """
     target_map: Dict[Tuple[str, str], float] = {}
     mean_map: Dict[Tuple[str, str], float] = {}
 
@@ -62,7 +77,24 @@ def _build_denominator_maps(
 
 
 def _load_records_from_trajectory_table(path: Path) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
-    """Load canonical outlet trajectory rows into the legacy plotting record shape."""
+    """Load canonical trajectory rows into the plotting record shape.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Path to the canonical parquet trajectory table.
+
+    Returns
+    -------
+    dict[tuple[str, str, str, str], list[tuple[int, float, float]]]
+        Legacy plot record structure keyed by pollutant, outlet, x-axis, and
+        y-axis.
+
+    Raises
+    ------
+    ValueError
+        If required columns are missing from the parquet file.
+    """
     df = pd.read_parquet(path)
     needed = {"scenario", "pollutant", "oid", "x_axis", "y_axis", "step", "x_value", "y_value"}
     if not needed.issubset(set(df.columns)):
@@ -84,7 +116,25 @@ def make_summary_plots(
     outputs_dir: Path,
     logger,
 ) -> None:
-    """Write one line plot image for each pollutant/outlet chart combination."""
+    """Write one plot image per pollutant/outlet/axis combination.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Scenario configuration mapping.
+    data : dict[str, Any]
+        Validated data bundle.
+    scenario_records : dict[tuple[str, str, str, str], list[tuple[int, float, float]]] or None
+        In-memory plotting records, if already available.
+    outputs_dir : pathlib.Path
+        Directory where plot images should be written.
+    logger : Any
+        Logger used for progress and warning messages.
+
+    Returns
+    -------
+    None
+    """
     scenario_records = scenario_records or {}
     canonical_traj = Path(outputs_dir) / DIR_OUTLET_TRAJECTORIES / FILE_ALL_SCENARIOS_PARQUET
     # Prefer in-memory records produced by the current run; loading/parsing the

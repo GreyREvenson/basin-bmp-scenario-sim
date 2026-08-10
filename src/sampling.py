@@ -1,4 +1,9 @@
-"""Helper functions for drawing random values from input ranges/statistics."""
+"""Random sampling helpers for model inputs.
+
+This module provides the sampling primitives used to draw values from fixed
+inputs, summary statistics, and percentile-based distributions while
+respecting optional bounds for efficiencies and loads.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +22,28 @@ def _trunc_normal(
     high: Optional[float] = None,
     size: Optional[int] = None,
 ) -> np.ndarray:
-    """Draw random values near a mean, while keeping them inside min/max bounds."""
+    """Draw truncated normal samples.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance providing the RNG.
+    mean : float
+        Mean of the normal distribution.
+    sd : float
+        Standard deviation of the normal distribution.
+    low : float or None, optional
+        Minimum allowed value. Default is ``None``.
+    high : float or None, optional
+        Maximum allowed value. Default is ``None``.
+    size : int or None, optional
+        Number of values to sample. Default is ``None``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of sampled values clipped to the requested bounds.
+    """
     n = int(size or 1)
     if sd <= 0:
         val = mean
@@ -62,7 +88,28 @@ def _piecewise_quantile_sample(
     stats: Dict[str, float],
     size: int = 1,
 ) -> np.ndarray:
-    """Draw random values using percentile points (like min, p50, max)."""
+    """Sample values from piecewise percentile statistics.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance providing the RNG.
+    stats : dict[str, float]
+        Mapping containing percentile statistics such as ``min``, ``p50``,
+        and ``max``.
+    size : int, optional
+        Number of values to sample. Default is ``1``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Sampled values interpolated between the supplied percentile points.
+
+    Raises
+    ------
+    ValueError
+        If either a minimum or maximum statistic is missing.
+    """
     cols = {str(k).lower(): v for k, v in stats.items()}
 
     pts = []
@@ -107,10 +154,34 @@ def _sample_from_stats(
     stats: Dict[str, float],
     kind: Optional[str] = None,
 ) -> float:
-    """Pick one random value from a row of numbers.
+    """Sample one value from summary statistics.
 
-    The function automatically chooses a sampling method based on what columns
-    are available (for example value, mean/sd, min/max, or percentiles).
+    The sampler chooses an appropriate strategy based on the available
+    statistics. Fixed values are returned directly. Mean/standard-deviation
+    rows are sampled with a truncated normal distribution, min/max rows are
+    sampled uniformly, and percentile rows are sampled by piecewise linear
+    interpolation.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance providing the RNG and sampling
+        helpers.
+    stats : dict[str, float]
+        Summary statistics for one sampled value.
+    kind : str or None, optional
+        Optional semantic hint. Use ``"efficiency"`` to bound the result to
+        ``[0, 1]`` or ``"yield"`` to clamp it at zero. Default is ``None``.
+
+    Returns
+    -------
+    float
+        Sampled numeric value.
+
+    Raises
+    ------
+    ValueError
+        If the supplied statistics are insufficient to determine a sample.
     """
     cols = {str(k).lower(): v for k, v in stats.items()}
 

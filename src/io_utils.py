@@ -1,4 +1,9 @@
-"""Read input files, check them, and prepare clean data for the model."""
+"""Read, validate, and normalize model input data.
+
+This module loads the scenario's CSV and geospatial inputs, validates required
+columns and values, normalizes naming conventions, and assembles the data
+bundle consumed by the simulation model.
+"""
 
 from __future__ import annotations
 
@@ -68,7 +73,28 @@ from .logging_utils import log_scope
 
 
 def _require_cols(df: pd.DataFrame, required: Sequence[str], label: str, logger: Any) -> None:
-    """Stop with a clear error if a table is missing needed columns."""
+    """Validate that a dataframe contains required columns.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Table to validate.
+    required : sequence of str
+        Columns that must be present.
+    label : str
+        Human-readable table name used in error messages.
+    logger : Any
+        Logger object retained for interface consistency.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    ValueError
+        If one or more required columns are missing.
+    """
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns in {label}: {missing}")
@@ -80,7 +106,25 @@ def _merge_csvs(
     label: str,
     logger: Any,
 ) -> pd.DataFrame:
-    """Read one or more CSV files and combine them into one clean table."""
+    """Read one or more CSV files and combine them into one table.
+
+    Parameters
+    ----------
+    paths : str, pathlib.Path, or sequence of str or pathlib.Path
+        One or more CSV file paths.
+    required_cols : sequence of str
+        Columns that must be present in every file.
+    label : str
+        Human-readable dataset name used in logs and errors.
+    logger : Any
+        Logger used for progress and duplicate warnings.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Concatenated dataframe with duplicates removed on the required key
+        columns.
+    """
     paths = [paths] if isinstance(paths, (str, Path)) else list(paths)
     frames: List[pd.DataFrame] = []
     for p in paths:
@@ -103,7 +147,20 @@ def _merge_csvs(
 
 
 def _ensure_projected(gdf: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
-    """Make sure map data uses a coordinate system that supports distance/area math."""
+    """Ensure a geospatial dataframe uses a projected CRS.
+
+    Parameters
+    ----------
+    gdf : geopandas.GeoDataFrame
+        Input geometry table.
+    logger : Any
+        Logger used to report reprojection activity.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        GeoDataFrame in a projected coordinate reference system.
+    """
     if gdf.crs is None or not gdf.crs.is_projected:
         est = gdf.estimate_utm_crs()
         logger.info(f"Reprojecting to projected CRS: {est}")
@@ -112,7 +169,29 @@ def _ensure_projected(gdf: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
 
 
 def _normalize_pollutant_column(df: pd.DataFrame, col: str, label: str, logger: Any) -> pd.DataFrame:
-    """Convert pollutant names to the standard names used by the model."""
+    """Normalize pollutant labels in a dataframe column.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input table.
+    col : str
+        Name of the pollutant column.
+    label : str
+        Dataset label used in error messages.
+    logger : Any
+        Logger retained for interface consistency.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Dataframe with standardized pollutant labels.
+
+    Raises
+    ------
+    ValueError
+        If the pollutant column is missing or cannot be normalized.
+    """
     if col not in df.columns:
         raise ValueError(f"{label} missing required column '{col}'")
     try:
@@ -123,7 +202,27 @@ def _normalize_pollutant_column(df: pd.DataFrame, col: str, label: str, logger: 
 
 
 def _normalize_pathway_column(df: pd.DataFrame, label: str, logger: Any) -> pd.DataFrame:
-    """Clean and validate pathway names in a table, when present."""
+    """Normalize and validate pathway labels when present.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input table.
+    label : str
+        Dataset label used in error messages.
+    logger : Any
+        Logger retained for interface consistency.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Dataframe with normalized pathway labels.
+
+    Raises
+    ------
+    ValueError
+        If any pathway label is not recognized.
+    """
     if COL_PATHWAY not in df.columns:
         return df
     df[COL_PATHWAY] = df[COL_PATHWAY].astype(str).str.strip().str.lower()
@@ -141,7 +240,25 @@ def _normalize_pathway_column(df: pd.DataFrame, label: str, logger: Any) -> pd.D
 
 
 def _validate_stats_table(df: pd.DataFrame, label: str) -> None:
-    """Check that a table has enough number fields to sample values."""
+    """Validate that a table exposes sampling statistics.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Table to validate.
+    label : str
+        Human-readable dataset name used in errors.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    ValueError
+        If the table does not contain fixed values, summary statistics, or
+        percentile columns.
+    """
     cols = set(df.columns)
     ok = (
         ({"mean", "sd"} <= cols)
@@ -153,10 +270,25 @@ def _validate_stats_table(df: pd.DataFrame, label: str) -> None:
         raise ValueError(f"{label} must provide value, mean/sd, min/max, or percentiles")
 
 
-
-
 def _validate_stats_rows(df: pd.DataFrame, label: str) -> None:
-    """Check that each row has enough number fields to sample a value."""
+    """Validate that each row contains usable sampling statistics.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Table to validate.
+    label : str
+        Human-readable dataset name used in errors.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    ValueError
+        If any row lacks a fixed value or a complete set of statistics.
+    """
     stat_cols = {"value", "mean", "sd", "std", "min", "max", "minimum", "maximum", "p0", "p100"}
     stat_cols.update(c for c in df.columns if str(c).startswith("p") and str(c)[1:].isdigit())
     if not stat_cols.intersection(df.columns):
@@ -175,7 +307,23 @@ def _validate_stats_rows(df: pd.DataFrame, label: str) -> None:
 
 
 def _load_parameter_stats_table(path: Any, label: str, logger: Any) -> Optional[pd.DataFrame]:
-    """Load a table of per-parcel parameter values or value ranges."""
+    """Load a parcel parameter statistics table.
+
+    Parameters
+    ----------
+    path : Any
+        CSV file path or sequence of paths.
+    label : str
+        Dataset label used in logs and errors.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        Loaded parameter statistics table, or ``None`` when no path is
+        provided.
+    """
     if path is None:
         return None
     df = _merge_csvs(path, [COL_PID, "parameter"], label, logger)
@@ -186,7 +334,23 @@ def _load_parameter_stats_table(path: Any, label: str, logger: Any) -> Optional[
 
 
 def _load_pollutant_concentrations(path: Any, pollutants: List[str], logger: Any) -> Optional[pd.DataFrame]:
-    """Load pollutant concentration inputs by parcel."""
+    """Load parcel pollutant concentration inputs.
+
+    Parameters
+    ----------
+    path : Any
+        CSV file path or sequence of paths.
+    pollutants : list[str]
+        Pollutant names to retain.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        Filtered pollutant concentration table, or ``None`` when no path is
+        provided.
+    """
     if path is None:
         return None
     df = _merge_csvs(path, [COL_PID, COL_POLLUTANT], LOAD_CONCENTRATIONS, logger)
@@ -198,7 +362,23 @@ def _load_pollutant_concentrations(path: Any, pollutants: List[str], logger: Any
 
 
 def _load_groundwater_concentrations(path: Any, pollutants: List[str], logger: Any) -> Optional[pd.DataFrame]:
-    """Load optional shallow-groundwater concentrations by parcel."""
+    """Load optional parcel groundwater concentration inputs.
+
+    Parameters
+    ----------
+    path : Any
+        CSV file path or sequence of paths.
+    pollutants : list[str]
+        Pollutant names to retain.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        Filtered groundwater concentration table, or ``None`` when no path is
+        provided.
+    """
     if path is None:
         return None
     df = _merge_csvs(path, [COL_PID, COL_POLLUTANT], LOAD_GROUNDWATER_CONCENTRATIONS, logger)
@@ -210,7 +390,23 @@ def _load_groundwater_concentrations(path: Any, pollutants: List[str], logger: A
 
 
 def _load_process_effects(path: Any, cps: List[int], logger: Any) -> Optional[pd.DataFrame]:
-    """Load optional BMP rules that change process values."""
+    """Load BMP process-effect rules.
+
+    Parameters
+    ----------
+    path : Any
+        CSV file path or sequence of paths.
+    cps : list[int]
+        BMP CPS codes to retain.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        Process-effect table filtered to the requested BMPs, or ``None`` when
+        no path is provided.
+    """
     if path is None:
         return None
     df = _merge_csvs(path, [COL_CPS, "parameter"], LOAD_PROCESS_EFFECTS, logger)
@@ -230,14 +426,38 @@ def _load_process_effects(path: Any, cps: List[int], logger: Any) -> Optional[pd
 
 
 def _zero_efficiency_table(cps: List[int], pollutants: List[str]) -> pd.DataFrame:
-    """Create a fallback table where every BMP efficiency is zero."""
+    """Create a zero-valued BMP efficiency table.
+
+    Parameters
+    ----------
+    cps : list[int]
+        BMP CPS codes to include.
+    pollutants : list[str]
+        Pollutants to include.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Table assigning zero effectiveness to every BMP/pollutant pair.
+    """
     return pd.DataFrame(
         [{COL_CPS: int(c), COL_POLLUTANT: p, "value": 0.0} for c in cps for p in pollutants]
     )
 
 
 def _load_pollutants(cfg: Dict[str, Any]) -> List[str]:
-    """Read pollutant names from config and convert to standard names."""
+    """Load pollutant names from configuration.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+
+    Returns
+    -------
+    list[str]
+        Normalized pollutant names.
+    """
     pols = ci_get(cfg, CFG_POLLUTANTS)
     if isinstance(pols, str):
         pols = [pols]
@@ -247,7 +467,18 @@ def _load_pollutants(cfg: Dict[str, Any]) -> List[str]:
 
 
 def _load_cps(cfg: Dict[str, Any]) -> List[int]:
-    """Read BMP type codes from config and return them as integers."""
+    """Load BMP CPS codes from configuration.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+
+    Returns
+    -------
+    list[int]
+        BMP CPS codes as integers.
+    """
     cps = ci_get(cfg, CFG_CPS)
     if isinstance(cps, int):
         cps = [cps]
@@ -257,7 +488,20 @@ def _load_cps(cfg: Dict[str, Any]) -> List[int]:
 
 
 def _load_domain(cfg: Dict[str, Any], logger: Any) -> gpd.GeoDataFrame:
-    """Load the model boundary shape and make sure its map projection is usable."""
+    """Load and normalize the model domain boundary.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        Domain boundary in a projected CRS with lowercase columns.
+    """
     domain_path = Path(ci_get(cfg, CFG_DOMAIN))
     if not domain_path.exists():
         raise FileNotFoundError(f"Domain not found: {domain_path}")
@@ -267,7 +511,28 @@ def _load_domain(cfg: Dict[str, Any], logger: Any) -> gpd.GeoDataFrame:
 
 
 def _load_parcels(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
-    """Load parcels, clip them to the boundary, and calculate size/edge length."""
+    """Load parcels, clip them to the domain, and compute geometry metrics.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+    domain : geopandas.GeoDataFrame
+        Domain boundary used for clipping.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        Parcel dataframe with area and perimeter columns.
+
+    Raises
+    ------
+    ValueError
+        If the parcel file is missing required columns, becomes empty after
+        clipping, or contains duplicate parcel IDs.
+    """
     parcels_path = Path(ci_get(cfg, CFG_PARCELS))
     if not parcels_path.exists():
         raise FileNotFoundError(f"Parcels not found: {parcels_path}")
@@ -289,7 +554,20 @@ def _load_parcels(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) ->
 
 
 def _load_parcel_graph(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
-    """Load which parcels flow into which other parcels."""
+    """Load parcel-to-parcel upstream relationships.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Table describing which parcels flow into which others.
+    """
     up_path = Path(ci_get(cfg, CFG_PARCEL_UP))
     if not up_path.exists():
         raise FileNotFoundError(f"{CFG_PARCEL_UP} not found: {up_path}")
@@ -298,7 +576,20 @@ def _load_parcel_graph(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
 
 
 def _load_parcel_outlets(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
-    """Load which outlets each parcel drains to."""
+    """Load parcel-to-outlet relationships.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Table describing which outlets each parcel drains to.
+    """
     out_path = Path(ci_get(cfg, CFG_PARCEL_OUT))
     if not out_path.exists():
         raise FileNotFoundError(f"{CFG_PARCEL_OUT} not found: {out_path}")
@@ -307,7 +598,22 @@ def _load_parcel_outlets(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
 
 
 def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: Any) -> pd.DataFrame:
-    """Load parcel selection chances, or create equal chances if none are provided."""
+    """Load or synthesize parcel selection probabilities.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+    parcels : pandas.DataFrame
+        Parcel table used to determine available parcel IDs.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Parcel IDs and normalized selection probabilities.
+    """
     if parcels.empty:
         raise ValueError("No parcels available for selection")
     p_cfg = ci_get(cfg, CFG_PARCEL_P)
@@ -344,7 +650,22 @@ def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: A
 
 
 def _load_outlet_loc(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
-    """Load outlet locations and align them to the same map projection as the domain."""
+    """Load outlet locations and align them to the domain CRS.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+    domain : geopandas.GeoDataFrame
+        Domain boundary whose CRS is used for alignment.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        Outlet location dataframe in the domain CRS.
+    """
     outlet_path = Path(ci_get(cfg, CFG_OUTLET_LOC))
     if not outlet_path.exists():
         raise FileNotFoundError(f"Outlet location not found: {outlet_path}")
@@ -361,7 +682,27 @@ def _load_optional_outlet_stats(
     label: str,
     logger: Any,
 ) -> Optional[pd.DataFrame]:
-    """Optionally load outlet target/mean tables and clean pollutant names."""
+    """Optionally load an outlet summary table.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+    key : str
+        Configuration key for the table path.
+    required_cols : sequence of str
+        Columns that must be present in the table.
+    label : str
+        Dataset label used in logs and errors.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        Loaded table with normalized pollutant names, or ``None`` when the
+        configuration key is absent.
+    """
     if ci_get(cfg, key) is None:
         logger.verbose(f"Optional key {key} not provided; skipping {label}")
         return None
@@ -370,7 +711,20 @@ def _load_optional_outlet_stats(
 
 
 def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataFrame]:
-    """Optionally load parcel-to-outlet delivery ratio values."""
+    """Optionally load parcel-to-outlet delivery ratios.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+    logger : Any
+        Logger used for progress and warning messages.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        Delivery ratio table, or ``None`` when not configured or missing.
+    """
     dr_cfg = ci_get(cfg, CFG_DELIVERY_RATIOS)
     if dr_cfg is None:
         logger.verbose("No delivery ratios configured; using default delivery coefficients")
@@ -388,7 +742,24 @@ def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataF
 
 
 def _load_bmp_efficiency(cfg: Dict[str, Any], cps: List[int], pollutants: List[str], logger: Any) -> pd.DataFrame:
-    """Load BMP effectiveness inputs for the selected BMPs and pollutants."""
+    """Load BMP effectiveness inputs.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+    cps : list[int]
+        BMP CPS codes to retain.
+    pollutants : list[str]
+        Pollutants to retain.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    pandas.DataFrame
+        BMP effectiveness table filtered to the requested BMPs and pollutants.
+    """
     df = _merge_csvs(ci_get(cfg, CFG_BMP_EFFICIENCY), [COL_CPS, COL_POLLUTANT], CFG_BMP_EFFICIENCY, logger)
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_BMP_EFFICIENCY, logger)
     df = _normalize_pathway_column(df, CFG_BMP_EFFICIENCY, logger)
@@ -400,7 +771,23 @@ def _load_bmp_efficiency(cfg: Dict[str, Any], cps: List[int], pollutants: List[s
 
 
 def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any) -> Optional[pd.DataFrame]:
-    """Optionally load BMP cost inputs for the selected BMP types."""
+    """Optionally load BMP cost inputs.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+    cps : list[int]
+        BMP CPS codes to retain.
+    logger : Any
+        Logger used for progress and warning messages.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        BMP cost table filtered to the requested BMPs, or ``None`` when no
+        usable cost table is configured.
+    """
     path = ci_get(cfg, CFG_BMP_COST)
     if path is None:
         return None
@@ -414,7 +801,24 @@ def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any) -> Optional
 
 
 def _load_pollutant_yield(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants: List[str], logger: Any) -> pd.DataFrame:
-    """Load starting parcel pollutant loads used in non-PLET mode."""
+    """Load parcel pollutant yields for non-PLET mode.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Configuration mapping.
+    parcels : pandas.DataFrame
+        Parcel table used to filter valid IDs.
+    pollutants : list[str]
+        Pollutants to retain.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Parcel pollutant yield table filtered to valid parcels and pollutants.
+    """
     df = _merge_csvs(ci_get(cfg, CFG_POLLUTANT_YIELD), [COL_PID, COL_POLLUTANT], CFG_POLLUTANT_YIELD, logger)
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_POLLUTANT_YIELD, logger)
     _validate_stats_table(df, CFG_POLLUTANT_YIELD)
@@ -425,7 +829,28 @@ def _load_pollutant_yield(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants
 
 
 def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
-    """Load every needed input file, clean it, validate it, and return one data bundle."""
+    """Load, validate, and assemble all scenario inputs.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Scenario configuration mapping.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    dict[str, Any]
+        Data bundle containing the validated inputs and derived lookup
+        structures required by the model.
+
+    Raises
+    ------
+    ValueError
+        If configuration values are invalid or required inputs are missing.
+    FileNotFoundError
+        If a configured input file does not exist.
+    """
     logger.info("Loading and validating input datasets")
     with log_scope(logger=logger):
         domain = _load_domain(cfg, logger)

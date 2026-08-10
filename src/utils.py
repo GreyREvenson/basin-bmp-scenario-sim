@@ -1,4 +1,9 @@
-"""Small shared helper functions used in many places."""
+"""Shared utility helpers.
+
+This module contains small reusable helpers for case-insensitive dictionary
+lookups, column normalization, pollutant label normalization, and parsing
+percentile-style column names.
+"""
 
 from __future__ import annotations
 
@@ -6,21 +11,21 @@ from typing import Any, Dict, Iterable, Mapping
 
 
 def ci_get(d: Mapping[str, Any], key: str, default: Any = None) -> Any:
-    """Look up a dictionary key without caring about uppercase/lowercase.
+    """Look up a mapping key case-insensitively.
 
     Parameters
     ----------
     d : Mapping[str, Any]
-        Input dictionary-like object.
+        Mapping to search.
     key : str
-        Key to look up, case-insensitively.
+        Key to look up.
     default : Any, optional
-        Default value when key is not found.
+        Value returned when no matching key is found. Default is ``None``.
 
     Returns
     -------
     Any
-        Value if found; otherwise default.
+        Matching value if found, otherwise ``default``.
     """
     key_l = str(key).lower()
     for k, v in d.items():
@@ -30,34 +35,34 @@ def ci_get(d: Mapping[str, Any], key: str, default: Any = None) -> Any:
 
 
 def normalize_columns(df: Any) -> Any:
-    """Rename table columns to lowercase text (in place).
+    """Normalize dataframe column names to lowercase text.
 
     Parameters
     ----------
-    df : pandas.DataFrame
-        Input table; its column names are changed directly.
+    df : Any
+        Table-like object with a ``columns`` attribute.
 
     Returns
     -------
-    pandas.DataFrame
-        The same table object, returned for convenience.
+    Any
+        The same object, returned for convenience.
     """
     df.columns = [str(c).strip().lower() for c in df.columns]
     return df
 
 
 def normalize_pollutant_label(label: str) -> str:
-    """Convert a pollutant name to the standard code used by this model.
+    """Normalize a pollutant label to the canonical model code.
 
     Parameters
     ----------
     label : str
-        Arbitrary label (e.g., 'tp', 'TP', 'phosphorus').
+        Raw pollutant label.
 
     Returns
     -------
     str
-        Standard pollutant code ('TN', 'TP', 'TSS').
+        Canonical pollutant code.
 
     Raises
     ------
@@ -73,17 +78,17 @@ def normalize_pollutant_label(label: str) -> str:
 
 
 def parse_percent_keys(cols: Iterable[Any]) -> Dict[int, Any]:
-    """Find percentile-style column names like p10, p50, or p95.
+    """Extract percentile-style column labels.
 
     Parameters
     ----------
     cols : Iterable[Any]
-        Column labels to inspect.
+        Column labels to inspect for percentile names.
 
     Returns
     -------
-    Dict[int, Any]
-        Map from percentile number to the original column label.
+    dict[int, Any]
+        Mapping from percentile number to the original column label.
     """
     import re
 

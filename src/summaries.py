@@ -1,4 +1,9 @@
-"""Build per-scenario summary numbers from BMP records."""
+"""Build per-scenario summary statistics from BMP records.
+
+This module aggregates BMP placement records into scenario-level summary rows
+and rollups, including counts, costs, efficiencies, and type-specific
+attributes.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +28,19 @@ from .constants import (
 
 
 def _compute_statistics(values: np.ndarray) -> Dict[str, float]:
-    """Return common summary numbers (count, average, min, max, and percentiles)."""
+    """Compute common descriptive statistics.
+
+    Parameters
+    ----------
+    values : numpy.ndarray
+        Numeric values to summarize.
+
+    Returns
+    -------
+    dict[str, float]
+        Summary statistics including count, mean, standard deviation, minimum,
+        quartiles, and maximum. Empty or all-NaN inputs yield NaN statistics.
+    """
     if values.size == 0:
         return {"count": 0, "mean": np.nan, "std": np.nan, "min": np.nan, "p25": np.nan, "p50": np.nan, "p75": np.nan, "max": np.nan}
     valid = values[~np.isnan(values)]
@@ -42,17 +59,47 @@ def _compute_statistics(values: np.ndarray) -> Dict[str, float]:
 
 
 def _compute_efficiency(treated: float, baseline_yield: float) -> Optional[float]:
-    """Return the treated share of baseline load (between 0 and 1)."""
+    """Compute the treated share of a baseline load.
+
+    Parameters
+    ----------
+    treated : float
+        Treated pollutant load.
+    baseline_yield : float
+        Baseline pollutant load before treatment.
+
+    Returns
+    -------
+    float or None
+        Fraction of baseline load treated, clipped to ``[0, 1]``. Returns
+        ``None`` when ``baseline_yield`` is not positive.
+    """
     if baseline_yield <= 0:
         return None
     return min(1.0, treated / baseline_yield)
 
 
 class BMPSummaryCollector:
-    """Collect BMP records and turn them into easy-to-read scenario summaries."""
+    """Collect BMP records and build summary tables.
+
+    The collector groups BMP records by CPS code, retains the fields needed for
+    summary statistics, and exposes methods for per-CPS and rollup summaries.
+    """
 
     def __init__(self, pollutants: List[str], scenario_id: int) -> None:
-        """Start an empty summary collector for one scenario."""
+        """Initialize an empty summary collector.
+
+        Parameters
+        ----------
+        pollutants : list[str]
+            Pollutants tracked in the scenario.
+        scenario_id : int
+            Scenario identifier.
+
+        Returns
+        -------
+        None
+        """
         self.pollutants = pollutants
         self.scenario_id = scenario_id
         self.bmp_by_cps: Dict[int, Dict[str, Any]] = defaultdict(
@@ -64,7 +111,19 @@ class BMPSummaryCollector:
         bmp_record: Dict[str, Any],
         pid_baseline_yields: Dict[str, float],
     ) -> None:
-        """Add one BMP result row to the collector."""
+        """Add one BMP record to the collector.
+
+        Parameters
+        ----------
+        bmp_record : dict[str, Any]
+            BMP output row produced during scenario execution.
+        pid_baseline_yields : dict[str, float]
+            Baseline parcel yields keyed by pollutant.
+
+        Returns
+        -------
+        None
+        """
         cps = int(bmp_record["cps"])
         group = self.bmp_by_cps[cps]
         group["records"].append(bmp_record)
@@ -95,7 +154,13 @@ class BMPSummaryCollector:
             group["attributes"][f"baseline_{pol}"].append(float(pid_baseline_yields.get(pol, 0.0)))
 
     def generate_summary_dataframe(self) -> pd.DataFrame:
-        """Create one summary row per BMP type used in this scenario."""
+        """Generate one summary row per BMP type.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Summary table with one row per CPS code used in the scenario.
+        """
         summaries: List[Dict[str, Any]] = []
         for cps in sorted(self.bmp_by_cps.keys()):
             group = self.bmp_by_cps[cps]
@@ -164,7 +229,13 @@ class BMPSummaryCollector:
         return pd.DataFrame(summaries)
 
     def generate_rollup_summary(self) -> Dict[str, Any]:
-        """Create one combined summary row across all BMP types."""
+        """Generate one combined summary row across all BMP types.
+
+        Returns
+        -------
+        dict[str, Any]
+            Rollup summary covering all BMP records in the scenario.
+        """
         all_records: List[Dict[str, Any]] = []
         all_attrs: Dict[str, List[float]] = defaultdict(list)
 

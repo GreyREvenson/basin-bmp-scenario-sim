@@ -1,4 +1,8 @@
-"""Small helper functions for parcel lookups, routing, and baseline load picks."""
+"""Parcel lookup and routing helpers.
+
+This module provides small helper functions used to sample parcel-level loads,
+select parcels for BMP placement, and resolve routing and delivery metadata.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +23,27 @@ from .constants import (
 
 
 def _sample_yield(self: "Model", parcel_idx: int, pol_idx: int) -> float:
-    """Pick a starting pollutant load value for one parcel/pollutant pair."""
+    """Sample a baseline pollutant yield for one parcel and pollutant.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    parcel_idx : int
+        Index of the parcel in the model arrays.
+    pol_idx : int
+        Index of the pollutant in ``self.pollutants``.
+
+    Returns
+    -------
+    float
+        Sampled pollutant yield for the requested parcel/pollutant pair.
+
+    Raises
+    ------
+    KeyError
+        If no yield statistics exist for the requested parcel and pollutant.
+    """
     stats = self.pollutant_yield_stats[parcel_idx][pol_idx]
     if stats is None:
         raise KeyError(
@@ -29,14 +53,43 @@ def _sample_yield(self: "Model", parcel_idx: int, pol_idx: int) -> float:
 
 
 def _sample_parcel_index(self: "Model") -> int:
-    """Randomly pick which parcel receives the next BMP attempt."""
+    """Sample the next parcel to receive a BMP attempt.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+
+    Returns
+    -------
+    int
+        Index into ``self.parcel_selection_ids`` for the selected parcel.
+    """
     idx = self.rng.choice(len(self.parcel_selection_ids), p=self.parcel_selection_probs)
     self.logger.verbose(f"selected parcel idx={idx} with pid={self.parcel_selection_ids[idx]}")
     return idx
 
 
 def _get_parcel_metadata(self: "Model", pid: Union[int, str]) -> pd.Series:
-    """Return all stored data for one parcel ID."""
+    """Return metadata for one parcel.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    pid : int or str
+        Parcel identifier.
+
+    Returns
+    -------
+    pandas.Series
+        Row of parcel metadata for the requested parcel.
+
+    Raises
+    ------
+    KeyError
+        If the parcel ID is not present after clipping to the domain.
+    """
     sub = self.data[DATA_PARCELS]
     match = sub[sub[COL_PID].astype(str) == str(pid)]
     if match.empty:
@@ -48,19 +101,58 @@ def _get_parcel_metadata(self: "Model", pid: Union[int, str]) -> pd.Series:
 
 
 def _get_parcel_up_list(self: "Model", pid: Union[int, str]) -> List[str]:
-    """Return parcel IDs that flow into the given parcel."""
+    """Return upstream parcel IDs for one parcel.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    pid : int or str
+        Parcel identifier.
+
+    Returns
+    -------
+    list[str]
+        Parcel IDs that drain into the requested parcel.
+    """
     return list(self.data[DATA_PARCEL_UP_MAP].get(str(pid), []))
 
 
 def _get_parcel_out_oids(self: "Model", parcel_idx: int) -> List[str]:
-    """Return outlet IDs connected to the selected parcel."""
+    """Return outlet IDs connected to one parcel.
+
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    parcel_idx : int
+        Parcel index.
+
+    Returns
+    -------
+    list[str]
+        Outlet IDs connected to the selected parcel.
+    """
     return list(self.parcel_out_oids[parcel_idx])
 
 
 def _get_delivery_coeffs(self: "Model", pid: Union[int, str], oid: Union[int, str]) -> Dict[str, float]:
-    """Get delivery factors for a parcel-to-outlet path.
+    """Return delivery coefficients for a parcel-to-outlet path.
 
-    If no custom value is provided, this returns 1.0 factors (no extra change).
+    Parameters
+    ----------
+    self : Model
+        Active simulation model instance.
+    pid : int or str
+        Parcel identifier.
+    oid : int or str
+        Outlet identifier.
+
+    Returns
+    -------
+    dict[str, float]
+        Delivery factors for sediment and nutrient routing. Missing entries
+        default to ``1.0`` for every factor.
     """
     return self.delivery_coeffs.get(
         (str(pid), str(oid)),

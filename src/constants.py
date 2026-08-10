@@ -1,10 +1,21 @@
-"""Central constants for configuration keys, validated data payload keys, CSV columns, and output labels.
+"""Central constants used throughout the simulation.
 
-Conventions
------------
-- Units: lengths in meters (m), areas in hectares (ha), costs in USD.
-- Pollutants: canonical labels are defined by POLLUTANT_CANONICAL; aliases map via POLLUTANT_ALIAS_MAP.
-- Outputs: treated_/removed_ prefixes denote per-pollutant loads; cost_usd and total_cost_usd capture costing.
+This module defines the canonical configuration keys, validated data payload
+keys, CSV column names, output labels, pollutant aliases, and BMP names used by
+the rest of the application.
+
+Notes
+-----
+Units are normalized as follows:
+
+* lengths are in meters (m)
+* areas are in hectares (ha)
+* costs are in USD
+
+Canonical pollutant labels are defined by ``POLLUTANT_CANONICAL`` and aliases
+map through ``POLLUTANT_ALIAS_MAP``. Output prefixes such as ``treated_`` and
+``removed_`` denote per-pollutant loads, while ``cost_usd`` and
+``total_cost_usd`` capture BMP costing.
 """
 
 # Config keys
