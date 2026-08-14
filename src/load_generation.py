@@ -51,6 +51,9 @@ _PARAMETER_ALIASES: Dict[str, str] = {
     "infiltration_factor": "infiltration_fraction",
     "gw_infiltration_fraction": "infiltration_fraction",
     "groundwater_infiltration_fraction": "infiltration_fraction",
+    "shallow_subsurface_fraction": "fraction_subsurface_shallow",
+    "fraction_shallow_subsurface": "fraction_subsurface_shallow",
+    "subsurface_shallow_fraction": "fraction_subsurface_shallow",
     "irrigated_area_fraction": "irrigated_fraction",
     "irrigation_area_fraction": "irrigated_fraction",
     "irrigation_depth": "irrigation_depth_in",
@@ -573,7 +576,6 @@ def calculate_pathway_yields(
     surface_fraction: float = 0.0,
     shallow_fraction: float = 0.0,
     groundwater_loads: bool = False,
-    treat_groundwater_with_bmps: bool = False,
 ) -> np.ndarray:
     """Calculate pathway-specific parcel yields.
 
@@ -603,8 +605,6 @@ def calculate_pathway_yields(
     groundwater_loads : bool, optional
         Whether groundwater concentrations should contribute to pollutant
         loads. Default is ``False``.
-    treat_groundwater_with_bmps : bool, optional
-        Whether BMPs treat groundwater loads in pathway-derived mode.
 
     Returns
     -------
@@ -623,7 +623,7 @@ def calculate_pathway_yields(
 
     has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
     sediment_kg_ha = rusle_sediment_yield_kg_ha(parameters) if has_rusle else 0.0
-    enrichment_ratio = max(0.0, float(parameters.get("enrichment_ratio", 2.0)))
+    enrichment_ratio = max(0.0, float(parameters.get("enrichment_ratio", 2.0)))  #TODO: default is 2 which should increase TN and TP loads. Should this be revised or even removed?
 
     pathway_mode = str(pathway_mode).strip().lower()
     groundwater_concentrations = groundwater_concentrations or {}
@@ -636,6 +636,22 @@ def calculate_pathway_yields(
             groundwater_load = (
                 max(0.0, float(groundwater_concentrations.get(pol, 0.0))) * infiltration_l_ha / 1_000_000.0
             )
+        # PLET resolves surface runoff and total subsurface/groundwater load,
+        # but not the shallow-versus-deep subsurface split used by the BMP
+        # simulator.  Keep those concepts separate by partitioning total
+        # subsurface load with an explicit, independently sampled parameter.
+        if pathway_mode == "derive_from_plet" and groundwater_loads and pol != "TSS":
+            if "fraction_subsurface_shallow" not in parameters:
+                raise ValueError(
+                    "derive_from_plet with groundwater loads requires the PLET "
+                    "parameter 'fraction_subsurface_shallow' (0 to 1)"
+                )
+            fraction_subsurface_shallow = float(
+                np.clip(parameters["fraction_subsurface_shallow"], 0.0, 1.0) #TODO: Can we set a range of values?
+            )
+        else:
+            fraction_subsurface_shallow = 0.0
+
         if pol == "TSS":
             load = sediment_kg_ha if has_rusle else runoff_load
             surface_load = load
@@ -645,19 +661,19 @@ def calculate_pathway_yields(
             sediment_fraction = max(0.0, float(parameters.get("sediment_n_pct", 0.0))) / 100.0
             load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
             surface_load = load
-            shallow_load = groundwater_load if treat_groundwater_with_bmps else 0.0
-            deep_load = 0.0 if treat_groundwater_with_bmps else groundwater_load
+            shallow_load = groundwater_load * fraction_subsurface_shallow
+            deep_load = groundwater_load * (1.0 - fraction_subsurface_shallow)
         elif pol == "TP":
             sediment_fraction = max(0.0, float(parameters.get("sediment_p_pct", 0.0))) / 100.0
             load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
             surface_load = load
-            shallow_load = groundwater_load if treat_groundwater_with_bmps else 0.0
-            deep_load = 0.0 if treat_groundwater_with_bmps else groundwater_load
+            shallow_load = groundwater_load * fraction_subsurface_shallow
+            deep_load = groundwater_load * (1.0 - fraction_subsurface_shallow)
         else:
             load = runoff_load
             surface_load = runoff_load
-            shallow_load = groundwater_load if treat_groundwater_with_bmps else 0.0
-            deep_load = 0.0 if treat_groundwater_with_bmps else groundwater_load
+            shallow_load = groundwater_load * fraction_subsurface_shallow
+            deep_load = groundwater_load * (1.0 - fraction_subsurface_shallow)
 
         total_load = (load + groundwater_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
         if pathway_mode == "derive_from_plet":
@@ -964,7 +980,7 @@ def _set_effect_value(state: LoadState, idx: int, parameter: str, value: float) 
     value_f = float(value)
     if parameter == "cn":
         value_f = float(np.clip(value_f, 1.0e-6, 100.0))
-    elif parameter in {"rain_correction_fraction", "runoff_day_fraction", "sdr"}:
+    elif parameter in {"rain_correction_fraction", "runoff_day_fraction", "sdr", "fraction_subsurface_shallow"}:
         value_f = float(np.clip(value_f, 0.0, 1.0))
     elif parameter == "ia_ratio":
         value_f = max(0.0, value_f)
