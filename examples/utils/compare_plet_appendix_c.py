@@ -220,8 +220,12 @@ def _write_single_pid_probability(path: Path, pid: str) -> None:
     pd.DataFrame([{"pid": str(pid), "probability": 1.0}]).to_csv(path, index=False)
 
 
-def _write_single_cps_selection(path: Path, cps: int) -> None:
-    pd.DataFrame([{"cps": int(cps), "probability": 1.0}]).to_csv(path, index=False)
+def _write_single_cps_selection(path: Path, cps: int, cps_values: Iterable[int]) -> None:
+    rows = [
+        {"cps": int(candidate), "probability": 1.0 if int(candidate) == int(cps) else 0.0}
+        for candidate in cps_values
+    ]
+    pd.DataFrame(rows).to_csv(path, index=False)
 
 
 def _write_empty_parcel_up(path: Path) -> None:
@@ -491,7 +495,7 @@ def _run_one_cps(
         parcel_up_empty = tdir / "parcel_up_empty.csv"
 
         _write_single_pid_probability(parcel_p_single, pid)
-        _write_single_cps_selection(bmp_sel_single, int(cps))
+        _write_single_cps_selection(bmp_sel_single, int(cps), base_cfg.get("cps", []))
         _write_empty_parcel_up(parcel_up_empty)
 
         cfg = dict(base_cfg)

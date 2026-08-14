@@ -576,6 +576,7 @@ def calculate_pathway_yields(
     surface_fraction: float = 0.0,
     shallow_fraction: float = 0.0,
     groundwater_loads: bool = False,
+    treat_groundwater_with_bmps: bool = False,
 ) -> np.ndarray:
     """Calculate pathway-specific parcel yields.
 
@@ -605,6 +606,10 @@ def calculate_pathway_yields(
     groundwater_loads : bool, optional
         Whether groundwater concentrations should contribute to pollutant
         loads. Default is ``False``.
+    treat_groundwater_with_bmps : bool, optional
+        Whether groundwater loads should use the configured pathway split.
+        When ``False``, groundwater is assigned to the deep pathway so BMPs
+        do not reduce it. Default is ``False``.
 
     Returns
     -------
@@ -640,7 +645,7 @@ def calculate_pathway_yields(
         # but not the shallow-versus-deep subsurface split used by the BMP
         # simulator.  Keep those concepts separate by partitioning total
         # subsurface load with an explicit, independently sampled parameter.
-        if pathway_mode == "derive_from_plet" and groundwater_loads and pol != "TSS":
+        if pathway_mode == "derive_from_plet" and groundwater_loads and pol != "TSS" and treat_groundwater_with_bmps:
             if "fraction_subsurface_shallow" not in parameters:
                 raise ValueError(
                     "derive_from_plet with groundwater loads requires the PLET "
@@ -678,15 +683,21 @@ def calculate_pathway_yields(
         total_load = (load + groundwater_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
         if pathway_mode == "derive_from_plet":
             out[idx, 0] = max(0.0, surface_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
-            out[idx, 1] = max(0.0, shallow_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
-            out[idx, 2] = max(0.0, deep_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
+            if treat_groundwater_with_bmps:
+                out[idx, 1] = max(0.0, shallow_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
+                out[idx, 2] = max(0.0, deep_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
+            else:
+                out[idx, 2] = max(0.0, groundwater_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
         else:
             fixed_surface = float(np.clip(surface_fraction, 0.0, 1.0))
             fixed_shallow = float(np.clip(shallow_fraction, 0.0, 1.0))
             fixed_deep = max(0.0, 1.0 - fixed_surface - fixed_shallow)
-            out[idx, 0] = max(0.0, total_load) * fixed_surface
-            out[idx, 1] = max(0.0, total_load) * fixed_shallow
-            out[idx, 2] = max(0.0, total_load) * fixed_deep
+            partitioned_load = total_load if treat_groundwater_with_bmps else max(0.0, load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
+            out[idx, 0] = partitioned_load * fixed_surface
+            out[idx, 1] = partitioned_load * fixed_shallow
+            out[idx, 2] = partitioned_load * fixed_deep
+            if not treat_groundwater_with_bmps:
+                out[idx, 2] += max(0.0, groundwater_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
     return out
 
 
