@@ -119,7 +119,7 @@ def _merge_csvs(
     logger : Any
         Logger used for progress and duplicate warnings.
 
-    Returns
+    Returns 
     -------
     pandas.DataFrame
         Concatenated dataframe with duplicates removed on the required key
@@ -909,10 +909,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         load_generation[LOAD_TREAT_GROUNDWATER_WITH_BMPS] = treat_groundwater_with_bmps
 
         if ci_get(cfg, CFG_BMP_EFFICIENCY) is None:
-            if process_mode:
-                bmp_eff = _zero_efficiency_table(cps, pollutants)
-            else:
-                raise ValueError("bmp_efficiency is required unless process_parameter_mode is enabled")
+            raise ValueError("bmp_efficiency is required unless process_parameter_mode is enabled")
         else:
             bmp_eff = _load_bmp_efficiency(cfg, cps, pollutants, logger)
         bmp_cost = _load_bmp_cost(cfg, cps, logger)

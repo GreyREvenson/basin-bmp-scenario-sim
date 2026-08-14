@@ -141,7 +141,9 @@ def _select_cost_rate_median(
         self.logger.verbose("calling _select_cost_rate_median")
         cols = {str(k).lower(): v for k, v in row.items()}
 
-        if "p50" in cols:
+        if "value" in cols:
+            rate_value = float(cols["value"])
+        elif "p50" in cols:
             rate_value = float(cols["p50"])
         elif "median" in cols:
             rate_value = float(cols["median"])

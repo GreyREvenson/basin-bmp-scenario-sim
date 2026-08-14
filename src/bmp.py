@@ -531,8 +531,7 @@ def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.D
         If the probability file is malformed, incomplete, or contains invalid
         probability values.
     """
-    print (f"bmp_sel_path: {bmp_sel_path}")
-    if bmp_sel_path and os.path.isfile(bmp_sel_path):
+    if bmp_sel_path:
         df = pd.read_csv(bmp_sel_path)
         df.columns = [c.lower() for c in df.columns]
         df = df[df[COL_CPS].astype(int).isin(self.data[DATA_CPS])].copy()
