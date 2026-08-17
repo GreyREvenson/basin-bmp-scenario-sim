@@ -39,7 +39,7 @@ ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
 ParcelUpListFn = Callable[[Union[int, str]], List[str]]
 
 FT_TO_M = 0.3048  # meters per foot
-PATHWAY_ORDER = ("surface", "shallow subsurface", "deep subsurface")
+PATHWAY_ORDER = ("surface", "shallow subsurface", "deep subsurface") #TODO: make flexible for other pathway names in input files
 
 
 def _get_pathway_yields(self: "Model", parcel_idx: int, pol_idx: int, total_yield: float) -> Dict[str, float]:
@@ -215,11 +215,11 @@ def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) ->
     Returns
     -------
     dict[str, float]
-        Effectiveness values for ``surface``, ``shallow subsurface``, and
+        Effectiveness values for ``surface``, ``shallow subsurface``, and 
         ``deep subsurface``.
     """
     entry = self.bmp_efficiency_stats[int(cps)][pol_idx]
-    pathway_names = ("surface", "shallow subsurface", "deep subsurface")
+    pathway_names = ("surface", "shallow subsurface", "deep subsurface") #TODO: make flexible for other pathway names in input files
     is_pathway_entry = (
         isinstance(entry, dict)
         and any(path in entry for path in pathway_names)
@@ -238,7 +238,7 @@ def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) ->
     # Legacy single efficiency distribution applied uniformly to all pathways.
     stats = entry if isinstance(entry, dict) else {"value": float(entry or 0.0)}
     val = float(self._sample_from_stats(stats, kind="efficiency"))
-    return {"surface": val, "shallow subsurface": val, "deep subsurface": val}
+    return {"surface": val, "shallow subsurface": val, "deep subsurface": val} #TODO: make flexible for other pathway names in input files
 
 
 def _simulate_wetland(
