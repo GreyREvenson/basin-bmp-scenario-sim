@@ -6,10 +6,10 @@ bundle consumed by the simulation model.
 """
 
 from __future__ import annotations
-
+import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
-
+from typing import Any, Dict, List, Optional, Sequence, Union, Tuple
+from collections import defaultdict
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -67,6 +67,83 @@ from .constants import (
 )
 from .utils import ci_get, normalize_columns, normalize_pollutant_label
 from .logging_utils import log_scope
+
+
+
+def _write_parquet_atomic(df: pd.DataFrame, path: Path, *, logger: logging.Logger) -> None:
+    """Write a parquet file atomically.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Dataframe to write.
+    path : pathlib.Path
+        Destination parquet path.
+    logger : logging.Logger
+        Logger retained for interface consistency.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    RuntimeError
+        If no parquet engine is available.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    try:
+        df.to_parquet(tmp_path, index=False)
+        tmp_path.replace(path)
+    except (ImportError, ModuleNotFoundError) as ex:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise RuntimeError(
+            "Parquet output is required but no parquet engine is installed. "
+            "Install pyarrow or fastparquet in the active environment."
+        ) from ex
+
+
+def _flatten_plot_records(
+    merged: Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]
+) -> pd.DataFrame:
+    """Convert plot records into a normalized trajectory table.
+
+    Parameters
+    ----------
+    merged : dict[tuple[str, str, str, str], list[tuple[int, float, float]]]
+        Plot records keyed by pollutant, outlet, x-axis, and y-axis.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Normalized trajectory table sorted by scenario and axis fields.
+    """
+    rows: List[Dict[str, Any]] = []
+    step_counters: Dict[Tuple[int, str, str, str, str], int] = defaultdict(int)
+    for (pol, oid, xax, yax), points in merged.items():
+        for sid, xval, yval in points:
+            counter_key = (int(sid), str(pol), str(oid), str(xax), str(yax))
+            step_counters[counter_key] += 1
+            rows.append(
+                {
+                    "scenario": int(sid),
+                    "pollutant": str(pol),
+                    "oid": str(oid),
+                    "x_axis": str(xax),
+                    "y_axis": str(yax),
+                    "step": int(step_counters[counter_key]),
+                    "x_value": float(xval),
+                    "y_value": float(yval),
+                }
+            )
+    if not rows:
+        return pd.DataFrame(
+            columns=["scenario", "pollutant", "oid", "x_axis", "y_axis", "step", "x_value", "y_value"]
+        )
+    df = pd.DataFrame(rows)
+    return df.sort_values(["scenario", "pollutant", "oid", "x_axis", "y_axis", "step"]).reset_index(drop=True)
 
 
 def _require_cols(df: pd.DataFrame, required: Sequence[str], label: str, logger: Any) -> None:
