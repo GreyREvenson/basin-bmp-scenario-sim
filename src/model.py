@@ -33,9 +33,7 @@ from src.bmp import (
 from src.cost import _estimate_costs_for_probabilities, _get_bmp_cost, _select_cost_rate_median
 from src.logging_utils import make_worker_logger, log_scope
 from src.load_generation import (
-    apply_process_parameter_bmp,
     calculate_load_diagnostics,
-    has_process_effects,
     initialize_plet_rusle_state,
 )
 from src.parcel import (
@@ -91,15 +89,12 @@ from src.constants import (
     DATA_RUSLE_INPUTS,
     DATA_POLLUTANT_CONCENTRATIONS,
     DATA_GROUNDWATER_CONCENTRATIONS,
-    DATA_BMP_PARAMETER_EFFECTS,
     LOAD_GROUNDWATER_LOADS,
     LOAD_PATHWAY_MODE,
     LOAD_PATHWAY_MODE_DERIVED,
     LOAD_PATHWAY_MODE_FIXED,
     LOAD_MODE_PLET_RUSLE,
     LOAD_MODE_STATISTICAL,
-    LOAD_PROCESS_MODE,
-    LOAD_PROCESS_FALLBACK,
     DATA_POLLUTANTS,
     DIR_OUTLET_TRAJECTORIES,
     DIR_SCENARIO_METRICS,
@@ -373,17 +368,10 @@ class Model:
             self.load_generation_mode = str(
                 self.load_generation.get("mode", LOAD_MODE_STATISTICAL)
             ).strip().lower()
-            self.process_parameter_mode = bool(
-                self.load_generation.get(LOAD_PROCESS_MODE, False)
-            )
-            self.process_parameter_fallback = str(
-                self.load_generation.get(LOAD_PROCESS_FALLBACK, "efficiency")
-            ).strip().lower()
             self.plet_inputs = self.data.get(DATA_PLET_INPUTS)
             self.rusle_inputs = self.data.get(DATA_RUSLE_INPUTS)
             self.pollutant_concentrations = self.data.get(DATA_POLLUTANT_CONCENTRATIONS)
             self.groundwater_concentrations = self.data.get(DATA_GROUNDWATER_CONCENTRATIONS)
-            self.bmp_parameter_effects = self.data.get(DATA_BMP_PARAMETER_EFFECTS)
             self.pathway_mode = str(
                 self.load_generation.get(LOAD_PATHWAY_MODE, LOAD_PATHWAY_MODE_FIXED)
             ).strip().lower()
@@ -448,13 +436,10 @@ class Model:
             pollutant_yield_stats=self.selection_pollutant_yield_stats,
             load_generation=self.load_generation,
             load_generation_mode=self.load_generation_mode,
-            process_parameter_mode=self.process_parameter_mode,
-            process_parameter_fallback=self.process_parameter_fallback,
             plet_inputs=self.plet_inputs,
             rusle_inputs=self.rusle_inputs,
             pollutant_concentrations=self.pollutant_concentrations,
             groundwater_concentrations=self.groundwater_concentrations,
-            bmp_parameter_effects=self.bmp_parameter_effects,
             pathway_mode=self.pathway_mode,
             groundwater_loads=self.groundwater_loads,
             bmp_cps=self.bmp_cps,
@@ -614,12 +599,12 @@ def _run_one_scenario(
         logger.info(f"=== scenario {sid} start ===")
 
         n_pol = len(ctx.pollutants)
-        process_state = None
+        load_state = None
 
         if ctx.load_generation_mode == LOAD_MODE_PLET_RUSLE:
-            baseline, process_state = initialize_plet_rusle_state(ctx)
+            baseline, load_state = initialize_plet_rusle_state(ctx)
             yields = baseline.copy()
-            ctx.current_pathway_yields = process_state.pathway_yields
+            ctx.current_pathway_yields = load_state.pathway_yields
             logger.info("Generated baseline parcel yields with stochastic PLET/RUSLE inputs")
         else:
             baseline = np.zeros((len(ctx.parcel_selection_ids), n_pol), dtype=float)
@@ -703,32 +688,12 @@ def _run_one_scenario(
 
             # Scope each BMP placement for deeper indentation
             with log_scope(label=f"apply bmp cps={cps} pid={pid}", logger=logger):
-                use_process_parameters = bool(
-                    ctx.process_parameter_mode
-                    and process_state is not None
-                    and has_process_effects(ctx, cps)
-                )
-                suppress_efficiency = bool(
-                    ctx.process_parameter_mode
-                    and not use_process_parameters
-                    and ctx.process_parameter_fallback == "none"
-                )
+                eff_maps = [
+                    ctx._sample_efficiency_map(cps, pol_idx) for pol_idx in range(n_pol)
+                ]
 
-                # Process-mode CPS entries do not need an efficiency row.
-                if use_process_parameters or suppress_efficiency:
-                    eff_maps = [
-                        {"surface": 0.0, "shallow subsurface": 0.0, "deep subsurface": 0.0}
-                        for _ in range(n_pol)
-                    ]
-                else:
-                    eff_maps = [
-                        ctx._sample_efficiency_map(cps, pol_idx) for pol_idx in range(n_pol)
-                    ]
-
-                # Optional BMP failure draw.  The same scale is applied to
-                # efficiency effects or to process-parameter changes.
+                # Optional BMP failure draw scales the sampled efficiency effects.
                 failed_flag = False
-                process_effect_scale = 1.0
                 fr_cfg = ctx.cfg.get(CFG_BMP_FAIL_RATE, 0.0)
                 fail_rate = float(fr_cfg if fr_cfg is not None else 0.0)
                 if fail_rate > 0.0:
@@ -739,11 +704,8 @@ def _run_one_scenario(
                         reduction = float(red_cfg if red_cfg is not None else DEFAULT_BMP_FAIL_REDUCTION)
                         reduction = max(0.0, min(1.0, reduction))
                         eff_maps = [{k: float(v) * reduction for k, v in emap.items()} for emap in eff_maps]
-                        process_effect_scale = reduction
                         failed_flag = True
                         ctx.logger.verbose(f"BMP failure triggered for cps={cps}; scaling efficiencies by {reduction:.2f}")
-
-                geometry_eff_maps = eff_maps
 
                 # Per-BMP record
                 bmp_rec: Dict[str, Any] = dict(
@@ -760,44 +722,21 @@ def _run_one_scenario(
                         OUTPUT_CATCHMENT_RATIO: None,
                     },
                 )
-                # Record failure and load-application mode for CSVs/summaries.
                 bmp_rec[OUTPUT_BMP_FAILED] = bool(failed_flag)
                 bmp_rec["load_generation_mode"] = str(ctx.load_generation_mode)
-                bmp_rec["bmp_application_mode"] = (
-                    "process_parameter"
-                    if use_process_parameters
-                    else ("none" if suppress_efficiency else "efficiency")
-                )
 
                 bmp_outputs = {OUTPUT_TREATED: np.zeros(n_pol, dtype=float), OUTPUT_REMOVED: np.zeros(n_pol, dtype=float)}
 
-                # Apply BMP
+                # Apply BMP using sampled efficiency by flow pathway.
                 if cps in (656, 657):
-                    ctx._simulate_wetland(parcel_idx, geometry_eff_maps, yields, bmp_rec, bmp_outputs)
+                    ctx._simulate_wetland(parcel_idx, eff_maps, yields, bmp_rec, bmp_outputs)
                     quantity = float(bmp_rec[OUTPUT_WETLAND_AREA])
                 elif cps in (412,):
-                    ctx._simulate_grassed(parcel_idx, geometry_eff_maps, yields, bmp_rec, bmp_outputs)
+                    ctx._simulate_grassed(parcel_idx, eff_maps, yields, bmp_rec, bmp_outputs)
                     quantity = float(bmp_rec[OUTPUT_BUFFER_AREA]) if bmp_rec[OUTPUT_BUFFER_AREA] else 0.0
                 else:
-                    ctx._simulate_infield(parcel_idx, geometry_eff_maps, yields, bmp_rec, bmp_outputs)
+                    ctx._simulate_infield(parcel_idx, eff_maps, yields, bmp_rec, bmp_outputs)
                     quantity = float(ctx.parcel_area_ha[parcel_idx])
-
-                if use_process_parameters:
-                    treated, removed, _ = apply_process_parameter_bmp(
-                        ctx,
-                        process_state,
-                        yields,
-                        cps,
-                        parcel_idx,
-                        bmp_rec,
-                        effect_scale=process_effect_scale,
-                    )
-                    bmp_outputs[OUTPUT_TREATED] = treated
-                    bmp_outputs[OUTPUT_REMOVED] = removed
-                elif suppress_efficiency:
-                    # Geometry/cost are still simulated, but no load effect is
-                    # applied when process fallback is explicitly disabled.
-                    bmp_outputs[OUTPUT_REMOVED] = np.zeros(n_pol, dtype=float)
 
                 # Costing and totals
                 cost_this = ctx._get_bmp_cost(cps, quantity)
@@ -860,14 +799,14 @@ def _run_one_scenario(
             scenario_parcels.append(row)
 
         # Realized stochastic PLET/RUSLE inputs and derived diagnostics.
-        if process_state is not None:
+        if load_state is not None:
             for parcel_idx, pid_i in enumerate(ctx.parcel_selection_ids):
-                initial_params = process_state.baseline_parameters[parcel_idx]
-                final_params = process_state.parameters[parcel_idx]
-                initial_conc = process_state.baseline_concentrations[parcel_idx]
-                final_conc = process_state.concentrations[parcel_idx]
-                initial_gw_conc = process_state.baseline_groundwater_concentrations[parcel_idx]
-                final_gw_conc = process_state.groundwater_concentrations[parcel_idx]
+                initial_params = load_state.baseline_parameters[parcel_idx]
+                final_params = load_state.parameters[parcel_idx]
+                initial_conc = load_state.baseline_concentrations[parcel_idx]
+                final_conc = load_state.concentrations[parcel_idx]
+                initial_gw_conc = load_state.baseline_groundwater_concentrations[parcel_idx]
+                final_gw_conc = load_state.groundwater_concentrations[parcel_idx]
                 row: Dict[str, Any] = {"scenario": sid, "pid": str(pid_i)}
                 for key in sorted(set(initial_params) | set(final_params)):
                     row[f"initial_{key}"] = initial_params.get(key)
@@ -882,12 +821,12 @@ def _run_one_scenario(
                     row[f"final_groundwater_concentration_{label}_mg_l"] = final_gw_conc.get(pol)
                 for pol_idx, pol in enumerate(ctx.pollutants):
                     label = str(pol).lower()
-                    row[f"initial_surface_{label}_kg_ha"] = float(process_state.baseline_pathway_yields[parcel_idx, pol_idx, 0])
-                    row[f"initial_shallow_{label}_kg_ha"] = float(process_state.baseline_pathway_yields[parcel_idx, pol_idx, 1])
-                    row[f"initial_deep_{label}_kg_ha"] = float(process_state.baseline_pathway_yields[parcel_idx, pol_idx, 2])
-                    row[f"final_surface_{label}_kg_ha"] = float(process_state.pathway_yields[parcel_idx, pol_idx, 0])
-                    row[f"final_shallow_{label}_kg_ha"] = float(process_state.pathway_yields[parcel_idx, pol_idx, 1])
-                    row[f"final_deep_{label}_kg_ha"] = float(process_state.pathway_yields[parcel_idx, pol_idx, 2])
+                    row[f"initial_surface_{label}_kg_ha"] = float(load_state.baseline_pathway_yields[parcel_idx, pol_idx, 0])
+                    row[f"initial_shallow_{label}_kg_ha"] = float(load_state.baseline_pathway_yields[parcel_idx, pol_idx, 1])
+                    row[f"initial_deep_{label}_kg_ha"] = float(load_state.baseline_pathway_yields[parcel_idx, pol_idx, 2])
+                    row[f"final_surface_{label}_kg_ha"] = float(load_state.pathway_yields[parcel_idx, pol_idx, 0])
+                    row[f"final_shallow_{label}_kg_ha"] = float(load_state.pathway_yields[parcel_idx, pol_idx, 1])
+                    row[f"final_deep_{label}_kg_ha"] = float(load_state.pathway_yields[parcel_idx, pol_idx, 2])
                 for key, value in calculate_load_diagnostics(initial_params).items():
                     row[f"initial_{key}"] = value
                 for key, value in calculate_load_diagnostics(final_params).items():

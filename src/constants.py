@@ -62,9 +62,6 @@ LOAD_PATHWAY_MODE_FIXED = "fixed_fractions"
 LOAD_PATHWAY_MODE_DERIVED = "derive_from_plet"
 LOAD_GROUNDWATER_LOADS = "groundwater_loads"
 LOAD_TREAT_GROUNDWATER_WITH_BMPS = "treat_groundwater_with_bmps"
-LOAD_PROCESS_MODE = "process_parameter_mode"
-LOAD_PROCESS_EFFECTS = "bmp_parameter_effects"
-LOAD_PROCESS_FALLBACK = "process_parameter_fallback"
 
 # New: BMP failure configuration
 CFG_BMP_FAIL_RATE = "bmp_fail_rate"            # probability [0,1] a BMP fails
@@ -99,7 +96,6 @@ DATA_PLET_INPUTS = "plet_inputs"
 DATA_RUSLE_INPUTS = "rusle_inputs"
 DATA_POLLUTANT_CONCENTRATIONS = "pollutant_concentrations"
 DATA_GROUNDWATER_CONCENTRATIONS = "groundwater_concentrations"
-DATA_BMP_PARAMETER_EFFECTS = "bmp_parameter_effects"
 
 # Common column names
 COL_PID = "pid"

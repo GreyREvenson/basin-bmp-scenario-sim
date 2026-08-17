@@ -47,9 +47,6 @@ from .constants import (
     LOAD_PATHWAY_MODE_DERIVED,
     LOAD_GROUNDWATER_LOADS,
     LOAD_TREAT_GROUNDWATER_WITH_BMPS,
-    LOAD_PROCESS_MODE,
-    LOAD_PROCESS_EFFECTS,
-    LOAD_PROCESS_FALLBACK,
     COL_AREA_HA,
     COL_AREA_M2,
     COL_CPS,
@@ -388,61 +385,6 @@ def _load_groundwater_concentrations(path: Any, pollutants: List[str], logger: A
     _validate_stats_rows(df, LOAD_GROUNDWATER_CONCENTRATIONS)
     return df
 
-
-def _load_process_effects(path: Any, cps: List[int], logger: Any) -> Optional[pd.DataFrame]:
-    """Load BMP process-effect rules.
-
-    Parameters
-    ----------
-    path : Any
-        CSV file path or sequence of paths.
-    cps : list[int]
-        BMP CPS codes to retain.
-    logger : Any
-        Logger used for progress reporting.
-
-    Returns
-    -------
-    pandas.DataFrame or None
-        Process-effect table filtered to the requested BMPs, or ``None`` when
-        no path is provided.
-    """
-    if path is None:
-        return None
-    df = _merge_csvs(path, [COL_CPS, "parameter"], LOAD_PROCESS_EFFECTS, logger)
-    df[COL_CPS] = df[COL_CPS].astype(int)
-    df = df[df[COL_CPS].isin(cps)].copy()
-    if df.empty:
-        raise ValueError("bmp_parameter_effects has no records for specified cps values")
-    if "operation" not in df.columns:
-        df["operation"] = "multiply"
-    df["operation"] = df["operation"].astype(str).str.strip().str.lower()
-    allowed = {"multiply", "scale", "add", "delta", "set", "replace", "reduce", "reduction_fraction"}
-    bad = sorted(set(df["operation"]) - allowed)
-    if bad:
-        raise ValueError(f"bmp_parameter_effects contains unsupported operations: {bad}")
-    _validate_stats_rows(df, LOAD_PROCESS_EFFECTS)
-    return df
-
-
-def _zero_efficiency_table(cps: List[int], pollutants: List[str]) -> pd.DataFrame:
-    """Create a zero-valued BMP efficiency table.
-
-    Parameters
-    ----------
-    cps : list[int]
-        BMP CPS codes to include.
-    pollutants : list[str]
-        Pollutants to include.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Table assigning zero effectiveness to every BMP/pollutant pair.
-    """
-    return pd.DataFrame(
-        [{COL_CPS: int(c), COL_POLLUTANT: p, "value": 0.0} for c in cps for p in pollutants]
-    )
 
 
 def _load_pollutants(cfg: Dict[str, Any]) -> List[str]:
@@ -892,33 +834,26 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         outlet_target = _load_optional_outlet_stats(cfg, CFG_OUTLET_TARGET, [COL_OID, COL_POLLUTANT, COL_TARGET], CFG_OUTLET_TARGET, logger)
         outlet_mean = _load_optional_outlet_stats(cfg, CFG_OUTLET_MEAN, [COL_OID, COL_POLLUTANT, COL_MEAN], CFG_OUTLET_MEAN, logger)
 
-        process_mode = bool(load_generation.get(LOAD_PROCESS_MODE, False))
-        process_fallback = str(load_generation.get(LOAD_PROCESS_FALLBACK, "efficiency")).strip().lower()
         pathway_mode = str(load_generation.get(LOAD_PATHWAY_MODE, LOAD_PATHWAY_MODE_FIXED)).strip().lower()
         groundwater_loads = bool(load_generation.get(LOAD_GROUNDWATER_LOADS, False))
         treat_groundwater_with_bmps = bool(load_generation.get(LOAD_TREAT_GROUNDWATER_WITH_BMPS, False))
-        if process_fallback not in {"efficiency", "none"}:
-            raise ValueError("process_parameter_fallback must be 'efficiency' or 'none'")
         if pathway_mode not in {LOAD_PATHWAY_MODE_FIXED, LOAD_PATHWAY_MODE_DERIVED}:
             raise ValueError(
                 "load_generation.pathway_mode must be 'fixed_fractions' or 'derive_from_plet'"
             )
-        load_generation[LOAD_PROCESS_FALLBACK] = process_fallback
         load_generation[LOAD_PATHWAY_MODE] = pathway_mode
         load_generation[LOAD_GROUNDWATER_LOADS] = groundwater_loads
         load_generation[LOAD_TREAT_GROUNDWATER_WITH_BMPS] = treat_groundwater_with_bmps
 
         if ci_get(cfg, CFG_BMP_EFFICIENCY) is None:
-            raise ValueError("bmp_efficiency is required unless process_parameter_mode is enabled")
-        else:
-            bmp_eff = _load_bmp_efficiency(cfg, cps, pollutants, logger)
+            raise ValueError("bmp_efficiency is required")
+        bmp_eff = _load_bmp_efficiency(cfg, cps, pollutants, logger)
         bmp_cost = _load_bmp_cost(cfg, cps, logger)
 
         plet_inputs = None
         rusle_inputs = None
         pollutant_concentrations = None
         groundwater_concentrations = None
-        bmp_parameter_effects = None
         if load_mode == LOAD_MODE_PLET_RUSLE:
             plet_inputs = _load_parameter_stats_table(
                 load_generation.get(LOAD_PLET_INPUTS), LOAD_PLET_INPUTS, logger
@@ -945,15 +880,6 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             pollutant_yield = None
         else:
             pollutant_yield = _load_pollutant_yield(cfg, parcels, pollutants, logger)
-
-        if process_mode:
-            if load_mode != LOAD_MODE_PLET_RUSLE:
-                raise ValueError("process_parameter_mode currently requires mode='plet_rusle'")
-            bmp_parameter_effects = _load_process_effects(
-                load_generation.get(LOAD_PROCESS_EFFECTS), cps, logger
-            )
-            if bmp_parameter_effects is None:
-                raise ValueError("process_parameter_mode requires load_generation.bmp_parameter_effects")
 
         delivery_ratios = _load_delivery_ratios(cfg, logger)
 
@@ -982,7 +908,6 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         rusle_inputs=rusle_inputs,
         pollutant_concentrations=pollutant_concentrations,
         groundwater_concentrations=groundwater_concentrations,
-        bmp_parameter_effects=bmp_parameter_effects,
         bmp_limit_n=ci_get(cfg, CFG_BMP_LIMIT_N),
         bmp_limit_usd=ci_get(cfg, CFG_BMP_LIMIT_USD),
         n_scenarios=int(ci_get(cfg, CFG_N_SCENARIOS) or 1),
