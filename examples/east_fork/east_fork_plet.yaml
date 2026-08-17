@@ -27,7 +27,6 @@ load_generation:
   pathway_mode: derive_from_plet
   groundwater_loads: true
   treat_groundwater_with_bmps: false
-  process_parameter_mode: true
   bmp_parameter_effects: ./examples/east_fork/inputs/plet/bmp_parameter_effects.csv
   process_parameter_fallback: efficiency
 
