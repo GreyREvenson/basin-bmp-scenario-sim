@@ -92,8 +92,12 @@ class LoadState:
     pollutants : list[str]
         Pollutants tracked by the simulation.
     pathway_yields : numpy.ndarray
-        Current pathway-specific parcel yields with shape
+        Current BMP-treatable pathway-specific parcel yields with shape
         ``(n_parcels, n_pollutants, n_pathways)``.
+    untreated_groundwater_yields : numpy.ndarray
+        Current groundwater yields that are excluded from BMP treatment, with
+        shape ``(n_parcels, n_pollutants)``. This array is zero when
+        groundwater treatment is enabled.
     baseline_parameters : list[dict[str, float]]
         Snapshot of the original parameter values.
     baseline_concentrations : list[dict[str, float]]
@@ -102,6 +106,9 @@ class LoadState:
         Snapshot of the original groundwater concentrations.
     baseline_pathway_yields : numpy.ndarray or None
         Snapshot of the original pathway-specific yields.
+    baseline_untreated_groundwater_yields : numpy.ndarray or None
+        Snapshot of the original groundwater yields excluded from BMP
+        treatment.
     """
 
     parcel_ids: List[str]
@@ -111,10 +118,12 @@ class LoadState:
     has_rusle: List[bool]
     pollutants: List[str]
     pathway_yields: np.ndarray
+    untreated_groundwater_yields: np.ndarray
     baseline_parameters: List[Dict[str, float]] = field(default_factory=list)
     baseline_concentrations: List[Dict[str, float]] = field(default_factory=list)
     baseline_groundwater_concentrations: List[Dict[str, float]] = field(default_factory=list)
     baseline_pathway_yields: Optional[np.ndarray] = None
+    baseline_untreated_groundwater_yields: Optional[np.ndarray] = None
 
     @property
     def index_by_pid(self) -> Dict[str, int]:
@@ -344,7 +353,8 @@ def plet_annual_infiltration_in(parameters: Mapping[str, float]) -> float:
     ----------
     parameters : Mapping[str, float]
         Mapping that may contain ``infiltration_fraction``,
-        ``annual_precip_in``, and ``groundwater_multiplier``.
+        ``annual_precip_in``, ``rain_correction_fraction``, and
+        ``groundwater_multiplier``.
 
     Returns
     -------
@@ -353,7 +363,10 @@ def plet_annual_infiltration_in(parameters: Mapping[str, float]) -> float:
     """
     infiltration_fraction = float(np.clip(parameters.get("infiltration_fraction", 0.0), 0.0, 1.0))
     annual_precip = max(0.0, float(parameters.get("annual_precip_in", 0.0)))
-    infiltration = annual_precip * infiltration_fraction
+    rain_correction_fraction = float(
+        np.clip(parameters.get("rain_correction_fraction", 1.0), 0.0, 1.0)
+    )
+    infiltration = annual_precip * rain_correction_fraction * infiltration_fraction
     infiltration *= max(0.0, float(parameters.get("groundwater_multiplier", 1.0)))
     return float(max(0.0, infiltration))
 
@@ -564,7 +577,7 @@ def calculate_load_diagnostics(parameters: Mapping[str, float]) -> Dict[str, flo
     }
 
 
-def calculate_pathway_yields(
+def calculate_load_components(
     parameters: Mapping[str, float],
     concentrations: Mapping[str, float],
     groundwater_concentrations: Optional[Mapping[str, float]],
@@ -575,8 +588,8 @@ def calculate_pathway_yields(
     shallow_fraction: float = 0.0,
     groundwater_loads: bool = False,
     treat_groundwater_with_bmps: bool = False,
-) -> np.ndarray:
-    """Calculate pathway-specific parcel yields.
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Calculate BMP-treatable pathways and protected groundwater yields.
 
     The calculation supports two modes. In ``derive_from_plet`` mode, yields
     are derived directly from runoff, infiltration, and groundwater
@@ -606,14 +619,15 @@ def calculate_pathway_yields(
         loads. Default is ``False``.
     treat_groundwater_with_bmps : bool, optional
         Whether groundwater loads should use the configured pathway split.
-        When ``False``, groundwater is assigned to the deep pathway so BMPs
-        do not reduce it. Default is ``False``.
+        When ``False``, groundwater is returned as a separate protected load
+        so pathway BMP efficiencies cannot reduce it. Default is ``False``.
 
     Returns
     -------
-    numpy.ndarray
-        Array of shape ``(n_pollutants, 3)`` containing surface, shallow
-        subsurface, and deep subsurface loads.
+    tuple[numpy.ndarray, numpy.ndarray]
+        The BMP-treatable surface, shallow-subsurface, and deep-subsurface
+        loads with shape ``(n_pollutants, 3)``, followed by the protected
+        groundwater loads with shape ``(n_pollutants,)``.
     """
 
     missing = [name for name in _REQUIRED_PLET if name not in parameters]
@@ -631,6 +645,7 @@ def calculate_pathway_yields(
     pathway_mode = str(pathway_mode).strip().lower()
     groundwater_concentrations = groundwater_concentrations or {}
     out = np.zeros((len(pollutants), len(PATHWAY_NAMES)), dtype=float)
+    untreated_groundwater = np.zeros(len(pollutants), dtype=float)
     for idx, pollutant in enumerate(pollutants):
         pol = str(pollutant).upper()
         runoff_load = max(0.0, float(concentrations.get(pol, 0.0))) * runoff_l_ha / 1_000_000.0
@@ -678,25 +693,90 @@ def calculate_pathway_yields(
             shallow_load = groundwater_load * fraction_subsurface_shallow
             deep_load = groundwater_load * (1.0 - fraction_subsurface_shallow)
 
-        total_load = (load + groundwater_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
+        load_multiplier = max(
+            0.0,
+            float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)),
+        )
         if pathway_mode == "derive_from_plet":
-            out[idx, 0] = max(0.0, surface_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
+            out[idx, 0] = max(0.0, surface_load) * load_multiplier
             if treat_groundwater_with_bmps:
-                out[idx, 1] = max(0.0, shallow_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
-                out[idx, 2] = max(0.0, deep_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
+                out[idx, 1] = max(0.0, shallow_load) * load_multiplier
+                out[idx, 2] = max(0.0, deep_load) * load_multiplier
             else:
-                out[idx, 2] = max(0.0, groundwater_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
+                untreated_groundwater[idx] = max(0.0, groundwater_load) * load_multiplier
         else:
             fixed_surface = float(np.clip(surface_fraction, 0.0, 1.0))
             fixed_shallow = float(np.clip(shallow_fraction, 0.0, 1.0))
             fixed_deep = max(0.0, 1.0 - fixed_surface - fixed_shallow)
-            partitioned_load = total_load if treat_groundwater_with_bmps else max(0.0, load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
+            load_to_partition = load + groundwater_load if treat_groundwater_with_bmps else load
+            partitioned_load = max(0.0, load_to_partition) * load_multiplier
             out[idx, 0] = partitioned_load * fixed_surface
             out[idx, 1] = partitioned_load * fixed_shallow
             out[idx, 2] = partitioned_load * fixed_deep
             if not treat_groundwater_with_bmps:
-                out[idx, 2] += max(0.0, groundwater_load) * max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
-    return out
+                untreated_groundwater[idx] = max(0.0, groundwater_load) * load_multiplier
+    return out, untreated_groundwater
+
+
+def calculate_pathway_yields(
+    parameters: Mapping[str, float],
+    concentrations: Mapping[str, float],
+    groundwater_concentrations: Optional[Mapping[str, float]],
+    pollutants: Sequence[str],
+    *,
+    pathway_mode: str = "fixed_fractions",
+    surface_fraction: float = 0.0,
+    shallow_fraction: float = 0.0,
+    groundwater_loads: bool = False,
+    treat_groundwater_with_bmps: bool = False,
+) -> np.ndarray:
+    """Calculate the parcel loads exposed to pathway BMP efficiencies.
+
+    Groundwater is included in these pathways only when
+    ``treat_groundwater_with_bmps`` is true. Use
+    :func:`calculate_load_components` when the separately tracked protected
+    groundwater load is also needed, or :func:`calculate_parcel_yields` for
+    total parcel yields.
+
+    Parameters
+    ----------
+    parameters : Mapping[str, float]
+        Parcel parameters used to compute runoff and other drivers.
+    concentrations : Mapping[str, float]
+        Runoff concentrations keyed by pollutant name.
+    groundwater_concentrations : Mapping[str, float] or None
+        Groundwater concentrations keyed by pollutant name.
+    pollutants : sequence of str
+        Pollutants to calculate.
+    pathway_mode : str, optional
+        Either ``"fixed_fractions"`` or ``"derive_from_plet"``.
+    surface_fraction : float, optional
+        Fraction assigned to surface flow in fixed-fraction mode.
+    shallow_fraction : float, optional
+        Fraction assigned to shallow subsurface flow in fixed-fraction mode.
+    groundwater_loads : bool, optional
+        Whether groundwater contributes to parcel loads.
+    treat_groundwater_with_bmps : bool, optional
+        Whether groundwater is exposed to pathway BMP efficiencies.
+
+    Returns
+    -------
+    numpy.ndarray
+        BMP-treatable surface, shallow-subsurface, and deep-subsurface loads
+        with shape ``(n_pollutants, 3)``.
+    """
+    pathway_yields, _ = calculate_load_components(
+        parameters,
+        concentrations,
+        groundwater_concentrations,
+        pollutants,
+        pathway_mode=pathway_mode,
+        surface_fraction=surface_fraction,
+        shallow_fraction=shallow_fraction,
+        groundwater_loads=groundwater_loads,
+        treat_groundwater_with_bmps=treat_groundwater_with_bmps,
+    )
+    return pathway_yields
 
 
 def calculate_parcel_yields(
@@ -740,7 +820,7 @@ def calculate_parcel_yields(
         Total annual loads per pollutant.
     """
 
-    pathway_yields = calculate_pathway_yields(
+    pathway_yields, untreated_groundwater_yields = calculate_load_components(
         parameters,
         concentrations,
         groundwater_concentrations,
@@ -751,7 +831,7 @@ def calculate_parcel_yields(
         groundwater_loads=groundwater_loads,
         treat_groundwater_with_bmps=treat_groundwater_with_bmps,
     )
-    return np.sum(pathway_yields, axis=1)
+    return np.sum(pathway_yields, axis=1) + untreated_groundwater_yields
 
 
 def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
@@ -788,6 +868,7 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
     has_rusle: List[bool] = []
     yields = np.zeros((len(parcel_ids), len(ctx.pollutants)), dtype=float)
     pathway_yields = np.zeros((len(parcel_ids), len(ctx.pollutants), len(PATHWAY_NAMES)), dtype=float)
+    untreated_groundwater_yields = np.zeros((len(parcel_ids), len(ctx.pollutants)), dtype=float)
     for i, pid in enumerate(parcel_ids):
         missing_plet = [name for name in _REQUIRED_PLET if name not in plet[i]]
         if missing_plet:
@@ -832,7 +913,7 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
             combined.setdefault(f"load_multiplier_{str(pol).lower()}", 1.0)
         parameters.append(combined)
         has_rusle.append(all(name in combined for name in _REQUIRED_RUSLE))
-        pathway_yields[i, :, :] = calculate_pathway_yields(
+        parcel_pathway_yields, parcel_untreated_groundwater_yields = calculate_load_components(
             combined,
             concentrations[i],
             groundwater_concentrations[i],
@@ -843,7 +924,9 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
             groundwater_loads=bool(getattr(ctx, "groundwater_loads", False)),
             treat_groundwater_with_bmps=bool(getattr(ctx, "load_generation", {}).get("treat_groundwater_with_bmps", False)),
         )
-        yields[i, :] = np.sum(pathway_yields[i, :, :], axis=1)
+        pathway_yields[i, :, :] = parcel_pathway_yields
+        untreated_groundwater_yields[i, :] = parcel_untreated_groundwater_yields
+        yields[i, :] = np.sum(pathway_yields[i, :, :], axis=1) + untreated_groundwater_yields[i, :]
 
     state = LoadState(
         parcel_ids=parcel_ids,
@@ -853,9 +936,11 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
         has_rusle=has_rusle,
         pollutants=list(ctx.pollutants),
         pathway_yields=pathway_yields,
+        untreated_groundwater_yields=untreated_groundwater_yields,
         baseline_parameters=[dict(values) for values in parameters],
         baseline_concentrations=[dict(values) for values in concentrations],
         baseline_groundwater_concentrations=[dict(values) for values in groundwater_concentrations],
         baseline_pathway_yields=pathway_yields.copy(),
+        baseline_untreated_groundwater_yields=untreated_groundwater_yields.copy(),
     )
     return yields.copy(), state

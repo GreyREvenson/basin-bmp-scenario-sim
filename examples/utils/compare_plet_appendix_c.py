@@ -314,8 +314,10 @@ def _annual_runoff_depth_in(params: Mapping[str, float]) -> float:
 
 def _annual_infiltration_in(params: Mapping[str, float]) -> float:
     infil_frac = float(np.clip(params.get("infiltration_fraction", 0.0), 0.0, 1.0))
+    rain_correct = float(np.clip(params.get("rain_correction_fraction", 1.0), 0.0, 1.0))
     p = max(0.0, params.get("annual_precip_in", 0.0))
-    return p * infil_frac * max(0.0, params.get("groundwater_multiplier", 1.0))
+    gw_multiplier = max(0.0, params.get("groundwater_multiplier", 1.0))
+    return p * rain_correct * infil_frac * gw_multiplier
 
 
 def _rusle_sediment_kg_ha(params: Mapping[str, float]) -> float:

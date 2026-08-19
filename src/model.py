@@ -21,6 +21,7 @@ from numpy.random import SeedSequence, default_rng
 from src.bmp import (
     _apply_pathway_reduction,
     _get_bmp_name,
+    _get_current_total_yield,
     _get_pathway_yields,
     _get_bmp_selection_probs,
     _sample_efficiency,          # legacy scalar sampler (kept for backward-compat)
@@ -175,6 +176,7 @@ class Model:
         self._select_bmp_type = types.MethodType(_select_bmp_type, self)
         self._get_bmp_name = types.MethodType(_get_bmp_name, self)
         self._get_pathway_yields = types.MethodType(_get_pathway_yields, self)
+        self._get_current_total_yield = types.MethodType(_get_current_total_yield, self)
         self._apply_pathway_reduction = types.MethodType(_apply_pathway_reduction, self)
         self._sample_efficiency = types.MethodType(_sample_efficiency, self)          # legacy
         self._sample_efficiency_map = types.MethodType(_sample_efficiency_map, self)  # pathway-aware
@@ -482,6 +484,7 @@ class _ScenarioContext:
         self._select_bmp_type = types.MethodType(_select_bmp_type, self)
         self._get_bmp_name = types.MethodType(_get_bmp_name, self)
         self._get_pathway_yields = types.MethodType(_get_pathway_yields, self)
+        self._get_current_total_yield = types.MethodType(_get_current_total_yield, self)
         self._apply_pathway_reduction = types.MethodType(_apply_pathway_reduction, self)
         self._sample_efficiency = types.MethodType(_sample_efficiency, self)            # legacy
         self._sample_efficiency_map = types.MethodType(_sample_efficiency_map, self)    # pathway-aware
@@ -544,6 +547,7 @@ def _run_one_scenario(
             baseline, load_state = initialize_plet_rusle_state(ctx)
             yields = baseline.copy()
             ctx.current_pathway_yields = load_state.pathway_yields
+            ctx.current_untreated_groundwater_yields = load_state.untreated_groundwater_yields
             logger.info("Generated baseline parcel yields with stochastic PLET/RUSLE inputs")
         else:
             baseline = np.zeros((len(ctx.parcel_selection_ids), n_pol), dtype=float)
@@ -766,6 +770,12 @@ def _run_one_scenario(
                     row[f"final_surface_{label}_kg_ha"] = float(load_state.pathway_yields[parcel_idx, pol_idx, 0])
                     row[f"final_shallow_{label}_kg_ha"] = float(load_state.pathway_yields[parcel_idx, pol_idx, 1])
                     row[f"final_deep_{label}_kg_ha"] = float(load_state.pathway_yields[parcel_idx, pol_idx, 2])
+                    row[f"initial_untreated_groundwater_{label}_kg_ha"] = float(
+                        load_state.baseline_untreated_groundwater_yields[parcel_idx, pol_idx]
+                    )
+                    row[f"final_untreated_groundwater_{label}_kg_ha"] = float(
+                        load_state.untreated_groundwater_yields[parcel_idx, pol_idx]
+                    )
                 for key, value in calculate_load_diagnostics(initial_params).items():
                     row[f"initial_{key}"] = value
                 for key, value in calculate_load_diagnostics(final_params).items():
