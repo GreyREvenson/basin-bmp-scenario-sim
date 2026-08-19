@@ -1,3 +1,3 @@
-pid,pollutant,value,units,group_id
-*,TN,5.50,mg/L,east_fork_groundwater
-*,TP,0.08,mg/L,east_fork_groundwater
+pid,pollutant,value,units
+*,TN,5.50,mg/L
+*,TP,0.08,mg/L
