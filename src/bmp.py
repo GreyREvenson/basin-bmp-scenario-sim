@@ -33,6 +33,7 @@ from .constants import (
     DATA_BMP_COST,
     DATA_CPS,
     DEFAULT_BUFFER_DEPTH_FT,
+    PATHWAY_VALUES,
 )
 from .logging_utils import log_scope
 
@@ -40,7 +41,7 @@ ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
 ParcelUpListFn = Callable[[Union[int, str]], List[str]]
 
 FT_TO_M = 0.3048  # meters per foot
-PATHWAY_ORDER = ("surface", "shallow subsurface", "deep subsurface") #TODO: make flexible for other pathway names in input files
+PATHWAY_ORDER = PATHWAY_VALUES
 
 
 def _get_pathway_yields(self: "Model", parcel_idx: int, pol_idx: int, total_yield: float) -> Dict[str, float]:
@@ -242,11 +243,9 @@ def _sample_efficiency(self: "Model", cps: Union[int, str], pol_idx: int) -> flo
 def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) -> Dict[str, float]:
     """Sample BMP effectiveness values for each flow pathway.
 
-    The function supports both the newer pathway-specific efficiency format
-    and the older single-distribution format. When pathway-specific
-    statistics are available, each pathway is sampled independently. When only
-    a single distribution is available, the sampled value is reused for all
-    pathways.
+    Input validation guarantees one distribution for every configured
+    CPS-by-pollutant-by-pathway combination. Each pathway is sampled
+    independently; missing coverage is treated as an invalid model state.
 
     Parameters
     ----------
@@ -264,27 +263,30 @@ def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) ->
         ``deep subsurface``. Values may be negative to represent pathway load
         increases.
     """
-    entry = self.bmp_efficiency_stats[int(cps)][pol_idx]
-    pathway_names = ("surface", "shallow subsurface", "deep subsurface") #TODO: make flexible for other pathway names in input files
-    is_pathway_entry = (
-        isinstance(entry, dict)
-        and any(path in entry for path in pathway_names)
-        and all(isinstance(value, dict) for value in entry.values())
+    cps_key = int(cps)
+    entry = self.bmp_efficiency_stats[cps_key][pol_idx]
+    missing_paths = (
+        list(PATHWAY_ORDER)
+        if not isinstance(entry, dict)
+        else [
+            pathway
+            for pathway in PATHWAY_ORDER
+            if pathway not in entry or not isinstance(entry[pathway], dict)
+        ]
     )
-    if is_pathway_entry:
-        out: Dict[str, float] = {}
-        for path in pathway_names:
-            stats = entry.get(path)
-            if stats is None:
-                # Fallback: reuse any available pathway stats; else 0.0.
-                stats = next(iter(entry.values())) if entry else {"value": 0.0}
-            out[path] = float(self._sample_from_stats(stats, kind="efficiency"))
-        return out
+    if missing_paths:
+        pollutant = self.pollutants[pol_idx]
+        raise ValueError(
+            "Incomplete bmp_efficiency coverage for "
+            f"cps={cps_key}, pollutant={pollutant}; missing pathways: {missing_paths}"
+        )
 
-    # Legacy single efficiency distribution applied uniformly to all pathways.
-    stats = entry if isinstance(entry, dict) else {"value": float(entry or 0.0)}
-    val = float(self._sample_from_stats(stats, kind="efficiency"))
-    return {"surface": val, "shallow subsurface": val, "deep subsurface": val} #TODO: make flexible for other pathway names in input files
+    return {
+        pathway: float(
+            self._sample_from_stats(entry[pathway], kind="efficiency")
+        )
+        for pathway in PATHWAY_ORDER
+    }
 
 
 def _simulate_wetland(

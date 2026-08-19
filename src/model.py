@@ -125,6 +125,7 @@ from src.constants import (
     OUTPUT_TREATED,
     OUTPUT_TREATED_PREFIX,
     OUTPUT_WETLAND_AREA,
+    PATHWAY_VALUES,
     XAXIS_COST,
     XAXIS_COUNT,
     YAXIS_MEAN,
@@ -295,7 +296,12 @@ class Model:
             for _, row in eff.iterrows():
                 cps_key = int(row["cps"])
                 pol_key = self.pollutant_to_index[str(row[COL_POLLUTANT])]
-                stats = {k: row[k] for k in row.index if k not in ("cps", COL_POLLUTANT, COL_PATHWAY)}
+                stats = {
+                    k: row[k]
+                    for k in row.index
+                    if k not in ("cps", COL_POLLUTANT, COL_PATHWAY)
+                    and not pd.isna(row[k])
+                }
                 if has_pathway:
                     path = str(row.get(COL_PATHWAY, "surface")).strip().lower()
                     if self.bmp_efficiency_stats[cps_key][pol_key] is None or not isinstance(self.bmp_efficiency_stats[cps_key][pol_key], dict):
@@ -303,6 +309,30 @@ class Model:
                     self.bmp_efficiency_stats[cps_key][pol_key][path] = stats  # type: ignore[index]
                 else:
                     self.bmp_efficiency_stats[cps_key][pol_key] = stats
+
+            missing_efficiency_coverage: List[str] = []
+            for cps_key in self.bmp_cps:
+                for pol_idx, pollutant in enumerate(self.pollutants):
+                    entry = self.bmp_efficiency_stats[cps_key][pol_idx]
+                    if not isinstance(entry, dict):
+                        missing_paths = list(PATHWAY_VALUES)
+                    else:
+                        missing_paths = [
+                            pathway
+                            for pathway in PATHWAY_VALUES
+                            if pathway not in entry or not isinstance(entry[pathway], dict)
+                        ]
+                    if missing_paths:
+                        missing_efficiency_coverage.append(
+                            f"cps={cps_key}, pollutant={pollutant}, "
+                            f"pathways={missing_paths}"
+                        )
+            if missing_efficiency_coverage:
+                raise ValueError(
+                    "bmp_efficiency must provide complete CPS x pollutant x "
+                    "pathway coverage; missing "
+                    + "; ".join(missing_efficiency_coverage)
+                )
 
             # Load-generation mode and optional PLET/RUSLE inputs
             self.load_generation = dict(self.data.get(DATA_LOAD_GENERATION) or {})

@@ -64,6 +64,7 @@ from .constants import (
     COL_TARGET,
     COL_UNIT,
     COL_PATHWAY,
+    PATHWAY_VALUES,
 )
 from .utils import ci_get, normalize_columns, normalize_pollutant_label
 from .logging_utils import log_scope
@@ -848,6 +849,169 @@ def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataF
     )
 
 
+def _efficiency_stat_columns(df: pd.DataFrame) -> List[str]:
+    """Return columns that can define an efficiency distribution.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        BMP efficiency input table.
+
+    Returns
+    -------
+    list[str]
+        Statistic columns present in the table.
+    """
+    named_stats = {
+        "value",
+        "mean",
+        "average",
+        "avg",
+        "sd",
+        "std",
+        "min",
+        "minimum",
+        "max",
+        "maximum",
+        "p0",
+        "p100",
+    }
+    return [
+        col
+        for col in df.columns
+        if str(col).lower() in named_stats
+        or (
+            str(col).lower().startswith("p")
+            and str(col).lower()[1:].isdigit()
+        )
+    ]
+
+
+def _complete_bmp_efficiency_coverage(
+    df: pd.DataFrame,
+    cps: Sequence[int],
+    pollutants: Sequence[str],
+    logger: Any,
+) -> pd.DataFrame:
+    """Validate and complete CPS-by-pollutant-by-pathway efficiency coverage.
+
+    A surface efficiency is required for every configured CPS and pollutant.
+    Missing shallow- or deep-subsurface efficiencies are explicitly added as
+    fixed zero distributions and reported through verbose logging.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Filtered and normalized BMP efficiency table.
+    cps : sequence of int
+        Configured BMP CPS codes.
+    pollutants : sequence of str
+        Configured canonical pollutant labels.
+    logger : Any
+        Logger used to report assumed zero efficiencies.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Efficiency table containing all configured CPS, pollutant, and pathway
+        combinations exactly once.
+
+    Raises
+    ------
+    ValueError
+        If any configured CPS/pollutant combination lacks a surface efficiency
+        or an explicitly supplied row has incomplete statistics.
+    """
+    completed = df.copy()
+    completed[COL_CPS] = completed[COL_CPS].astype(int)
+
+    if COL_PATHWAY not in completed.columns:
+        completed[COL_PATHWAY] = PATHWAY_VALUES[0]
+        logger.verbose(
+            "bmp_efficiency has no pathway column; treating supplied "
+            "CPS x pollutant efficiencies as surface efficiencies"
+        )
+
+    configured_cps = [int(cps_code) for cps_code in cps]
+    configured_pollutants = [str(pollutant) for pollutant in pollutants]
+    surface_pathway = PATHWAY_VALUES[0]
+    subsurface_pathways = PATHWAY_VALUES[1:]
+
+    missing_surface: List[Tuple[int, str]] = []
+    for cps_code in configured_cps:
+        for pollutant in configured_pollutants:
+            mask = (
+                (completed[COL_CPS] == cps_code)
+                & (completed[COL_POLLUTANT] == pollutant)
+                & (completed[COL_PATHWAY] == surface_pathway)
+            )
+            if not mask.any():
+                missing_surface.append((cps_code, pollutant))
+
+    if missing_surface:
+        details = ", ".join(
+            f"cps={cps_code}, pollutant={pollutant}"
+            for cps_code, pollutant in missing_surface
+        )
+        raise ValueError(
+            "bmp_efficiency is missing required surface efficiency coverage "
+            f"for configured CPS x pollutant combinations: {details}"
+        )
+
+    stat_columns = _efficiency_stat_columns(completed)
+    added_rows: List[pd.Series] = []
+    for cps_code in configured_cps:
+        for pollutant in configured_pollutants:
+            pair_mask = (
+                (completed[COL_CPS] == cps_code)
+                & (completed[COL_POLLUTANT] == pollutant)
+            )
+            surface_row = completed[
+                pair_mask & (completed[COL_PATHWAY] == surface_pathway)
+            ].iloc[0]
+
+            for pathway in subsurface_pathways:
+                pathway_mask = pair_mask & (completed[COL_PATHWAY] == pathway)
+                if pathway_mask.any():
+                    row_index = completed[pathway_mask].index[0]
+                    has_values = any(
+                        not pd.isna(completed.at[row_index, column])
+                        for column in stat_columns
+                    )
+                    if has_values:
+                        continue
+                    for column in stat_columns:
+                        completed.at[row_index, column] = 0.0
+                else:
+                    default_row = surface_row.copy()
+                    default_row[COL_PATHWAY] = pathway
+                    for column in stat_columns:
+                        default_row[column] = 0.0
+                    added_rows.append(default_row)
+
+                logger.verbose(
+                    "No bmp_efficiency value specified for "
+                    f"cps={cps_code}, pollutant={pollutant}, pathway='{pathway}'; "
+                    "assuming efficiency=0"
+                )
+
+    if added_rows:
+        completed = pd.concat(
+            [completed, pd.DataFrame(added_rows, columns=completed.columns)],
+            ignore_index=True,
+        )
+
+    _validate_stats_rows(completed, CFG_BMP_EFFICIENCY)
+
+    pathway_order = {pathway: idx for idx, pathway in enumerate(PATHWAY_VALUES)}
+    completed["_pathway_order"] = completed[COL_PATHWAY].map(pathway_order)
+    completed = completed.sort_values(
+        [COL_CPS, COL_POLLUTANT, "_pathway_order"],
+        kind="stable",
+    ).drop(columns="_pathway_order")
+    return completed.reset_index(drop=True)
+
+
 def _load_bmp_efficiency(cfg: Dict[str, Any], cps: List[int], pollutants: List[str], logger: Any) -> pd.DataFrame:
     """Load BMP effectiveness inputs.
 
@@ -874,7 +1038,7 @@ def _load_bmp_efficiency(cfg: Dict[str, Any], cps: List[int], pollutants: List[s
     df = df[df[COL_CPS].astype(int).isin(cps) & df[COL_POLLUTANT].isin(pollutants)].copy()
     if df.empty:
         raise ValueError("bmp_efficiency has no records for specified cps+pollutants")
-    return df
+    return _complete_bmp_efficiency_coverage(df, cps, pollutants, logger)
 
 
 def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any) -> Optional[pd.DataFrame]:
