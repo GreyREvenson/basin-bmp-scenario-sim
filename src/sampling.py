@@ -2,7 +2,7 @@
 
 This module provides the sampling primitives used to draw values from fixed
 inputs, summary statistics, and percentile-based distributions while
-respecting optional bounds for efficiencies and loads.
+respecting optional bounds for loads and preserving signed BMP effects.
 """
 
 from __future__ import annotations
@@ -170,8 +170,10 @@ def _sample_from_stats(
     stats : dict[str, float]
         Summary statistics for one sampled value.
     kind : str or None, optional
-        Optional semantic hint. Use ``"efficiency"`` to bound the result to
-        ``[0, 1]`` or ``"yield"`` to clamp it at zero. Default is ``None``.
+        Optional semantic hint. Use ``"efficiency"`` for a signed BMP effect
+        capped at ``1`` or ``"yield"`` to clamp the result at zero. Negative
+        efficiencies are preserved because they represent load increases.
+        Default is ``None``.
 
     Returns
     -------
@@ -193,7 +195,6 @@ def _sample_from_stats(
 
     low, high = None, None
     if kind == "efficiency":
-        low = 0.0
         high = 1.0
     elif kind == "yield":
         low = 0.0

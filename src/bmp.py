@@ -2,9 +2,10 @@
 
 This module contains the logic used to choose best management practices
 (BMPs), sample their effectiveness, and apply their impacts to parcel-level
-pollutant loads. The functions are implemented as model helpers and operate
-on shared model state such as parcel geometry, pollutant yields, and
-simulation outputs.
+pollutant loads. BMP effects are signed: a negative efficiency increases load
+and is recorded as a negative removed amount. The functions are implemented as
+model helpers and operate on shared model state such as parcel geometry,
+pollutant yields, and simulation outputs.
 """
 
 from __future__ import annotations
@@ -92,9 +93,10 @@ def _apply_pathway_reduction(
 ) -> float:
     """Apply pathway-specific BMP reduction to in-memory pathway yields.
 
-    The reduction is applied only when the model is tracking pathway-specific
-    loads. Each pathway is reduced by ``treatment_fraction * eff_map[path]``.
-    Hydrologic partitioning and BMP treatability are intentionally independent:
+    The effect is applied only when the model is tracking pathway-specific
+    loads. Each pathway is multiplied by ``1 - treatment_fraction * eff_map[path]``. 
+    A negative efficiency therefore increases the pathway load. Hydrologic 
+    partitioning and BMP treatability are intentionally independent:
     whether a BMP affects shallow or deep subsurface load is controlled solely
     by that BMP's pathway-specific effectiveness values.
 
@@ -114,20 +116,21 @@ def _apply_pathway_reduction(
     Returns
     -------
     float
-        Total load removed across all pathways.
+        Signed load change across all pathways. Positive values are removals;
+        negative values are load increases.
     """
     pathway_yields = getattr(self, "current_pathway_yields", None)
     if pathway_yields is None:
         return 0.0
 
-    removed = 0.0
+    load_change = 0.0
     for path_idx, path in enumerate(PATHWAY_ORDER):
         current = float(pathway_yields[parcel_idx, pol_idx, path_idx])
         eff = float(eff_map.get(path, 0.0))
-        new_value = current * (1.0 - treatment_fraction * eff)
-        removed += max(0.0, current - new_value)
-        pathway_yields[parcel_idx, pol_idx, path_idx] = max(0.0, new_value)
-    return float(removed)
+        new_value = max(0.0, current * (1.0 - treatment_fraction * eff))
+        load_change += current - new_value
+        pathway_yields[parcel_idx, pol_idx, path_idx] = new_value
+    return float(load_change)
 
 
 def _select_bmp_type(self: "Model") -> int:
@@ -186,7 +189,8 @@ def _sample_efficiency(self: "Model", cps: Union[int, str], pol_idx: int) -> flo
     Returns
     -------
     float
-        Sampled effectiveness value in the ``[0, 1]`` range.
+        Sampled signed effectiveness value no greater than ``1``. Negative
+        values represent an increase in pollutant load.
     """
     stats = self.bmp_efficiency_stats[int(cps)][pol_idx]
     eff = self._sample_from_stats(stats, kind="efficiency")
@@ -216,7 +220,8 @@ def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) ->
     -------
     dict[str, float]
         Effectiveness values for ``surface``, ``shallow subsurface``, and 
-        ``deep subsurface``.
+        ``deep subsurface``. Values may be negative to represent pathway load
+        increases.
     """
     entry = self.bmp_efficiency_stats[int(cps)][pol_idx]
     pathway_names = ("surface", "shallow subsurface", "deep subsurface") #TODO: make flexible for other pathway names in input files
