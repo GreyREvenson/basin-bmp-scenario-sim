@@ -594,6 +594,94 @@ def _load_parcel_graph(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
     return df
 
 
+def _build_parcel_up_map(
+    upstream_rows: pd.DataFrame,
+    parcel_ids: Sequence[str],
+) -> Dict[str, List[str]]:
+    """Build a validated mapping of parcels to upstream parcel IDs.
+
+    Each ``pid_up`` cell may contain one ID, a comma-separated list of IDs, or
+    no value. IDs are stripped of surrounding whitespace, deduplicated while
+    preserving their input order, and checked against the loaded parcel set.
+
+    Parameters
+    ----------
+    upstream_rows : pandas.DataFrame
+        Parcel graph table containing ``pid`` and ``pid_up`` columns.
+    parcel_ids : sequence of str
+        Valid parcel IDs after the parcel layer has been clipped to the model
+        domain.
+
+    Returns
+    -------
+    dict[str, list[str]]
+        Upstream parcel IDs keyed by receiving parcel ID.
+
+    Raises
+    ------
+    ValueError
+        If a receiving or upstream parcel ID is missing from the loaded parcel
+        set, or if a graph row has a blank receiving parcel ID.
+    """
+    ordered_pids = [str(pid).strip() for pid in parcel_ids]
+    valid_pids = set(ordered_pids)
+    parcel_up_map: Dict[str, List[str]] = {pid: [] for pid in ordered_pids}
+    seen_by_pid = {pid: set() for pid in ordered_pids}
+    unknown_pids = set()
+
+    def resolve_pid(value: Any) -> str:
+        """Match numeric CSV values such as ``4.0`` to parcel ID ``4``."""
+        pid = str(value).strip()
+        if pid in valid_pids:
+            return pid
+        if isinstance(value, (float, np.floating)) and np.isfinite(value) and float(value).is_integer():
+            integer_pid = str(int(value))
+            if integer_pid in valid_pids:
+                return integer_pid
+        return pid
+
+    for row_idx, row in upstream_rows.iterrows():
+        raw_pid = row[COL_PID]
+        if pd.isna(raw_pid) or not str(raw_pid).strip():
+            raise ValueError(f"{CFG_PARCEL_UP} row {row_idx} has a blank {COL_PID}")
+
+        pid = resolve_pid(raw_pid)
+        if pid not in valid_pids:
+            unknown_pids.add(pid)
+            continue
+
+        raw_upstream = row[COL_PID_UP]
+        if pd.isna(raw_upstream):
+            continue
+
+        if isinstance(raw_upstream, (int, float, np.integer, np.floating)):
+            raw_upstream_pids = [raw_upstream]
+        else:
+            raw_upstream_pids = str(raw_upstream).split(",")
+
+        for raw_upstream_pid in raw_upstream_pids:
+            upstream_pid = resolve_pid(raw_upstream_pid)
+            if not upstream_pid:
+                continue
+            if upstream_pid not in valid_pids:
+                unknown_pids.add(upstream_pid)
+                continue
+            if upstream_pid not in seen_by_pid[pid]:
+                parcel_up_map[pid].append(upstream_pid)
+                seen_by_pid[pid].add(upstream_pid)
+
+    if unknown_pids:
+        unknown = sorted(unknown_pids)
+        preview = unknown[:10]
+        suffix = f" (and {len(unknown) - len(preview)} more)" if len(unknown) > len(preview) else ""
+        raise ValueError(
+            f"{CFG_PARCEL_UP} references parcel IDs not found in parcels after clipping: "
+            f"{preview}{suffix}"
+        )
+
+    return parcel_up_map
+
+
 def _load_parcel_outlets(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
     """Load parcel-to-outlet relationships.
 
@@ -879,11 +967,13 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         out = _load_parcel_outlets(cfg, logger)
         sel = _load_parcel_selection(cfg, parcels, logger)
 
-        # Upstream list mapping
-        parcel_up_map: Dict[str, List[str]] = {}
-        for pid in parcels[COL_PID].astype(str):
-            ups = up[up[COL_PID].astype(str) == str(pid)][COL_PID_UP].astype(str).tolist()
-            parcel_up_map[str(pid)] = ups
+        # Upstream list mapping. A pid_up cell may contain multiple
+        # comma-separated IDs, matching the format written by
+        # examples/utils/create_parcel_up.py.
+        parcel_up_map = _build_parcel_up_map(
+            up,
+            parcels[COL_PID].astype(str).tolist(),
+        )
 
         # Parcel->outlet mapping
         parcel_out_map: Dict[str, List[str]] = {}

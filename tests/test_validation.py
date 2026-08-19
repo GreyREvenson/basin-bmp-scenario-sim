@@ -7,7 +7,7 @@ import pytest
 
 from src.bmp import _get_bmp_selection_probs
 from src.constants import CFG_PARCEL_P, DATA_CPS, DATA_PARCELS
-from src.io_utils import _load_parcel_selection
+from src.io_utils import _build_parcel_up_map, _load_parcel_selection
 from src.model import Model
 
 
@@ -39,6 +39,56 @@ def test_load_parcel_selection_rejects_duplicate_selection_rows(tmp_path) -> Non
 
     with pytest.raises(ValueError, match="must contain one row per parcel"):
         _load_parcel_selection(cfg, parcels, DummyLogger())
+
+
+def test_build_parcel_up_map_splits_trims_and_deduplicates_ids() -> None:
+    upstream_rows = pd.DataFrame(
+        {
+            "pid": ["9", "9", "10", "11"],
+            "pid_up": ["4, 5", "5,4", None, "  "],
+        }
+    )
+
+    parcel_up_map = _build_parcel_up_map(
+        upstream_rows,
+        parcel_ids=["4", "5", "9", "10", "11"],
+    )
+
+    assert parcel_up_map == {
+        "4": [],
+        "5": [],
+        "9": ["4", "5"],
+        "10": [],
+        "11": [],
+    }
+
+
+def test_build_parcel_up_map_rejects_unknown_upstream_ids() -> None:
+    upstream_rows = pd.DataFrame(
+        {
+            "pid": ["9"],
+            "pid_up": ["4,missing"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="missing"):
+        _build_parcel_up_map(upstream_rows, parcel_ids=["4", "9"])
+
+
+def test_build_parcel_up_map_handles_numeric_cells_with_missing_values() -> None:
+    upstream_rows = pd.DataFrame(
+        {
+            "pid": [1, 2],
+            "pid_up": [2, None],
+        }
+    )
+
+    parcel_up_map = _build_parcel_up_map(
+        upstream_rows,
+        parcel_ids=["1", "2"],
+    )
+
+    assert parcel_up_map == {"1": ["2"], "2": []}
 
 
 def test_get_bmp_selection_probs_rejects_invalid_probabilities(tmp_path) -> None:
