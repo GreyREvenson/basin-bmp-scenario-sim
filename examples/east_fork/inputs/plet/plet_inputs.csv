@@ -4,7 +4,7 @@ pid,parameter,value,units
 *,rain_correction_fraction,0.90,fraction
 *,runoff_day_fraction,0.35,fraction
 *,cn,78.0,dimensionless
-*,ia_ratio,0.20,fraction
+*,ia_ratio,0.0,fraction
 *,infiltration_fraction,0.18,fraction
 *,irrigated_fraction,0.00,fraction
 *,irrigation_depth_in,0.00,in/event
