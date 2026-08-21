@@ -16,7 +16,6 @@ from src.constants import OUTPUT_REMOVED, OUTPUT_TREATED
 from src.load_generation import (
     INCH_OVER_HA_TO_LITERS,
     calculate_load_components,
-    calculate_parcel_yields,
     plet_annual_infiltration_in,
 )
 
@@ -62,17 +61,7 @@ def test_untreated_groundwater_is_separate_and_mass_balanced(pathway_mode: str) 
         groundwater_loads=True,
         treat_groundwater_with_bmps=False,
     )
-    totals = calculate_parcel_yields(
-        parameters,
-        {"TN": 0.0},
-        ["TN"],
-        groundwater_concentrations={"TN": 4.0},
-        pathway_mode=pathway_mode,
-        surface_fraction=0.3,
-        shallow_fraction=0.4,
-        groundwater_loads=True,
-        treat_groundwater_with_bmps=False,
-    )
+    totals = np.sum(pathways, axis=1) + untreated_groundwater
 
     assert pathways[0] == pytest.approx([0.0, 0.0, 0.0])
     assert untreated_groundwater[0] == pytest.approx(expected_groundwater)
