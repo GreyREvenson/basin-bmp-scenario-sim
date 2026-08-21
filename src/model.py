@@ -106,9 +106,6 @@ from src.constants import (
     DATA_POLLUTANT_CONCENTRATIONS,
     DATA_GROUNDWATER_CONCENTRATIONS,
     LOAD_GROUNDWATER_LOADS,
-    LOAD_PATHWAY_MODE,
-    LOAD_PATHWAY_MODE_DERIVED,
-    LOAD_PATHWAY_MODE_FIXED,
     LOAD_MODE_PLET_RUSLE,
     LOAD_MODE_STATISTICAL,
     DATA_POLLUTANTS,
@@ -343,12 +340,27 @@ class Model:
             self.rusle_inputs = self.data.get(DATA_RUSLE_INPUTS)
             self.pollutant_concentrations = self.data.get(DATA_POLLUTANT_CONCENTRATIONS)
             self.groundwater_concentrations = self.data.get(DATA_GROUNDWATER_CONCENTRATIONS)
-            self.pathway_mode = str(
-                self.load_generation.get(LOAD_PATHWAY_MODE, LOAD_PATHWAY_MODE_FIXED)
-            ).strip().lower()
             self.groundwater_loads = bool(
                 self.load_generation.get(LOAD_GROUNDWATER_LOADS, False)
             )
+            detected_fraction_inputs = [
+                key
+                for key in (
+                    CFG_POLLUTANT_YIELD_FRAC_SURFACE,
+                    CFG_POLLUTANT_YIELD_FRAC_SHALLOW,
+                )
+                if key in self.cfg
+            ]
+            if (
+                self.load_generation_mode == LOAD_MODE_PLET_RUSLE
+                and detected_fraction_inputs
+            ):
+                self.logger.verbose(
+                    "Detected pathway-fraction input(s) "
+                    f"{', '.join(detected_fraction_inputs)}; these inputs will "
+                    "have no impact on model results because plet_rusle mode "
+                    "always derives pathway loads from PLET/RUSLE inputs."
+                )
 
             # Statistical mode uses parcel x pollutant yield distributions.
             # PLET/RUSLE mode derives these yields inside each scenario instead.
@@ -411,14 +423,13 @@ class Model:
             rusle_inputs=self.rusle_inputs,
             pollutant_concentrations=self.pollutant_concentrations,
             groundwater_concentrations=self.groundwater_concentrations,
-            pathway_mode=self.pathway_mode,
             groundwater_loads=self.groundwater_loads,
             bmp_cps=self.bmp_cps,
             bmp_selection_probs=self.bmp_selection_probs,
             avg_area_ha=self.data.get(DATA_AVG_AREA_HA, 0.0),
             avg_perim_m=self.data.get(DATA_AVG_PERIM_M, 0.0),
             random_seed=self.data.get("random_seed"),
-            # Pathway fractions for simulators
+            # Statistical-mode pathway fractions for simulator fallback logic
             pollutant_yield_frac_surface=self.pollutant_yield_frac_surface,
             pollutant_yield_frac_shallow=self.pollutant_yield_frac_shallow,
         )

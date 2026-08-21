@@ -57,9 +57,6 @@ LOAD_PLET_INPUTS = "plet_inputs"
 LOAD_RUSLE_INPUTS = "rusle_inputs"
 LOAD_CONCENTRATIONS = "pollutant_concentrations"
 LOAD_GROUNDWATER_CONCENTRATIONS = "groundwater_concentrations"
-LOAD_PATHWAY_MODE = "pathway_mode"
-LOAD_PATHWAY_MODE_FIXED = "fixed_fractions"
-LOAD_PATHWAY_MODE_DERIVED = "derive_from_plet"
 LOAD_GROUNDWATER_LOADS = "groundwater_loads"
 LOAD_TREAT_GROUNDWATER_WITH_BMPS = "treat_groundwater_with_bmps"
 
@@ -67,7 +64,7 @@ LOAD_TREAT_GROUNDWATER_WITH_BMPS = "treat_groundwater_with_bmps"
 CFG_BMP_FAIL_RATE = "bmp_fail_rate"            # probability [0,1] a BMP fails
 CFG_BMP_FAIL_REDUCTION = "bmp_fail_reduction"  # efficiency scale [0,1] on failure
 
-# New: fractions to split parcel yields by pathway
+# Fractions used to split statistical-mode parcel yields by pathway
 CFG_POLLUTANT_YIELD_FRAC_SURFACE = "pollutant_yield_frac_surface"
 CFG_POLLUTANT_YIELD_FRAC_SHALLOW = "pollutant_yield_frac_shallow"
 

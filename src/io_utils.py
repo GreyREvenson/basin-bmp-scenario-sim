@@ -42,9 +42,6 @@ from .constants import (
     LOAD_RUSLE_INPUTS,
     LOAD_CONCENTRATIONS,
     LOAD_GROUNDWATER_CONCENTRATIONS,
-    LOAD_PATHWAY_MODE,
-    LOAD_PATHWAY_MODE_FIXED,
-    LOAD_PATHWAY_MODE_DERIVED,
     LOAD_GROUNDWATER_LOADS,
     LOAD_TREAT_GROUNDWATER_WITH_BMPS,
     COL_AREA_HA,
@@ -1165,14 +1162,13 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         outlet_target = _load_optional_outlet_stats(cfg, CFG_OUTLET_TARGET, [COL_OID, COL_POLLUTANT, COL_TARGET], CFG_OUTLET_TARGET, logger)
         outlet_mean = _load_optional_outlet_stats(cfg, CFG_OUTLET_MEAN, [COL_OID, COL_POLLUTANT, COL_MEAN], CFG_OUTLET_MEAN, logger)
 
-        pathway_mode = str(load_generation.get(LOAD_PATHWAY_MODE, LOAD_PATHWAY_MODE_FIXED)).strip().lower()
+        if "pathway_mode" in load_generation:
+            raise ValueError(
+                "load_generation.pathway_mode has been removed; "
+                "plet_rusle mode always derives pathway loads from PLET/RUSLE inputs"
+            )
         groundwater_loads = bool(load_generation.get(LOAD_GROUNDWATER_LOADS, False))
         treat_groundwater_with_bmps = bool(load_generation.get(LOAD_TREAT_GROUNDWATER_WITH_BMPS, False))
-        if pathway_mode not in {LOAD_PATHWAY_MODE_FIXED, LOAD_PATHWAY_MODE_DERIVED}:
-            raise ValueError(
-                "load_generation.pathway_mode must be 'fixed_fractions' or 'derive_from_plet'"
-            )
-        load_generation[LOAD_PATHWAY_MODE] = pathway_mode
         load_generation[LOAD_GROUNDWATER_LOADS] = groundwater_loads
         load_generation[LOAD_TREAT_GROUNDWATER_WITH_BMPS] = treat_groundwater_with_bmps
 

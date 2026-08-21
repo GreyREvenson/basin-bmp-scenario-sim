@@ -40,8 +40,21 @@ def test_plet_infiltration_uses_rain_corrected_precipitation() -> None:
     )
 
 
-@pytest.mark.parametrize("pathway_mode", ["derive_from_plet", "fixed_fractions"])
-def test_untreated_groundwater_is_separate_and_mass_balanced(pathway_mode: str) -> None:
+def test_plet_runoff_load_is_always_assigned_to_surface_pathway() -> None:
+    parameters = _plet_parameters() | {"ia_ratio": 0.0}
+    pathways, untreated_groundwater = calculate_load_components(
+        parameters,
+        {"TN": 2.0},
+        None,
+        ["TN"],
+    )
+
+    assert pathways[0, 0] > 0.0
+    assert pathways[0, 1:] == pytest.approx([0.0, 0.0])
+    assert untreated_groundwater[0] == pytest.approx(0.0)
+
+
+def test_untreated_groundwater_is_separate_and_mass_balanced() -> None:
     parameters = _plet_parameters()
     expected_groundwater = (
         4.0
@@ -55,9 +68,6 @@ def test_untreated_groundwater_is_separate_and_mass_balanced(pathway_mode: str) 
         {"TN": 0.0},
         {"TN": 4.0},
         ["TN"],
-        pathway_mode=pathway_mode,
-        surface_fraction=0.3,
-        shallow_fraction=0.4,
         groundwater_loads=True,
         treat_groundwater_with_bmps=False,
     )
@@ -82,7 +92,6 @@ def test_treatable_groundwater_uses_configured_shallow_deep_split() -> None:
         {"TN": 0.0},
         {"TN": 4.0},
         ["TN"],
-        pathway_mode="derive_from_plet",
         groundwater_loads=True,
         treat_groundwater_with_bmps=True,
     )

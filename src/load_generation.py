@@ -222,29 +222,6 @@ def plet_runoff_depth_in(
     return event_rainfall, event_runoff, event_runoff * runoff_days
 
 
-def plet_sediment_delivery_ratio(watershed_area_mi2: float) -> float:
-    """Estimate sediment delivery ratio from watershed size.
-
-    Parameters
-    ----------
-    watershed_area_mi2 : float
-        Watershed area in square miles.
-
-    Returns
-    -------
-    float
-        Estimated sediment delivery ratio clipped to ``[0, 1]``.
-    """
-
-    area_mi2 = max(float(watershed_area_mi2), 1.0e-12)
-    area_acres = area_mi2 * ACRES_PER_SQUARE_MILE
-    if area_acres < 200.0:
-        dr = 0.42 * area_mi2 ** (-0.125)
-    else:
-        dr = 0.417662 * area_mi2 ** (-0.134958) - 0.127097
-    return float(np.clip(dr, 0.0, 1.0))
-
-
 def rusle_sediment_yield_kg_ha(parameters: Mapping[str, float]) -> float:
     """Estimate annual sediment yield per hectare from RUSLE inputs.
 
@@ -271,12 +248,11 @@ def rusle_sediment_yield_kg_ha(parameters: Mapping[str, float]) -> float:
     for name in _REQUIRED_RUSLE:
         gross_ton_ac *= max(0.0, float(parameters[name]))
 
+    sdr = 1.0
     if "sdr" in parameters:
-        sdr = float(np.clip(parameters["sdr"], 0.0, 1.0))
-    elif "watershed_area_mi2" in parameters:
-        sdr = plet_sediment_delivery_ratio(parameters["watershed_area_mi2"])
-    else:
-        raise ValueError("RUSLE inputs require either 'sdr' or 'watershed_area_mi2'")
+        sdr = float(parameters["sdr"])
+        if sdr < 0.0 or sdr > 1.0:
+            raise ValueError("RUSLE input parameter value for sdr must be between 0.0 and 1.0")
 
     sediment_multiplier = max(0.0, float(parameters.get("sediment_multiplier", 1.0)))
     delivery_multiplier = max(0.0, float(parameters.get("sediment_delivery_multiplier", 1.0)))
@@ -583,18 +559,16 @@ def calculate_load_components(
     groundwater_concentrations: Optional[Mapping[str, float]],
     pollutants: Sequence[str],
     *,
-    pathway_mode: str = "fixed_fractions",
-    surface_fraction: float = 0.0,
-    shallow_fraction: float = 0.0,
     groundwater_loads: bool = False,
     treat_groundwater_with_bmps: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Calculate BMP-treatable pathways and protected groundwater yields.
 
-    The calculation supports two modes. In ``derive_from_plet`` mode, yields
-    are derived directly from runoff, infiltration, and groundwater
-    concentrations. In ``fixed_fractions`` mode, a total load is partitioned
-    across the three pathways using the supplied fractions.
+    Pathway yields are derived directly from PLET/RUSLE runoff, infiltration,
+    sediment, and pollutant concentrations. Surface runoff and sediment loads
+    remain in the surface pathway. BMP-treatable groundwater is split between
+    shallow and deep subsurface pathways using
+    ``fraction_subsurface_shallow``.
 
     Parameters
     ----------
@@ -606,21 +580,14 @@ def calculate_load_components(
         Groundwater concentrations keyed by pollutant name.
     pollutants : sequence of str
         Pollutants to calculate.
-    pathway_mode : str, optional
-        Either ``"fixed_fractions"`` or ``"derive_from_plet"``. Default is
-        ``"fixed_fractions"``.
-    surface_fraction : float, optional
-        Fraction of load assigned to surface flow in fixed-fraction mode.
-    shallow_fraction : float, optional
-        Fraction of load assigned to shallow subsurface flow in fixed-fraction
-        mode.
     groundwater_loads : bool, optional
         Whether groundwater concentrations should contribute to pollutant
         loads. Default is ``False``.
     treat_groundwater_with_bmps : bool, optional
-        Whether groundwater loads should use the configured pathway split.
-        When ``False``, groundwater is returned as a separate protected load
-        so pathway BMP efficiencies cannot reduce it. Default is ``False``.
+        Whether groundwater loads should be exposed to pathway-specific BMP
+        efficiencies. When ``False``, groundwater is returned as a separate
+        protected load so pathway BMP efficiencies cannot reduce it. Default
+        is ``False``.
 
     Returns
     -------
@@ -642,7 +609,6 @@ def calculate_load_components(
     sediment_kg_ha = rusle_sediment_yield_kg_ha(parameters) if has_rusle else 0.0
     enrichment_ratio = max(0.0, float(parameters.get("enrichment_ratio", 2.0)))
 
-    pathway_mode = str(pathway_mode).strip().lower()
     groundwater_concentrations = groundwater_concentrations or {}
     out = np.zeros((len(pollutants), len(PATHWAY_NAMES)), dtype=float)
     untreated_groundwater = np.zeros(len(pollutants), dtype=float)
@@ -658,37 +624,33 @@ def calculate_load_components(
         # but not the shallow-versus-deep subsurface split used by the BMP
         # simulator.  Keep those concepts separate by partitioning total
         # subsurface load with an explicit, independently sampled parameter.
-        if pathway_mode == "derive_from_plet" and groundwater_loads and pol != "TSS" and treat_groundwater_with_bmps:
+        if groundwater_loads and pol != "TSS" and treat_groundwater_with_bmps:
             if "fraction_subsurface_shallow" not in parameters:
                 raise ValueError(
-                    "derive_from_plet with groundwater loads requires the PLET "
+                    "BMP-treatable groundwater loads require the PLET "
                     "parameter 'fraction_subsurface_shallow' (0 to 1)"
                 )
             fraction_subsurface_shallow = float(
-                np.clip(parameters["fraction_subsurface_shallow"], 0.0, 1.0) #TODO: Can we set a range of values?
+                np.clip(parameters["fraction_subsurface_shallow"], 0.0, 1.0)
             )
         else:
             fraction_subsurface_shallow = 0.0
 
         if pol == "TSS":
-            load = sediment_kg_ha if has_rusle else runoff_load
-            surface_load = load
+            surface_load = sediment_kg_ha if has_rusle else runoff_load
             shallow_load = 0.0
             deep_load = 0.0
         elif pol == "TN":
             sediment_fraction = max(0.0, float(parameters.get("sediment_n_pct", 0.0))) / 100.0
-            load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
-            surface_load = load
+            surface_load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
             shallow_load = groundwater_load * fraction_subsurface_shallow
             deep_load = groundwater_load * (1.0 - fraction_subsurface_shallow)
         elif pol == "TP":
             sediment_fraction = max(0.0, float(parameters.get("sediment_p_pct", 0.0))) / 100.0
-            load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
-            surface_load = load
+            surface_load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
             shallow_load = groundwater_load * fraction_subsurface_shallow
             deep_load = groundwater_load * (1.0 - fraction_subsurface_shallow)
         else:
-            load = runoff_load
             surface_load = runoff_load
             shallow_load = groundwater_load * fraction_subsurface_shallow
             deep_load = groundwater_load * (1.0 - fraction_subsurface_shallow)
@@ -697,24 +659,12 @@ def calculate_load_components(
             0.0,
             float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)),
         )
-        if pathway_mode == "derive_from_plet":
-            out[idx, 0] = max(0.0, surface_load) * load_multiplier
-            if treat_groundwater_with_bmps:
-                out[idx, 1] = max(0.0, shallow_load) * load_multiplier
-                out[idx, 2] = max(0.0, deep_load) * load_multiplier
-            else:
-                untreated_groundwater[idx] = max(0.0, groundwater_load) * load_multiplier
+        out[idx, 0] = max(0.0, surface_load) * load_multiplier
+        if treat_groundwater_with_bmps:
+            out[idx, 1] = max(0.0, shallow_load) * load_multiplier
+            out[idx, 2] = max(0.0, deep_load) * load_multiplier
         else:
-            fixed_surface = float(np.clip(surface_fraction, 0.0, 1.0))
-            fixed_shallow = float(np.clip(shallow_fraction, 0.0, 1.0))
-            fixed_deep = max(0.0, 1.0 - fixed_surface - fixed_shallow)
-            load_to_partition = load + groundwater_load if treat_groundwater_with_bmps else load
-            partitioned_load = max(0.0, load_to_partition) * load_multiplier
-            out[idx, 0] = partitioned_load * fixed_surface
-            out[idx, 1] = partitioned_load * fixed_shallow
-            out[idx, 2] = partitioned_load * fixed_deep
-            if not treat_groundwater_with_bmps:
-                untreated_groundwater[idx] = max(0.0, groundwater_load) * load_multiplier
+            untreated_groundwater[idx] = max(0.0, groundwater_load) * load_multiplier
     return out, untreated_groundwater
 
 
@@ -802,9 +752,6 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
             concentrations[i],
             groundwater_concentrations[i],
             ctx.pollutants,
-            pathway_mode=str(getattr(ctx, "pathway_mode", "fixed_fractions")),
-            surface_fraction=float(getattr(ctx, "pollutant_yield_frac_surface", 0.0)),
-            shallow_fraction=float(getattr(ctx, "pollutant_yield_frac_shallow", 0.0)),
             groundwater_loads=bool(getattr(ctx, "groundwater_loads", False)),
             treat_groundwater_with_bmps=bool(getattr(ctx, "load_generation", {}).get("treat_groundwater_with_bmps", False)),
         )

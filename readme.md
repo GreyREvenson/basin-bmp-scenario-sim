@@ -58,11 +58,14 @@ Optional configuration keys:
 - `outlet_target`: CSV of outlet pollutant reduction targets
 - `outlet_mean`: CSV of outlet mean load metrics
 - `buffer_depth_ft`: buffer depth in feet for grassed BMPs
-- `load_generation.pathway_mode`: `fixed_fractions` (legacy behavior) or `derive_from_plet`
 - `load_generation.groundwater_loads`: include shallow-groundwater nutrient loads derived from infiltration
 - `load_generation.groundwater_concentrations`: required when `groundwater_loads: true`
-- `load_generation.treat_groundwater_with_bmps`: if `false`, groundwater loads are routed to the deep pathway so BMPs do not reduce them, matching default PLET behavior
+- `load_generation.treat_groundwater_with_bmps`: if `false`, groundwater loads are tracked separately so BMPs do not reduce them, matching default PLET behavior
 - `load_generation.plet_inputs` may now include optional `infiltration_fraction`, `irrigated_fraction`, `irrigation_depth_in`, and `irrigation_frequency`
+
+In `plet_rusle` mode, pathway loads are always derived from PLET/RUSLE inputs.
+The statistical-mode settings `pollutant_yield_frac_surface` and
+`pollutant_yield_frac_shallow` have no effect in `plet_rusle` mode.
 
 ## Outputs
 
@@ -96,7 +99,7 @@ Each line depicts a single BMP scenario (n = 1000)
 - `parcel_out` outlet IDs must exist in `outlet_loc`.
 - If both `bmp_limit_n` and `bmp_limit_usd` are specified, the simulation stops when either limit is reached.
 - Optional representation of BMP failure
-- In `derive_from_plet` pathway mode, parcel diagnostics written under `outputs/load_parameters/` now include initial/final surface, shallow, and deep pathway loads plus shallow-groundwater concentrations.
+- In `plet_rusle` mode, parcel diagnostics written under `outputs/load_parameters/` include initial/final surface, shallow, and deep pathway loads plus groundwater concentrations.
 
 ## Parallelization
 

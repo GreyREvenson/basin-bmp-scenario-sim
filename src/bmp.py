@@ -49,9 +49,9 @@ def _get_pathway_yields(self: "Model", parcel_idx: int, pol_idx: int, total_yiel
 
     The model may already track pathway-specific yields in
     ``self.current_pathway_yields``. When present, those values are returned
-    directly. Otherwise, the total yield is partitioned using the model's
-    configured surface and shallow-subsurface fractions, with any remainder
-    assigned to deep subsurface flow.
+    directly. Otherwise, statistical-mode total yield is partitioned using
+    the model's configured surface and shallow-subsurface fractions, with any
+    remainder assigned to deep subsurface flow.
 
     Parameters
     ----------

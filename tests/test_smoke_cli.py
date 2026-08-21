@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 import yaml
 
 import run_model
@@ -46,7 +47,7 @@ def test_plet_groundwater_is_rain_corrected_and_unchanged_by_bmps(tmp_path, monk
     cfg["n_scenarios"] = 1
     cfg["bmp_limit_n"] = 5
     cfg["parallel"] = {"n_jobs": 1}
-    cfg["verbose"] = False
+    cfg["verbose"] = True
 
     smoke_cfg = tmp_path / "plet_smoke.yaml"
     smoke_cfg.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
@@ -57,6 +58,7 @@ def test_plet_groundwater_is_rain_corrected_and_unchanged_by_bmps(tmp_path, monk
     run_model.main()
 
     outputs = tmp_path / "outputs"
+    log_text = (outputs / "log.txt").read_text(encoding="utf-8")
     load_parameters = pd.read_parquet(outputs / "load_parameters" / "s1.parquet")
     parcels = pd.read_parquet(outputs / "parcels" / "s1.parquet")
     merged = load_parameters.merge(parcels, on=["scenario", "pid"], validate="one_to_one")
