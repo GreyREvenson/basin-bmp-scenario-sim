@@ -640,7 +640,7 @@ def calculate_load_components(
 
     has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
     sediment_kg_ha = rusle_sediment_yield_kg_ha(parameters) if has_rusle else 0.0
-    enrichment_ratio = max(0.0, float(parameters.get("enrichment_ratio", 2.0)))  #TODO: default is 2 which should increase TN and TP loads. Should this be revised or even removed?
+    enrichment_ratio = max(0.0, float(parameters.get("enrichment_ratio", 2.0)))
 
     pathway_mode = str(pathway_mode).strip().lower()
     groundwater_concentrations = groundwater_concentrations or {}

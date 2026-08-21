@@ -7,4 +7,4 @@ pid,parameter,value,units
 *,sdr,1,fraction
 *,sediment_n_pct,0.08,percent
 *,sediment_p_pct,0.045,percent
-*,enrichment_ratio,1.50,dimensionless
+*,enrichment_ratio,2,dimensionless
