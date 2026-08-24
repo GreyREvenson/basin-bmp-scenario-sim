@@ -3,9 +3,9 @@ pid,parameter,value,units
 *,rain_days,120.0,days/year
 *,rain_correction_fraction,0.90,fraction
 *,runoff_day_fraction,0.35,fraction
-*,cn,78.0,dimensionless
+*,land_cover,cropland,classification
+*,hsg,B,classification
 *,ia_ratio,0.0,fraction
-*,infiltration_fraction,0.18,fraction
 *,irrigated_fraction,0.00,fraction
 *,irrigation_depth_in,0.00,in/event
 *,irrigation_frequency,0.00,events/year

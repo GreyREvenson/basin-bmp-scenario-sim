@@ -65,6 +65,11 @@ from .constants import (
 )
 from .utils import ci_get, normalize_columns, normalize_pollutant_label
 from .logging_utils import log_scope
+from .load_generation import (
+    PLET_CLASSIFICATION_PARAMETERS,
+    canonical_parameter_name,
+    validate_plet_input_table,
+)
 
 
 
@@ -403,6 +408,46 @@ def _load_parameter_stats_table(path: Any, label: str, logger: Any) -> Optional[
     df["parameter"] = df["parameter"].astype(str).str.strip().str.lower()
     _validate_stats_rows(df, label)
     return df
+
+
+def _load_plet_parameter_table(
+    path: Any,
+    parcel_ids: Sequence[str],
+    logger: Any,
+) -> Optional[pd.DataFrame]:
+    """Load PLET numeric parameters and required categorical classifications.
+
+    Unlike the general parameter loader, this function permits fixed string
+    values for ``land_cover`` and ``hsg`` while retaining the existing
+    distribution-statistics behavior for all numeric parameters.
+
+    Parameters
+    ----------
+    path : Any
+        CSV file path or sequence of paths.
+    parcel_ids : sequence of str
+        Parcel identifiers that may be selected by the model.
+    logger : Any
+        Logger used for progress reporting.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        Validated PLET parameter table, or ``None`` when no path is provided.
+    """
+
+    if path is None:
+        return None
+    df = _merge_csvs(path, [COL_PID, "parameter"], LOAD_PLET_INPUTS, logger)
+    df[COL_PID] = df[COL_PID].astype(str)
+    df["parameter"] = df["parameter"].map(canonical_parameter_name)
+
+    categorical_mask = df["parameter"].isin(PLET_CLASSIFICATION_PARAMETERS)
+    numeric_rows = df.loc[~categorical_mask].copy()
+    if not numeric_rows.empty:
+        _validate_stats_rows(numeric_rows, LOAD_PLET_INPUTS)
+
+    return validate_plet_input_table(df, parcel_ids)
 
 
 def _load_pollutant_concentrations(path: Any, pollutants: List[str], logger: Any) -> Optional[pd.DataFrame]:
@@ -1182,8 +1227,10 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         pollutant_concentrations = None
         groundwater_concentrations = None
         if load_mode == LOAD_MODE_PLET_RUSLE:
-            plet_inputs = _load_parameter_stats_table(
-                load_generation.get(LOAD_PLET_INPUTS), LOAD_PLET_INPUTS, logger
+            plet_inputs = _load_plet_parameter_table(
+                load_generation.get(LOAD_PLET_INPUTS),
+                sel[COL_PID].astype(str).tolist(),
+                logger,
             )
             if plet_inputs is None:
                 raise ValueError("load_generation.plet_inputs is required for mode='plet_rusle'")

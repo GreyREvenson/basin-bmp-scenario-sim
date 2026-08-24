@@ -24,11 +24,8 @@ load_generation:
   rusle_inputs: ./examples/east_fork/inputs/plet/rusle_inputs.csv
   pollutant_concentrations: ./examples/east_fork/inputs/plet/pollutant_concentrations.csv
   groundwater_concentrations: ./examples/east_fork/inputs/plet/groundwater_concentrations.csv
-  pathway_mode: derive_from_plet
   groundwater_loads: true
   treat_groundwater_with_bmps: false
-  bmp_parameter_effects: ./examples/east_fork/inputs/plet/bmp_parameter_effects.csv
-  process_parameter_fallback: efficiency
 
 bmp_cost: ./examples/east_fork/inputs/bmp_cost.csv
 outlet_target: ./examples/east_fork/inputs/outlet_target.csv

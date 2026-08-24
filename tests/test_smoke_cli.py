@@ -63,7 +63,14 @@ def test_plet_groundwater_is_rain_corrected_and_unchanged_by_bmps(tmp_path, monk
     parcels = pd.read_parquet(outputs / "parcels" / "s1.parquet")
     merged = load_parameters.merge(parcels, on=["scenario", "pid"], validate="one_to_one")
 
-    assert np.allclose(load_parameters["initial_annual_infiltration_in"], 42.0 * 0.90 * 0.18)
+    # Cropland on HSG B resolves to PLET's 0.300 infiltration fraction.
+    assert np.allclose(
+        load_parameters["initial_annual_infiltration_in"],
+        42.0 * 0.90 * 0.300,
+    )
+    assert np.allclose(load_parameters["initial_cn"], 78.0)
+    assert set(load_parameters["initial_land_cover"]) == {"cropland"}
+    assert set(load_parameters["initial_hsg"]) == {"B"}
     for pollutant in ("tn", "tp"):
         initial_groundwater = load_parameters[f"initial_untreated_groundwater_{pollutant}_kg_ha"]
         final_groundwater = load_parameters[f"final_untreated_groundwater_{pollutant}_kg_ha"]
