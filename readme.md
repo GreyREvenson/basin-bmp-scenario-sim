@@ -100,6 +100,7 @@ Each line depicts a single BMP scenario (n = 1000)
 - If both `bmp_limit_n` and `bmp_limit_usd` are specified, the simulation stops when either limit is reached.
 - Optional representation of BMP failure
 - In `plet_rusle` mode, parcel diagnostics written under `outputs/load_parameters/` include initial/final surface, shallow, and deep pathway loads plus groundwater concentrations.
+- BMP stacking is seriel (i.e., when multiple BMPs occur on the same parcel, subsequent BMPs act on the already-reduced load)
 
 ## Parallelization
 
