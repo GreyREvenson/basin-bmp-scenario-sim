@@ -243,16 +243,6 @@ def _as_float(value: Any, default: float = 0.0) -> float:
     return float(s)
 
 
-def _piecewise_sdr(watershed_area_mi2: float) -> float:
-    area_mi2 = max(float(watershed_area_mi2), 1.0e-12)
-    area_acres = area_mi2 * ACRES_PER_SQUARE_MILE
-    if area_acres < 200.0:
-        dr = 0.42 * area_mi2 ** (-0.125)
-    else:
-        dr = 0.417662 * area_mi2 ** (-0.134958) - 0.127097
-    return float(np.clip(dr, 0.0, 1.0))
-
-
 def _runoff_event_depth_in(
     annual_precip_in: float,
     rain_days: float,
@@ -331,10 +321,8 @@ def _rusle_sediment_kg_ha(params: Mapping[str, float]) -> float:
 
     if "sdr" in params:
         sdr = float(np.clip(params["sdr"], 0.0, 1.0))
-    elif "watershed_area_mi2" in params:
-        sdr = _piecewise_sdr(params["watershed_area_mi2"])
     else:
-        raise ValueError("RUSLE parameters require either sdr or watershed_area_mi2")
+        sdr = 1.0
 
     sed_mult = max(0.0, params.get("sediment_multiplier", 1.0))
     deliv_mult = max(0.0, params.get("sediment_delivery_multiplier", 1.0))

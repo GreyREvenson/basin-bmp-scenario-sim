@@ -463,11 +463,12 @@ def rusle_sediment_yield_kg_ha(parameters: Mapping[str, Any]) -> float:
     for name in _REQUIRED_RUSLE:
         gross_ton_ac *= max(0.0, float(parameters[name]))
 
-    sdr = 1.0
     if "sdr" in parameters:
         sdr = float(parameters["sdr"])
         if sdr < 0.0 or sdr > 1.0:
             raise ValueError("RUSLE input parameter value for sdr must be between 0.0 and 1.0")
+    else:
+        sdr = 1.0
 
     sediment_multiplier = max(0.0, float(parameters.get("sediment_multiplier", 1.0)))
     delivery_multiplier = max(0.0, float(parameters.get("sediment_delivery_multiplier", 1.0)))
@@ -1065,10 +1066,6 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
             if missing_rusle:
                 raise ValueError(
                     f"RUSLE inputs for pid={pid} are incomplete; missing: {missing_rusle}"
-                )
-            if "sdr" not in rusle[i] and "watershed_area_mi2" not in rusle[i]:
-                raise ValueError(
-                    f"RUSLE inputs for pid={pid} require 'sdr' or 'watershed_area_mi2'"
                 )
 
         for pollutant in ctx.pollutants:
