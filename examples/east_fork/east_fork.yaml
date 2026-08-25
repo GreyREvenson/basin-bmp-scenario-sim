@@ -1,34 +1,34 @@
 # Example East Fork (OH) watershed configuration (synthetic data)
 verbose: True
-outputs:  ./examples/east_fork/outputs
+outputs:  ./examples/east_fork/outputs/default/run_1
 
 random_seed: 42
 
 # Required geospatial inputs
-domain: ./examples/east_fork/inputs/domain.gpkg
-parcels: ./examples/east_fork/inputs/parcels.gpkg
-outlet_loc: ./examples/east_fork/inputs/outlet_loc.gpkg
+domain: ./examples/east_fork/inputs/default/domain.gpkg
+parcels: ./examples/east_fork/inputs/default/parcels.gpkg
+outlet_loc: ./examples/east_fork/inputs/default/outlet_loc.gpkg
 
 # Drainage and selection
-parcel_out: ./examples/east_fork/inputs/parcel_out.csv
-parcel_up: ./examples/east_fork/inputs/parcel_up.csv
-parcel_p: ./examples/east_fork/inputs/parcel_p.csv
+parcel_out: ./examples/east_fork/inputs/default/parcel_out.csv
+parcel_up: ./examples/east_fork/inputs/default/parcel_up.csv
+parcel_p: ./examples/east_fork/inputs/default/parcel_p.csv
 
 # Pollutants and BMPs
 pollutants: ["TN","TP","TSS"]
 cps: [340,329,590,412,656]
 
 # Required distributions
-pollutant_yield: ./examples/east_fork/inputs/pollutant_yield.csv
-bmp_efficiency: ./examples/east_fork/inputs/bmp_efficiency.csv
+pollutant_yield: ./examples/east_fork/inputs/default/pollutant_yield.csv
+bmp_efficiency: ./examples/east_fork/inputs/default/bmp_efficiency.csv
 
 # Optional distributions (enable cost-limited runs, selection weighting, and plotting x-axis)
-bmp_cost: ./examples/east_fork/inputs/bmp_cost.csv
+bmp_cost: ./examples/east_fork/inputs/default/bmp_cost.csv
 
 # Optional delivery ratios and targets/means for plotting y-axes
-#delivery_ratios: ./examples/east_fork/inputs/delivery_ratios.csv
-outlet_target: ./examples/east_fork/inputs/outlet_target.csv
-outlet_mean: ./examples/east_fork/inputs/outlet_mean.csv
+#delivery_ratios: ./examples/east_fork/inputs/default/delivery_ratios.csv
+outlet_target: ./examples/east_fork/inputs/default/outlet_target.csv
+outlet_mean: ./examples/east_fork/inputs/default/outlet_mean.csv
 
 # number of scenarios to run
 n_scenarios: 20

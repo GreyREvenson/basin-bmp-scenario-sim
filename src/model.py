@@ -31,19 +31,9 @@ from src.bmp import (
     _simulate_infield,
     _simulate_wetland,
 )
-from src.cost import (
-    _estimate_costs_for_probabilities, 
-    _get_bmp_cost, 
-    _select_cost_rate_median
-)
-from src.io_utils import (
-    _write_parquet_atomic,
-    _flatten_plot_records,
-)
-from src.logging_utils import (
-    make_worker_logger, 
-    log_scope
-)
+from src.cost import _estimate_costs_for_probabilities, _get_bmp_cost, _select_cost_rate_median
+from src.io_utils import _write_parquet_atomic, _flatten_plot_records
+from src.logging_utils import make_worker_logger, log_scope
 from src.load_generation import (
     calculate_load_diagnostics,
     initialize_plet_rusle_state,
@@ -56,11 +46,7 @@ from src.parcel import (
     _sample_parcel_index,
     _sample_yield,
 )
-from src.sampling import (
-    _piecewise_quantile_sample, 
-    _sample_from_stats, 
-    _trunc_normal,
-)
+from src.sampling import _piecewise_quantile_sample, _sample_from_stats, _trunc_normal
 from src.summaries import BMPSummaryCollector
 from src.constants import (
     CFG_BMP_COST,
@@ -105,6 +91,9 @@ from src.constants import (
     DATA_RUSLE_INPUTS,
     DATA_POLLUTANT_CONCENTRATIONS,
     DATA_GROUNDWATER_CONCENTRATIONS,
+    DATA_PATHWAYS,
+    DATA_POLLUTANT_YIELD_PATHWAY_FRACTIONS,
+    DATA_POLLUTANT_YIELD_IS_AGGREGATE,
     LOAD_GROUNDWATER_LOADS,
     LOAD_MODE_PLET_RUSLE,
     LOAD_MODE_STATISTICAL,
@@ -122,13 +111,14 @@ from src.constants import (
     OUTPUT_TREATED,
     OUTPUT_TREATED_PREFIX,
     OUTPUT_WETLAND_AREA,
-    PATHWAY_VALUES,
     XAXIS_COST,
     XAXIS_COUNT,
     YAXIS_MEAN,
     YAXIS_TARGET,
     YAXIS_TOTAL,
 )
+
+
 
 
 class Model:
@@ -194,15 +184,10 @@ class Model:
         self._estimate_costs_for_probabilities = types.MethodType(_estimate_costs_for_probabilities, self)
         self._select_cost_rate_median = types.MethodType(_select_cost_rate_median, self)
 
-        # Validate and store pathway fractions
-        surf_frac = float(self.cfg.get(CFG_POLLUTANT_YIELD_FRAC_SURFACE, 0.0))
-        shal_frac = float(self.cfg.get(CFG_POLLUTANT_YIELD_FRAC_SHALLOW, 0.0))
-        if not (0.0 <= surf_frac <= 1.0 and 0.0 <= shal_frac <= 1.0):
-            raise ValueError("pollutant_yield_frac_surface and pollutant_yield_frac_shallow must be in [0,1]")
-        if surf_frac + shal_frac > 1.0:
-            raise ValueError("pollutant_yield_frac_surface + pollutant_yield_frac_shallow must be <= 1.0")
-        self.pollutant_yield_frac_surface = surf_frac
-        self.pollutant_yield_frac_shallow = shal_frac
+        # Pathway definitions and aggregate-yield fractions are validated in
+        # io_utils because statistical mode may use arbitrary pathway names.
+        self.pollutant_yield_frac_surface = 0.0
+        self.pollutant_yield_frac_shallow = 0.0
 
         self._prepare_lookup_tables()
 
@@ -284,52 +269,33 @@ class Model:
                         ndr_s_to_o=float(r["ndr_s_to_o"]),
                     )
 
-            # Efficiency stats by CPS x pollutant (optionally per pathway)
+            # Active pathways are mode-specific and were validated during input loading.
+            self.pathway_names = list(self.data.get(DATA_PATHWAYS) or ["surface"])
+            self.pollutant_yield_pathway_fractions = dict(
+                self.data.get(DATA_POLLUTANT_YIELD_PATHWAY_FRACTIONS) or {}
+            )
+            self.pollutant_yield_is_aggregate = bool(
+                self.data.get(DATA_POLLUTANT_YIELD_IS_AGGREGATE, False)
+            )
+
+            # Efficiency stats by CPS x pollutant x active pathway.
             self.bmp_cps = sorted(int(c) for c in self.data[DATA_CPS])
             self.bmp_efficiency_stats = {int(c): [None] * len(self.pollutants) for c in self.bmp_cps}
             eff = self.data[DATA_BMP_EFFICIENCY]
-            has_pathway = (COL_PATHWAY in eff.columns)
-
             for _, row in eff.iterrows():
                 cps_key = int(row["cps"])
                 pol_key = self.pollutant_to_index[str(row[COL_POLLUTANT])]
+                path = str(row[COL_PATHWAY]).strip().lower()
                 stats = {
                     k: row[k]
                     for k in row.index
-                    if k not in ("cps", COL_POLLUTANT, COL_PATHWAY)
-                    and not pd.isna(row[k])
+                    if k not in ("cps", COL_POLLUTANT, COL_PATHWAY) and not pd.isna(row[k])
                 }
-                if has_pathway:
-                    path = str(row.get(COL_PATHWAY, "surface")).strip().lower()
-                    if self.bmp_efficiency_stats[cps_key][pol_key] is None or not isinstance(self.bmp_efficiency_stats[cps_key][pol_key], dict):
-                        self.bmp_efficiency_stats[cps_key][pol_key] = {}
-                    self.bmp_efficiency_stats[cps_key][pol_key][path] = stats  # type: ignore[index]
-                else:
-                    self.bmp_efficiency_stats[cps_key][pol_key] = stats
-
-            missing_efficiency_coverage: List[str] = []
-            for cps_key in self.bmp_cps:
-                for pol_idx, pollutant in enumerate(self.pollutants):
-                    entry = self.bmp_efficiency_stats[cps_key][pol_idx]
-                    if not isinstance(entry, dict):
-                        missing_paths = list(PATHWAY_VALUES)
-                    else:
-                        missing_paths = [
-                            pathway
-                            for pathway in PATHWAY_VALUES
-                            if pathway not in entry or not isinstance(entry[pathway], dict)
-                        ]
-                    if missing_paths:
-                        missing_efficiency_coverage.append(
-                            f"cps={cps_key}, pollutant={pollutant}, "
-                            f"pathways={missing_paths}"
-                        )
-            if missing_efficiency_coverage:
-                raise ValueError(
-                    "bmp_efficiency must provide complete CPS x pollutant x "
-                    "pathway coverage; missing "
-                    + "; ".join(missing_efficiency_coverage)
-                )
+                entry = self.bmp_efficiency_stats[cps_key][pol_key]
+                if entry is None:
+                    entry = {}
+                    self.bmp_efficiency_stats[cps_key][pol_key] = entry
+                entry[path] = stats  # type: ignore[index]
 
             # Load-generation mode and optional PLET/RUSLE inputs
             self.load_generation = dict(self.data.get(DATA_LOAD_GENERATION) or {})
@@ -340,39 +306,31 @@ class Model:
             self.rusle_inputs = self.data.get(DATA_RUSLE_INPUTS)
             self.pollutant_concentrations = self.data.get(DATA_POLLUTANT_CONCENTRATIONS)
             self.groundwater_concentrations = self.data.get(DATA_GROUNDWATER_CONCENTRATIONS)
-            self.groundwater_loads = bool(
-                self.load_generation.get(LOAD_GROUNDWATER_LOADS, False)
-            )
-            detected_fraction_inputs = [
-                key
-                for key in (
-                    CFG_POLLUTANT_YIELD_FRAC_SURFACE,
-                    CFG_POLLUTANT_YIELD_FRAC_SHALLOW,
-                )
-                if key in self.cfg
-            ]
-            if (
-                self.load_generation_mode == LOAD_MODE_PLET_RUSLE
-                and detected_fraction_inputs
-            ):
-                self.logger.verbose(
-                    "Detected pathway-fraction input(s) "
-                    f"{', '.join(detected_fraction_inputs)}; these inputs will "
-                    "have no impact on model results because plet_rusle mode "
-                    "always derives pathway loads from PLET/RUSLE inputs."
-                )
+            self.groundwater_loads = self.load_generation_mode == LOAD_MODE_PLET_RUSLE
 
-            # Statistical mode uses parcel x pollutant yield distributions.
-            # PLET/RUSLE mode derives these yields inside each scenario instead.
+            # Statistical mode supports either explicit pathway-specific yield
+            # distributions or one aggregate distribution split by validated
+            # user-defined pathway fractions.
             self.pollutant_yield_stats = [[None] * len(self.pollutants) for _ in range(len(self.parcel_ids))]
             pol_y = self.data.get(DATA_POLLUTANT_YIELD)
             if pol_y is not None:
                 for _, row in pol_y.iterrows():
                     i = self.pid_to_index[str(row["pid"])]
                     j = self.pollutant_to_index[str(row[COL_POLLUTANT])]
-                    self.pollutant_yield_stats[i][j] = {
-                        k: row[k] for k in row.index if k not in ("pid", COL_POLLUTANT)
+                    stats = {
+                        k: row[k]
+                        for k in row.index
+                        if k not in ("pid", COL_POLLUTANT, COL_PATHWAY) and not pd.isna(row[k])
                     }
+                    if self.pollutant_yield_is_aggregate:
+                        self.pollutant_yield_stats[i][j] = stats
+                    else:
+                        path = str(row[COL_PATHWAY]).strip().lower()
+                        entry = self.pollutant_yield_stats[i][j]
+                        if entry is None:
+                            entry = {}
+                            self.pollutant_yield_stats[i][j] = entry
+                        entry[path] = stats  # type: ignore[index]
             elif self.load_generation_mode != LOAD_MODE_PLET_RUSLE:
                 raise ValueError("pollutant_yield is required in statistical load-generation mode")
             self.selection_pollutant_yield_stats = [
@@ -423,15 +381,19 @@ class Model:
             rusle_inputs=self.rusle_inputs,
             pollutant_concentrations=self.pollutant_concentrations,
             groundwater_concentrations=self.groundwater_concentrations,
+            pathway_names=self.pathway_names,
+            pollutant_yield_pathway_fractions=self.pollutant_yield_pathway_fractions,
+            pollutant_yield_is_aggregate=self.pollutant_yield_is_aggregate,
             groundwater_loads=self.groundwater_loads,
             bmp_cps=self.bmp_cps,
             bmp_selection_probs=self.bmp_selection_probs,
             avg_area_ha=self.data.get(DATA_AVG_AREA_HA, 0.0),
             avg_perim_m=self.data.get(DATA_AVG_PERIM_M, 0.0),
             random_seed=self.data.get("random_seed"),
-            # Statistical-mode pathway fractions for simulator fallback logic
-            pollutant_yield_frac_surface=self.pollutant_yield_frac_surface,
-            pollutant_yield_frac_shallow=self.pollutant_yield_frac_shallow,
+            # Legacy aliases retained for external helpers; dynamic pathway
+            # handling uses pathway_names/pathway fractions above.
+            pollutant_yield_frac_surface=self.pollutant_yield_pathway_fractions.get("surface", 0.0),
+            pollutant_yield_frac_shallow=self.pollutant_yield_pathway_fractions.get("shallow subsurface", 0.0),
         )
 
     def run_all_scenarios(self) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
@@ -589,17 +551,35 @@ def _run_one_scenario(
             yields = baseline.copy()
             ctx.current_pathway_yields = load_state.pathway_yields
             ctx.current_untreated_groundwater_yields = load_state.untreated_groundwater_yields
-            logger.info("Generated baseline parcel yields with stochastic PLET/RUSLE inputs")
+            ctx.pathway_names = ["surface", "subsurface"]
+            logger.info("Generated baseline PLET/RUSLE yields for surface and subsurface pathways")
         else:
             baseline = np.zeros((len(ctx.parcel_selection_ids), n_pol), dtype=float)
             yields = np.zeros_like(baseline)
-            # Sample baseline parcel yields for selection set.
-            for i, pid in enumerate(ctx.parcel_selection_ids):
-                parcel_source_idx = ctx.pid_to_index[str(pid)]
+            pathway_yields = np.zeros(
+                (len(ctx.parcel_selection_ids), n_pol, len(ctx.pathway_names)), dtype=float
+            )
+            for i, _pid in enumerate(ctx.parcel_selection_ids):
                 for pol_idx in range(n_pol):
-                    y = ctx._sample_yield(parcel_source_idx, pol_idx)
-                    baseline[i, pol_idx] = y
-                    yields[i, pol_idx] = y
+                    entry = ctx.pollutant_yield_stats[i][pol_idx]
+                    if ctx.pollutant_yield_is_aggregate:
+                        aggregate = float(ctx._sample_from_stats(entry, kind="yield"))
+                        for path_idx, path in enumerate(ctx.pathway_names):
+                            pathway_yields[i, pol_idx, path_idx] = (
+                                aggregate * float(ctx.pollutant_yield_pathway_fractions[path])
+                            )
+                    else:
+                        for path_idx, path in enumerate(ctx.pathway_names):
+                            pathway_yields[i, pol_idx, path_idx] = float(
+                                ctx._sample_from_stats(entry[path], kind="yield")
+                            )
+                    baseline[i, pol_idx] = float(np.sum(pathway_yields[i, pol_idx, :]))
+                    yields[i, pol_idx] = baseline[i, pol_idx]
+            ctx.current_pathway_yields = pathway_yields
+            logger.info(
+                "Generated statistical baseline parcel yields across pathways: "
+                + ", ".join(ctx.pathway_names)
+            )
 
         # Limits
         limit_n = cfg.get("bmp_limit_n")
@@ -805,18 +785,30 @@ def _run_one_scenario(
                     row[f"final_groundwater_concentration_{label}_mg_l"] = final_gw_conc.get(pol)
                 for pol_idx, pol in enumerate(ctx.pollutants):
                     label = str(pol).lower()
-                    row[f"initial_surface_{label}_kg_ha"] = float(load_state.baseline_pathway_yields[parcel_idx, pol_idx, 0])
-                    row[f"initial_shallow_{label}_kg_ha"] = float(load_state.baseline_pathway_yields[parcel_idx, pol_idx, 1])
-                    row[f"initial_deep_{label}_kg_ha"] = float(load_state.baseline_pathway_yields[parcel_idx, pol_idx, 2])
-                    row[f"final_surface_{label}_kg_ha"] = float(load_state.pathway_yields[parcel_idx, pol_idx, 0])
-                    row[f"final_shallow_{label}_kg_ha"] = float(load_state.pathway_yields[parcel_idx, pol_idx, 1])
-                    row[f"final_deep_{label}_kg_ha"] = float(load_state.pathway_yields[parcel_idx, pol_idx, 2])
-                    row[f"initial_untreated_groundwater_{label}_kg_ha"] = float(
-                        load_state.baseline_untreated_groundwater_yields[parcel_idx, pol_idx]
-                    )
-                    row[f"final_untreated_groundwater_{label}_kg_ha"] = float(
-                        load_state.untreated_groundwater_yields[parcel_idx, pol_idx]
-                    )
+                    for path_idx, path in enumerate(ctx.pathway_names):
+                        path_label = str(path).lower().replace(" ", "_")
+                        row[f"initial_{path_label}_{label}_kg_ha"] = float(
+                            load_state.baseline_pathway_yields[parcel_idx, pol_idx, path_idx]
+                        )
+                        row[f"final_{path_label}_{label}_kg_ha"] = float(
+                            load_state.pathway_yields[parcel_idx, pol_idx, path_idx]
+                        )
+                    # Backward-compatible diagnostic aliases. In plet_rusle, the
+                    # actual modeled pathways are surface and subsurface only. These
+                    # legacy columns do not create additional modeled pathways.
+                    if ctx.pathway_names == ["surface", "subsurface"]:
+                        initial_subsurface = float(
+                            load_state.baseline_pathway_yields[parcel_idx, pol_idx, 1]
+                        )
+                        final_subsurface = float(
+                            load_state.pathway_yields[parcel_idx, pol_idx, 1]
+                        )
+                        row[f"initial_shallow_{label}_kg_ha"] = 0.0
+                        row[f"initial_deep_{label}_kg_ha"] = 0.0
+                        row[f"final_shallow_{label}_kg_ha"] = 0.0
+                        row[f"final_deep_{label}_kg_ha"] = 0.0
+                        row[f"initial_untreated_groundwater_{label}_kg_ha"] = initial_subsurface
+                        row[f"final_untreated_groundwater_{label}_kg_ha"] = final_subsurface
                 for key, value in calculate_load_diagnostics(initial_params).items():
                     row[f"initial_{key}"] = value
                 for key, value in calculate_load_diagnostics(final_params).items():

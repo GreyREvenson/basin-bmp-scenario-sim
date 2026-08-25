@@ -2,14 +2,13 @@
 
 This module contains the logic used to choose best management practices
 (BMPs), sample their effectiveness, and apply their impacts to parcel-level
-pollutant loads. BMP effects are signed: a negative efficiency increases load
-and is recorded as a negative removed amount. The functions are implemented as
-model helpers and operate on shared model state such as parcel geometry,
-pollutant yields, and simulation outputs.
+pollutant loads. The functions are implemented as model helpers and operate
+on shared model state such as parcel geometry, pollutant yields, and
+simulation outputs.
 """
 
 from __future__ import annotations
-import os
+
 import pandas as pd
 import numpy as np
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union, TYPE_CHECKING
@@ -41,89 +40,44 @@ ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
 ParcelUpListFn = Callable[[Union[int, str]], List[str]]
 
 FT_TO_M = 0.3048  # meters per foot
-PATHWAY_ORDER = PATHWAY_VALUES
+
+
+def _active_pathways(self: "Model") -> List[str]:
+    """Return the model's active pathways, with legacy three-path fallback."""
+    configured = getattr(self, "pathway_names", None)
+    return list(configured) if configured else list(PATHWAY_VALUES)
 
 
 def _get_pathway_yields(self: "Model", parcel_idx: int, pol_idx: int, total_yield: float) -> Dict[str, float]:
-    """Return the parcel yield split across flow pathways.
-
-    The model may already track pathway-specific yields in
-    ``self.current_pathway_yields``. When present, those values are returned
-    directly. Otherwise, statistical-mode total yield is partitioned using
-    the model's configured surface and shallow-subsurface fractions, with any
-    remainder assigned to deep subsurface flow.
-
-    Parameters
-    ----------
-    self : Model
-        Active simulation model instance.
-    parcel_idx : int
-        Index of the parcel within the model arrays.
-    pol_idx : int
-        Index of the pollutant within ``self.pollutants``.
-    total_yield : float
-        Total parcel yield for the pollutant.
-
-    Returns
-    -------
-    dict[str, float]
-        Mapping from pathway name to yield contribution. Keys are ``surface``,
-        ``shallow subsurface``, and ``deep subsurface``.
-    """
+    """Return current parcel yield contributions by active pathway."""
+    pathways = _active_pathways(self)
     pathway_yields = getattr(self, "current_pathway_yields", None)
     if pathway_yields is not None:
         values = pathway_yields[parcel_idx, pol_idx, :]
-        return {PATHWAY_ORDER[i]: float(values[i]) for i in range(len(PATHWAY_ORDER))}
+        return {pathways[i]: float(values[i]) for i in range(len(pathways))}
 
-    y_surf = total_yield * float(self.pollutant_yield_frac_surface)
-    y_shal = total_yield * float(self.pollutant_yield_frac_shallow)
-    y_deep = max(0.0, total_yield - (y_surf + y_shal))
-    return {
-        "surface": float(y_surf),
-        "shallow subsurface": float(y_shal),
-        "deep subsurface": float(y_deep),
-    }
-
+    fractions = dict(getattr(self, "pollutant_yield_pathway_fractions", {}) or {})
+    if not fractions:
+        if len(pathways) != 1:
+            raise ValueError("Multiple active pathways require tracked pathway yields or pathway fractions")
+        fractions = {pathways[0]: 1.0}
+    return {path: float(total_yield) * float(fractions.get(path, 0.0)) for path in pathways}
 
 def _get_current_total_yield(
-    self: "Model",
-    parcel_idx: int,
-    pol_idx: int,
-    fallback_yield: float,
+    self: "Model", parcel_idx: int, pol_idx: int, fallback_yield: float
 ) -> float:
-    """Return the current treatable pathways plus protected groundwater.
+    """Return the current total across tracked pathways.
 
-    Parameters
-    ----------
-    self : Model
-        Active simulation model instance.
-    parcel_idx : int
-        Index of the parcel within the model arrays.
-    pol_idx : int
-        Index of the pollutant within ``self.pollutants``.
-    fallback_yield : float
-        Total yield to return when component-level state is unavailable.
-
-    Returns
-    -------
-    float
-        Current total parcel yield for the pollutant.
+    The deprecated protected-groundwater state is included when present for
+    compatibility with pre-revision scenario objects, but PLET/RUSLE now keeps
+    all modeled nutrient load in surface/subsurface pathway state.
     """
     pathway_yields = getattr(self, "current_pathway_yields", None)
     if pathway_yields is None:
         return float(fallback_yield)
-
-    untreated_groundwater_yields = getattr(
-        self,
-        "current_untreated_groundwater_yields",
-        None,
-    )
-    untreated_groundwater = (
-        0.0
-        if untreated_groundwater_yields is None
-        else float(untreated_groundwater_yields[parcel_idx, pol_idx])
-    )
-    return float(np.sum(pathway_yields[parcel_idx, pol_idx, :]) + untreated_groundwater)
+    protected = getattr(self, "current_untreated_groundwater_yields", None)
+    protected_value = 0.0 if protected is None else float(protected[parcel_idx, pol_idx])
+    return float(np.sum(pathway_yields[parcel_idx, pol_idx, :]) + protected_value)
 
 
 def _apply_pathway_reduction(
@@ -135,12 +89,10 @@ def _apply_pathway_reduction(
 ) -> float:
     """Apply pathway-specific BMP reduction to in-memory pathway yields.
 
-    The effect is applied only when the model is tracking pathway-specific
-    loads. Each pathway is multiplied by ``1 - treatment_fraction * eff_map[path]``. 
-    A negative efficiency therefore increases the pathway load. Hydrologic 
-    partitioning and BMP treatability are intentionally independent:
-    whether a BMP affects shallow or deep subsurface load is controlled solely
-    by that BMP's pathway-specific effectiveness values.
+    The reduction is applied only when the model is tracking pathway-specific
+    loads. Each pathway is reduced by ``treatment_fraction * eff_map[path]``.
+    Hydrologic partitioning and BMP treatability are intentionally independent.
+    Each active pathway is affected only by its own pathway-specific efficiency.
 
     Parameters
     ----------
@@ -158,21 +110,20 @@ def _apply_pathway_reduction(
     Returns
     -------
     float
-        Signed load change across all pathways. Positive values are removals;
-        negative values are load increases.
+        Total load removed across all pathways.
     """
     pathway_yields = getattr(self, "current_pathway_yields", None)
     if pathway_yields is None:
         return 0.0
 
-    load_change = 0.0
-    for path_idx, path in enumerate(PATHWAY_ORDER):
+    removed = 0.0
+    for path_idx, path in enumerate(_active_pathways(self)):
         current = float(pathway_yields[parcel_idx, pol_idx, path_idx])
         eff = float(eff_map.get(path, 0.0))
         new_value = max(0.0, current * (1.0 - treatment_fraction * eff))
-        load_change += current - new_value
+        removed += current - new_value
         pathway_yields[parcel_idx, pol_idx, path_idx] = new_value
-    return float(load_change)
+    return float(removed)
 
 
 def _select_bmp_type(self: "Model") -> int:
@@ -231,8 +182,7 @@ def _sample_efficiency(self: "Model", cps: Union[int, str], pol_idx: int) -> flo
     Returns
     -------
     float
-        Sampled signed effectiveness value no greater than ``1``. Negative
-        values represent an increase in pollutant load.
+        Sampled effectiveness value in the ``[0, 1]`` range.
     """
     stats = self.bmp_efficiency_stats[int(cps)][pol_idx]
     eff = self._sample_from_stats(stats, kind="efficiency")
@@ -241,53 +191,31 @@ def _sample_efficiency(self: "Model", cps: Union[int, str], pol_idx: int) -> flo
 
 
 def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) -> Dict[str, float]:
-    """Sample BMP effectiveness values for each flow pathway.
+    """Sample one BMP efficiency for every active pathway.
 
-    Input validation guarantees one distribution for every configured
-    CPS-by-pollutant-by-pathway combination. Each pathway is sampled
-    independently; missing coverage is treated as an invalid model state.
-
-    Parameters
-    ----------
-    self : Model
-        Active simulation model instance.
-    cps : int or str
-        BMP CPS identifier.
-    pol_idx : int
-        Index of the pollutant within ``self.pollutants``.
-
-    Returns
-    -------
-    dict[str, float]
-        Effectiveness values for ``surface``, ``shallow subsurface``, and 
-        ``deep subsurface``. Values may be negative to represent pathway load
-        increases.
+    Input validation guarantees complete coverage. In PLET/RUSLE mode this
+    means surface is explicitly required and subsurface is either explicitly
+    supplied or has already been inserted as a fixed zero distribution.
+    Statistical mode requires explicit coverage for every active user-defined
+    pathway.
     """
-    cps_key = int(cps)
-    entry = self.bmp_efficiency_stats[cps_key][pol_idx]
+    entry = self.bmp_efficiency_stats[int(cps)][pol_idx]
+    pathways = _active_pathways(self)
     missing_paths = (
-        list(PATHWAY_ORDER)
+        list(pathways)
         if not isinstance(entry, dict)
-        else [
-            pathway
-            for pathway in PATHWAY_ORDER
-            if pathway not in entry or not isinstance(entry[pathway], dict)
-        ]
+        else [path for path in pathways if path not in entry or not isinstance(entry[path], dict)]
     )
     if missing_paths:
-        pollutant = self.pollutants[pol_idx]
         raise ValueError(
             "Incomplete bmp_efficiency coverage for "
-            f"cps={cps_key}, pollutant={pollutant}; missing pathways: {missing_paths}"
+            f"cps={int(cps)}, pollutant={self.pollutants[pol_idx]}; "
+            f"missing pathways: {missing_paths}"
         )
-
     return {
-        pathway: float(
-            self._sample_from_stats(entry[pathway], kind="efficiency")
-        )
-        for pathway in PATHWAY_ORDER
+        path: float(self._sample_from_stats(entry[path], kind="efficiency"))
+        for path in pathways
     }
-
 
 def _simulate_wetland(
     self: "Model",
@@ -397,19 +325,19 @@ def _simulate_wetland(
                 emap = eff_maps[pol_idx]
 
                 treated = sum(components.values()) * (A * frac)
-                removed = (A * frac) * (
-                    components["surface"] * emap["surface"] +
-                    components["shallow subsurface"] * emap["shallow subsurface"] +
-                    components["deep subsurface"] * emap["deep subsurface"]
+                removed = (A * frac) * sum(
+                    components.get(path, 0.0) * emap.get(path, 0.0)
+                    for path in _active_pathways(self)
                 )
                 self._apply_pathway_reduction(p_idx, pol_idx, frac, emap)
 
                 bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
                 bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-                if getattr(self, "current_pathway_yields", None) is not None:
-                    y_new = self._get_current_total_yield(p_idx, pol_idx, y)
-                else:
-                    y_new = y - removed / A
+                y_new = (
+                    self._get_current_total_yield(p_idx, pol_idx, y)
+                    if getattr(self, "current_pathway_yields", None) is not None
+                    else (y - removed / A)
+                )
                 yields[p_idx, pol_idx] = max(0.0, y_new)
 
             remaining -= A
@@ -484,20 +412,15 @@ def _simulate_grassed(
             emap = eff_maps[pol_idx]
 
             treated = sum(components.values()) * (A * frac_treated)
-            removed = (A * frac_treated) * (
-                components["surface"] * emap["surface"] +
-                components["shallow subsurface"] * emap["shallow subsurface"] +
-                components["deep subsurface"] * emap["deep subsurface"]
+            removed = (A * frac_treated) * sum(
+                components.get(path, 0.0) * emap.get(path, 0.0)
+                for path in _active_pathways(self)
             )
             self._apply_pathway_reduction(parcel_idx, pol_idx, frac_treated, emap)
 
             bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
             bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-            y_new = (
-                self._get_current_total_yield(parcel_idx, pol_idx, y)
-                if getattr(self, "current_pathway_yields", None) is not None
-                else y - removed / A
-            )
+            y_new = self._get_current_total_yield(parcel_idx, pol_idx, y) if getattr(self, "current_pathway_yields", None) is not None else (y - removed / A)
             yields[parcel_idx, pol_idx] = max(0.0, y_new)
 
 
@@ -545,20 +468,15 @@ def _simulate_infield(
             emap = eff_maps[pol_idx]
 
             treated = sum(components.values()) * A
-            removed = A * (
-                components["surface"] * emap["surface"] +
-                components["shallow subsurface"] * emap["shallow subsurface"] +
-                components["deep subsurface"] * emap["deep subsurface"]
+            removed = A * sum(
+                components.get(path, 0.0) * emap.get(path, 0.0)
+                for path in _active_pathways(self)
             )
             self._apply_pathway_reduction(parcel_idx, pol_idx, 1.0, emap)
 
             bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
             bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-            y_new = (
-                self._get_current_total_yield(parcel_idx, pol_idx, y)
-                if getattr(self, "current_pathway_yields", None) is not None
-                else y - removed / A
-            )
+            y_new = self._get_current_total_yield(parcel_idx, pol_idx, y) if getattr(self, "current_pathway_yields", None) is not None else (y - removed / A)
             yields[parcel_idx, pol_idx] = max(0.0, y_new)
 
 

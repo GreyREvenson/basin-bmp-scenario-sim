@@ -34,6 +34,9 @@ from .constants import (
     CFG_PARCELS,
     CFG_POLLUTANT_YIELD,
     CFG_POLLUTANTS,
+    CFG_POLLUTANT_YIELD_FRAC_SURFACE,
+    CFG_POLLUTANT_YIELD_FRAC_SHALLOW,
+    CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS,
     CFG_RANDOM_SEED,
     CFG_LOAD_GENERATION,
     LOAD_MODE_STATISTICAL,
@@ -62,6 +65,10 @@ from .constants import (
     COL_UNIT,
     COL_PATHWAY,
     PATHWAY_VALUES,
+    PLET_PATHWAY_VALUES,
+    DATA_PATHWAYS,
+    DATA_POLLUTANT_YIELD_PATHWAY_FRACTIONS,
+    DATA_POLLUTANT_YIELD_IS_AGGREGATE,
 )
 from .utils import ci_get, normalize_columns, normalize_pollutant_label
 from .logging_utils import log_scope
@@ -278,43 +285,27 @@ def _normalize_pollutant_column(df: pd.DataFrame, col: str, label: str, logger: 
     return df
 
 
+def _normalize_pathway_label(value: Any) -> str:
+    """Return a stable, user-extensible pathway label."""
+    label = str(value).strip().lower().replace("_", " ")
+    return " ".join(label.split())
+
+
 def _normalize_pathway_column(df: pd.DataFrame, label: str, logger: Any) -> pd.DataFrame:
-    """Normalize and validate pathway labels when present.
+    """Normalize pathway labels without restricting user-defined pathways.
 
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Input table.
-    label : str
-        Dataset label used in error messages.
-    logger : Any
-        Logger retained for interface consistency.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Dataframe with normalized pathway labels.
-
-    Raises
-    ------
-    ValueError
-        If any pathway label is not recognized.
+    Statistical mode may use any non-empty pathway labels shared by the parcel
+    yield and BMP efficiency inputs. PLET/RUSLE-specific pathway restrictions
+    are applied later, after the load-generation mode is known.
     """
+    del logger
     if COL_PATHWAY not in df.columns:
         return df
-    df[COL_PATHWAY] = df[COL_PATHWAY].astype(str).str.strip().str.lower()
-    alias = {
-        "shallow_subsurface": "shallow subsurface",
-        "deep_subsurface": "deep subsurface",
-        "surface_flow": "surface",
-    }
-    df[COL_PATHWAY] = df[COL_PATHWAY].map(lambda x: alias.get(x, x))
-    allowed = {"surface", "shallow subsurface", "deep subsurface"}
-    bad = sorted(set(df[COL_PATHWAY]) - allowed)
-    if bad:
-        raise ValueError(f"{label} pathway contains invalid values: {bad}; expected one of {sorted(allowed)}")
+    df[COL_PATHWAY] = df[COL_PATHWAY].map(_normalize_pathway_label)
+    bad = df[COL_PATHWAY].eq("")
+    if bad.any():
+        raise ValueError(f"{label} contains blank pathway labels")
     return df
-
 
 def _validate_stats_table(df: pd.DataFrame, label: str) -> None:
     """Validate that a table exposes sampling statistics.
@@ -935,38 +926,14 @@ def _complete_bmp_efficiency_coverage(
     pollutants: Sequence[str],
     logger: Any,
 ) -> pd.DataFrame:
-    """Validate and complete CPS-by-pollutant-by-pathway efficiency coverage.
+    """Legacy three-path completion used by the public loader API.
 
-    A surface efficiency is required for every configured CPS and pollutant.
-    Missing shallow- or deep-subsurface efficiencies are explicitly added as
-    fixed zero distributions and reported through verbose logging.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Filtered and normalized BMP efficiency table.
-    cps : sequence of int
-        Configured BMP CPS codes.
-    pollutants : sequence of str
-        Configured canonical pollutant labels.
-    logger : Any
-        Logger used to report assumed zero efficiencies.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Efficiency table containing all configured CPS, pollutant, and pathway
-        combinations exactly once.
-
-    Raises
-    ------
-    ValueError
-        If any configured CPS/pollutant combination lacks a surface efficiency
-        or an explicitly supplied row has incomplete statistics.
+    Surface is required. Missing shallow/deep subsurface values are completed
+    as fixed zero distributions with verbose logging. Production mode-specific
+    validation bypasses this compatibility layer.
     """
     completed = df.copy()
     completed[COL_CPS] = completed[COL_CPS].astype(int)
-
     if COL_PATHWAY not in completed.columns:
         completed[COL_PATHWAY] = PATHWAY_VALUES[0]
         logger.verbose(
@@ -978,7 +945,6 @@ def _complete_bmp_efficiency_coverage(
     configured_pollutants = [str(pollutant) for pollutant in pollutants]
     surface_pathway = PATHWAY_VALUES[0]
     subsurface_pathways = PATHWAY_VALUES[1:]
-
     missing_surface: List[Tuple[int, str]] = []
     for cps_code in configured_cps:
         for pollutant in configured_pollutants:
@@ -989,7 +955,6 @@ def _complete_bmp_efficiency_coverage(
             )
             if not mask.any():
                 missing_surface.append((cps_code, pollutant))
-
     if missing_surface:
         details = ", ".join(
             f"cps={cps_code}, pollutant={pollutant}"
@@ -1011,7 +976,6 @@ def _complete_bmp_efficiency_coverage(
             surface_row = completed[
                 pair_mask & (completed[COL_PATHWAY] == surface_pathway)
             ].iloc[0]
-
             for pathway in subsurface_pathways:
                 pathway_mask = pair_mask & (completed[COL_PATHWAY] == pathway)
                 if pathway_mask.any():
@@ -1030,7 +994,6 @@ def _complete_bmp_efficiency_coverage(
                     for column in stat_columns:
                         default_row[column] = 0.0
                     added_rows.append(default_row)
-
                 logger.verbose(
                     "No bmp_efficiency value specified for "
                     f"cps={cps_code}, pollutant={pollutant}, pathway='{pathway}'; "
@@ -1044,34 +1007,138 @@ def _complete_bmp_efficiency_coverage(
         )
 
     _validate_stats_rows(completed, CFG_BMP_EFFICIENCY)
-
     pathway_order = {pathway: idx for idx, pathway in enumerate(PATHWAY_VALUES)}
     completed["_pathway_order"] = completed[COL_PATHWAY].map(pathway_order)
     completed = completed.sort_values(
-        [COL_CPS, COL_POLLUTANT, "_pathway_order"],
-        kind="stable",
+        [COL_CPS, COL_POLLUTANT, "_pathway_order"], kind="stable"
     ).drop(columns="_pathway_order")
     return completed.reset_index(drop=True)
 
 
-def _load_bmp_efficiency(cfg: Dict[str, Any], cps: List[int], pollutants: List[str], logger: Any) -> pd.DataFrame:
-    """Load BMP effectiveness inputs.
+def _validate_unique_rows(df: pd.DataFrame, keys: Sequence[str], label: str) -> None:
+    dup = df.duplicated(list(keys), keep=False)
+    if dup.any():
+        preview = df.loc[dup, list(keys)].head(10).to_dict(orient="records")
+        raise ValueError(f"{label} contains duplicate rows for {list(keys)}: {preview}")
 
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Configuration mapping.
-    cps : list[int]
-        BMP CPS codes to retain.
-    pollutants : list[str]
-        Pollutants to retain.
-    logger : Any
-        Logger used for progress reporting.
 
-    Returns
-    -------
-    pandas.DataFrame
-        BMP effectiveness table filtered to the requested BMPs and pollutants.
+def _complete_plet_bmp_efficiency_coverage(
+    df: pd.DataFrame, cps: Sequence[int], pollutants: Sequence[str], logger: Any
+) -> pd.DataFrame:
+    """Require PLET surface efficiencies and default missing subsurface to zero."""
+    completed = df.copy()
+    completed[COL_CPS] = completed[COL_CPS].astype(int)
+    if COL_PATHWAY not in completed.columns:
+        completed[COL_PATHWAY] = "surface"
+        logger.verbose(
+            "plet_rusle bmp_efficiency has no pathway column; treating supplied "
+            "CPS x pollutant rows as surface efficiencies"
+        )
+    else:
+        unexpected = sorted(
+            set(completed[COL_PATHWAY].astype(str)) - set(PLET_PATHWAY_VALUES)
+        )
+        if unexpected:
+            logger.warning(
+                "plet_rusle recognizes only pathway labels 'surface' and "
+                f"'subsurface'. Ignoring unexpected bmp_efficiency pathway labels: {unexpected}. "
+                "If no correctly labeled subsurface efficiency remains for a CPS/pollutant, "
+                "subsurface efficiency will be assumed to be 0."
+            )
+        completed = completed[completed[COL_PATHWAY].isin(PLET_PATHWAY_VALUES)].copy()
+
+    _validate_unique_rows(
+        completed, [COL_CPS, COL_POLLUTANT, COL_PATHWAY], CFG_BMP_EFFICIENCY
+    )
+    stat_columns = _efficiency_stat_columns(completed)
+    added_rows: List[pd.Series] = []
+    missing_surface: List[Tuple[int, str]] = []
+    for cps_code in [int(x) for x in cps]:
+        for pollutant in [str(x) for x in pollutants]:
+            pair = (completed[COL_CPS] == cps_code) & (completed[COL_POLLUTANT] == pollutant)
+            surf = completed[pair & (completed[COL_PATHWAY] == "surface")]
+            if surf.empty:
+                missing_surface.append((cps_code, pollutant))
+                continue
+            sub = completed[pair & (completed[COL_PATHWAY] == "subsurface")]
+            sub_has_stats = False
+            if not sub.empty:
+                row = sub.iloc[0]
+                sub_has_stats = any(not pd.isna(row.get(c)) for c in stat_columns)
+            if not sub_has_stats:
+                template = surf.iloc[0].copy()
+                template[COL_PATHWAY] = "subsurface"
+                for c in stat_columns:
+                    template[c] = 0.0
+                if not sub.empty:
+                    completed = completed.drop(index=sub.index)
+                added_rows.append(template)
+                logger.warning(
+                    "plet_rusle: no correctly labeled subsurface BMP efficiency was "
+                    f"defined for cps={cps_code}, pollutant={pollutant}; assuming efficiency=0"
+                )
+    if missing_surface:
+        details = ", ".join(f"cps={c}, pollutant={p}" for c, p in missing_surface)
+        raise ValueError(
+            "plet_rusle requires a surface bmp_efficiency for every configured "
+            f"CPS x pollutant combination; missing: {details}"
+        )
+    if added_rows:
+        completed = pd.concat([completed, pd.DataFrame(added_rows)], ignore_index=True)
+    _validate_stats_rows(completed, CFG_BMP_EFFICIENCY)
+    order = {"surface": 0, "subsurface": 1}
+    completed["_pathway_order"] = completed[COL_PATHWAY].map(order)
+    return completed.sort_values(
+        [COL_CPS, COL_POLLUTANT, "_pathway_order"], kind="stable"
+    ).drop(columns="_pathway_order").reset_index(drop=True)
+
+
+def _validate_statistical_efficiency_coverage(
+    df: pd.DataFrame, cps: Sequence[int], pollutants: Sequence[str], pathways: Sequence[str]
+) -> pd.DataFrame:
+    """Require complete CPS x pollutant x pathway coverage in statistical mode."""
+    out = df.copy()
+    if COL_PATHWAY not in out.columns:
+        if list(pathways) != ["surface"]:
+            raise ValueError(
+                "statistical mode with multiple pathways requires a pathway column in bmp_efficiency"
+            )
+        out[COL_PATHWAY] = "surface"
+    supplied = set(out[COL_PATHWAY].astype(str))
+    expected = set(pathways)
+    if supplied != expected:
+        raise ValueError(
+            "statistical mode requires pollutant_yield and bmp_efficiency to use the same pathways; "
+            f"expected {sorted(expected)}, found {sorted(supplied)} in bmp_efficiency"
+        )
+    _validate_unique_rows(out, [COL_CPS, COL_POLLUTANT, COL_PATHWAY], CFG_BMP_EFFICIENCY)
+    missing = []
+    for c in [int(x) for x in cps]:
+        for p in [str(x) for x in pollutants]:
+            for path in pathways:
+                mask = (out[COL_CPS].astype(int) == c) & (out[COL_POLLUTANT] == p) & (out[COL_PATHWAY] == path)
+                if not mask.any():
+                    missing.append((c, p, path))
+    if missing:
+        preview = ", ".join(f"cps={c}, pollutant={p}, pathway={path}" for c,p,path in missing[:20])
+        raise ValueError(f"bmp_efficiency is missing required statistical-mode coverage: {preview}")
+    _validate_stats_rows(out, CFG_BMP_EFFICIENCY)
+    return out.reset_index(drop=True)
+
+
+def _load_bmp_efficiency(
+    cfg: Dict[str, Any],
+    cps: List[int],
+    pollutants: List[str],
+    logger: Any,
+    *,
+    complete_legacy: bool = True,
+) -> pd.DataFrame:
+    """Load and normalize BMP effectiveness inputs.
+
+    ``complete_legacy=True`` preserves the public three-path loader behavior
+    used by existing callers/tests. The main model loader passes ``False`` and
+    then performs mode-specific validation for PLET/RUSLE or statistical mode.
     """
     df = _merge_csvs(ci_get(cfg, CFG_BMP_EFFICIENCY), [COL_CPS, COL_POLLUTANT], CFG_BMP_EFFICIENCY, logger)
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_BMP_EFFICIENCY, logger)
@@ -1080,8 +1147,9 @@ def _load_bmp_efficiency(cfg: Dict[str, Any], cps: List[int], pollutants: List[s
     df = df[df[COL_CPS].astype(int).isin(cps) & df[COL_POLLUTANT].isin(pollutants)].copy()
     if df.empty:
         raise ValueError("bmp_efficiency has no records for specified cps+pollutants")
-    return _complete_bmp_efficiency_coverage(df, cps, pollutants, logger)
-
+    if complete_legacy:
+        return _complete_bmp_efficiency_coverage(df, cps, pollutants, logger)
+    return df
 
 def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any) -> Optional[pd.DataFrame]:
     """Optionally load BMP cost inputs.
@@ -1134,11 +1202,98 @@ def _load_pollutant_yield(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants
     """
     df = _merge_csvs(ci_get(cfg, CFG_POLLUTANT_YIELD), [COL_PID, COL_POLLUTANT], CFG_POLLUTANT_YIELD, logger)
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_POLLUTANT_YIELD, logger)
+    df = _normalize_pathway_column(df, CFG_POLLUTANT_YIELD, logger)
     _validate_stats_table(df, CFG_POLLUTANT_YIELD)
-    df = df[df[COL_PID].astype(str).isin(parcels[COL_PID].astype(str)) & df[COL_POLLUTANT].isin(pollutants)].copy()
+    df[COL_PID] = df[COL_PID].astype(str)
+    df = df[df[COL_PID].isin(parcels[COL_PID].astype(str)) & df[COL_POLLUTANT].isin(pollutants)].copy()
     if df.empty:
         raise ValueError("pollutant_yield has no records for specified parcels+pollutants")
+    _validate_stats_rows(df, CFG_POLLUTANT_YIELD)
     return df
+
+
+
+def _validate_statistical_yields(
+    df: pd.DataFrame,
+    parcels: pd.DataFrame,
+    pollutants: Sequence[str],
+) -> Tuple[List[str], bool]:
+    """Validate statistical parcel-yield coverage and return pathways/mode."""
+    parcel_ids = parcels[COL_PID].astype(str).tolist()
+    explicit = COL_PATHWAY in df.columns
+    pathways = list(dict.fromkeys(df[COL_PATHWAY].astype(str).tolist())) if explicit else []
+    keys = [COL_PID, COL_POLLUTANT] + ([COL_PATHWAY] if explicit else [])
+    _validate_unique_rows(df, keys, CFG_POLLUTANT_YIELD)
+    missing = []
+    if explicit:
+        for pid in parcel_ids:
+            for pol in pollutants:
+                for path in pathways:
+                    mask = (df[COL_PID] == pid) & (df[COL_POLLUTANT] == pol) & (df[COL_PATHWAY] == path)
+                    if not mask.any():
+                        missing.append((pid, pol, path))
+    else:
+        for pid in parcel_ids:
+            for pol in pollutants:
+                mask = (df[COL_PID] == pid) & (df[COL_POLLUTANT] == pol)
+                if not mask.any():
+                    missing.append((pid, pol, None))
+    if missing:
+        preview = ", ".join(
+            f"pid={pid}, pollutant={pol}" + (f", pathway={path}" if path else "")
+            for pid, pol, path in missing[:20]
+        )
+        raise ValueError(f"pollutant_yield is missing required statistical-mode coverage: {preview}")
+    return pathways, not explicit
+
+
+def _resolve_aggregate_pathway_fractions(
+    cfg: Dict[str, Any], load_generation: Dict[str, Any], pathways: Sequence[str]
+) -> Dict[str, float]:
+    """Resolve fractions used to split one sampled aggregate parcel yield."""
+    pathways = list(pathways)
+    if len(pathways) == 1:
+        return {pathways[0]: 1.0}
+    raw = ci_get(cfg, CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS)
+    if raw is None:
+        raw = load_generation.get(CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS)
+    fractions: Dict[str, float] = {}
+    if raw is not None:
+        if not isinstance(raw, dict):
+            raise ValueError(f"{CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS} must be a mapping")
+        fractions = {_normalize_pathway_label(k): float(v) for k, v in raw.items()}
+    else:
+        # Backward-compatible shorthand. A shallow fraction alone means the
+        # remaining aggregate yield is surface load.
+        surf_raw = ci_get(cfg, CFG_POLLUTANT_YIELD_FRAC_SURFACE)
+        shallow_raw = ci_get(cfg, CFG_POLLUTANT_YIELD_FRAC_SHALLOW)
+        if surf_raw is not None:
+            fractions["surface"] = float(surf_raw)
+        if shallow_raw is not None:
+            fractions["shallow subsurface"] = float(shallow_raw)
+        if shallow_raw is not None and surf_raw is None and "surface" in pathways:
+            fractions["surface"] = 1.0 - float(shallow_raw)
+        elif surf_raw is not None and shallow_raw is not None and "deep subsurface" in pathways:
+            fractions["deep subsurface"] = 1.0 - float(surf_raw) - float(shallow_raw)
+    unknown = set(fractions) - set(pathways)
+    if unknown:
+        raise ValueError(
+            f"Pathway fractions refer to pathways not defined by bmp_efficiency: {sorted(unknown)}"
+        )
+    if not fractions:
+        raise ValueError(
+            "Statistical mode uses one aggregate pollutant_yield per parcel but multiple BMP pathways. "
+            f"Define {CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS}, e.g. {{'shallow subsurface': 0.2, 'surface': 0.8}}."
+        )
+    for path in pathways:
+        fractions.setdefault(path, 0.0)
+    vals = np.asarray(list(fractions.values()), dtype=float)
+    if (vals < 0.0).any() or (vals > 1.0).any():
+        raise ValueError("pollutant yield pathway fractions must each be in [0,1]")
+    total = float(vals.sum())
+    if abs(total - 1.0) > 1.0e-9:
+        raise ValueError(f"pollutant yield pathway fractions must sum to 1.0; got {total:.12g}")
+    return {path: float(fractions[path]) for path in pathways}
 
 
 def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
@@ -1212,14 +1367,24 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 "load_generation.pathway_mode has been removed; "
                 "plet_rusle mode always derives pathway loads from PLET/RUSLE inputs"
             )
+        supplied_legacy_groundwater_keys = (
+            LOAD_GROUNDWATER_LOADS in load_generation
+            or LOAD_TREAT_GROUNDWATER_WITH_BMPS in load_generation
+        )
         groundwater_loads = bool(load_generation.get(LOAD_GROUNDWATER_LOADS, False))
         treat_groundwater_with_bmps = bool(load_generation.get(LOAD_TREAT_GROUNDWATER_WITH_BMPS, False))
         load_generation[LOAD_GROUNDWATER_LOADS] = groundwater_loads
         load_generation[LOAD_TREAT_GROUNDWATER_WITH_BMPS] = treat_groundwater_with_bmps
+        if load_mode == LOAD_MODE_PLET_RUSLE and supplied_legacy_groundwater_keys:
+            logger.verbose(
+                "plet_rusle now always estimates lookup-derived subsurface loads; "
+                "groundwater_loads/treat_groundwater_with_bmps do not alter pathway generation. "
+                "Subsurface BMP treatment is controlled by the subsurface efficiency."
+            )
 
         if ci_get(cfg, CFG_BMP_EFFICIENCY) is None:
             raise ValueError("bmp_efficiency is required")
-        bmp_eff = _load_bmp_efficiency(cfg, cps, pollutants, logger)
+        bmp_eff = _load_bmp_efficiency(cfg, cps, pollutants, logger, complete_legacy=False)
         bmp_cost = _load_bmp_cost(cfg, cps, logger)
 
         plet_inputs = None
@@ -1247,13 +1412,34 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 raise ValueError(
                     "load_generation.pollutant_concentrations is required for TN or TP in plet_rusle mode"
                 )
-            if groundwater_loads and any(p in {"TN", "TP"} for p in pollutants) and groundwater_concentrations is None:
+            if any(p != "TSS" for p in pollutants) and groundwater_concentrations is None:
                 raise ValueError(
-                    "load_generation.groundwater_concentrations is required when groundwater_loads is true"
+                    "load_generation.groundwater_concentrations is required for non-TSS pollutants in plet_rusle mode"
                 )
             pollutant_yield = None
+            pathways = list(PLET_PATHWAY_VALUES)
+            pollutant_yield_is_aggregate = False
+            pollutant_yield_pathway_fractions: Dict[str, float] = {}
+            bmp_eff = _complete_plet_bmp_efficiency_coverage(bmp_eff, cps, pollutants, logger)
         else:
             pollutant_yield = _load_pollutant_yield(cfg, parcels, pollutants, logger)
+            yield_pathways, pollutant_yield_is_aggregate = _validate_statistical_yields(
+                pollutant_yield, parcels, pollutants
+            )
+            if pollutant_yield_is_aggregate:
+                if COL_PATHWAY in bmp_eff.columns:
+                    pathways = list(dict.fromkeys(bmp_eff[COL_PATHWAY].astype(str).tolist()))
+                else:
+                    pathways = ["surface"]
+                pollutant_yield_pathway_fractions = _resolve_aggregate_pathway_fractions(
+                    cfg, load_generation, pathways
+                )
+            else:
+                pathways = yield_pathways
+                pollutant_yield_pathway_fractions = {}
+            bmp_eff = _validate_statistical_efficiency_coverage(
+                bmp_eff, cps, pollutants, pathways
+            )
 
         delivery_ratios = _load_delivery_ratios(cfg, logger)
 
@@ -1282,6 +1468,9 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         rusle_inputs=rusle_inputs,
         pollutant_concentrations=pollutant_concentrations,
         groundwater_concentrations=groundwater_concentrations,
+        pathways=pathways,
+        pollutant_yield_pathway_fractions=pollutant_yield_pathway_fractions,
+        pollutant_yield_is_aggregate=pollutant_yield_is_aggregate,
         bmp_limit_n=ci_get(cfg, CFG_BMP_LIMIT_N),
         bmp_limit_usd=ci_get(cfg, CFG_BMP_LIMIT_USD),
         n_scenarios=int(ci_get(cfg, CFG_N_SCENARIOS) or 1),

@@ -19,7 +19,11 @@ import pandas as pd
 INCH_OVER_HA_TO_LITERS = 254_000.0
 TON_PER_ACRE_TO_KG_PER_HA = 907.18474 / 0.40468564224
 ACRES_PER_SQUARE_MILE = 640.0
-PATHWAY_NAMES = ("surface", "shallow subsurface", "deep subsurface")
+# Legacy public helper pathway order retained for backward compatibility.
+# Production plet_rusle scenarios do NOT use this three-path tuple.
+LEGACY_PATHWAY_NAMES = ("surface", "shallow subsurface", "deep subsurface")
+PATHWAY_NAMES = LEGACY_PATHWAY_NAMES
+PLET_PATHWAY_NAMES = ("surface", "subsurface")
 PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
 PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
 PLET_HSG_VALUES = ("A", "B", "C", "D")
@@ -136,12 +140,12 @@ class LoadState:
     pollutants : list[str]
         Pollutants tracked by the simulation.
     pathway_yields : numpy.ndarray
-        Current BMP-treatable pathway-specific parcel yields with shape
-        ``(n_parcels, n_pollutants, n_pathways)``.
+        Current pathway-specific parcel yields with shape
+        ``(n_parcels, n_pollutants, 2)``. In PLET/RUSLE mode the two pathways
+        are ``surface`` and ``subsurface``.
     untreated_groundwater_yields : numpy.ndarray
-        Current groundwater yields that are excluded from BMP treatment, with
-        shape ``(n_parcels, n_pollutants)``. This array is zero when
-        groundwater treatment is enabled.
+        Deprecated compatibility array. PLET/RUSLE subsurface loads are now
+        included in the ``subsurface`` pathway, so this array is always zero.
     baseline_parameters : list[dict[str, Any]]
         Snapshot of the original parameter values.
     baseline_concentrations : list[dict[str, float]]
@@ -463,12 +467,11 @@ def rusle_sediment_yield_kg_ha(parameters: Mapping[str, Any]) -> float:
     for name in _REQUIRED_RUSLE:
         gross_ton_ac *= max(0.0, float(parameters[name]))
 
+    sdr = 1.0
     if "sdr" in parameters:
         sdr = float(parameters["sdr"])
         if sdr < 0.0 or sdr > 1.0:
             raise ValueError("RUSLE input parameter value for sdr must be between 0.0 and 1.0")
-    else:
-        sdr = 1.0
 
     sediment_multiplier = max(0.0, float(parameters.get("sediment_multiplier", 1.0)))
     delivery_multiplier = max(0.0, float(parameters.get("sediment_delivery_multiplier", 1.0)))
@@ -1009,6 +1012,64 @@ def calculate_load_components(
     return out, untreated_groundwater
 
 
+
+def calculate_plet_pathway_yields(
+    parameters: Mapping[str, Any],
+    concentrations: Mapping[str, float],
+    groundwater_concentrations: Optional[Mapping[str, float]],
+    pollutants: Sequence[str],
+) -> np.ndarray:
+    """Calculate the two PLET/RUSLE pathways: surface and subsurface.
+
+    Surface nutrient load is runoff-derived load plus any RUSLE sediment-bound
+    nutrient contribution. Subsurface nutrient load is groundwater concentration
+    multiplied by PLET annual infiltration volume. The infiltration fraction in
+    ``parameters`` is resolved from the PLET land-cover/HSG lookup table before
+    this function is called. TSS has no subsurface component.
+    """
+    missing = [name for name in _REQUIRED_RESOLVED_PLET if name not in parameters]
+    if missing:
+        raise ValueError(f"PLET inputs are missing required parameters: {missing}")
+
+    _, _, _, annual_runoff_in = plet_annual_surface_runoff_in(parameters)
+    runoff_l_ha = annual_runoff_in * INCH_OVER_HA_TO_LITERS
+    infiltration_l_ha = plet_annual_infiltration_in(parameters) * INCH_OVER_HA_TO_LITERS
+    has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
+    sediment_kg_ha = rusle_sediment_yield_kg_ha(parameters) if has_rusle else 0.0
+    enrichment_ratio = max(0.0, float(parameters.get("enrichment_ratio", 2.0)))
+    groundwater_concentrations = groundwater_concentrations or {}
+
+    out = np.zeros((len(pollutants), len(PLET_PATHWAY_NAMES)), dtype=float)
+    for idx, pollutant in enumerate(pollutants):
+        pol = str(pollutant).upper()
+        runoff_load = (
+            max(0.0, float(concentrations.get(pol, 0.0)))
+            * runoff_l_ha / 1_000_000.0
+        )
+        subsurface_load = 0.0
+        if pol != "TSS":
+            subsurface_load = (
+                max(0.0, float(groundwater_concentrations.get(pol, 0.0)))
+                * infiltration_l_ha / 1_000_000.0
+            )
+
+        if pol == "TSS":
+            surface_load = sediment_kg_ha if has_rusle else runoff_load
+        elif pol == "TN":
+            sediment_fraction = max(0.0, float(parameters.get("sediment_n_pct", 0.0))) / 100.0
+            surface_load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
+        elif pol == "TP":
+            sediment_fraction = max(0.0, float(parameters.get("sediment_p_pct", 0.0))) / 100.0
+            surface_load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
+        else:
+            surface_load = runoff_load
+
+        multiplier = max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
+        out[idx, 0] = max(0.0, surface_load) * multiplier
+        out[idx, 1] = max(0.0, subsurface_load) * multiplier
+    return out
+
+
 def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
     """Create the initial parcel load state for a scenario.
 
@@ -1042,7 +1103,7 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
     parameters: List[Dict[str, Any]] = []
     has_rusle: List[bool] = []
     yields = np.zeros((len(parcel_ids), len(ctx.pollutants)), dtype=float)
-    pathway_yields = np.zeros((len(parcel_ids), len(ctx.pollutants), len(PATHWAY_NAMES)), dtype=float)
+    pathway_yields = np.zeros((len(parcel_ids), len(ctx.pollutants), len(PLET_PATHWAY_NAMES)), dtype=float)
     untreated_groundwater_yields = np.zeros((len(parcel_ids), len(ctx.pollutants)), dtype=float)
     for i, pid in enumerate(parcel_ids):
         missing_plet = [
@@ -1067,6 +1128,10 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
                 raise ValueError(
                     f"RUSLE inputs for pid={pid} are incomplete; missing: {missing_rusle}"
                 )
+            if "sdr" not in rusle[i] and "watershed_area_mi2" not in rusle[i]:
+                raise ValueError(
+                    f"RUSLE inputs for pid={pid} require 'sdr' or 'watershed_area_mi2'"
+                )
 
         for pollutant in ctx.pollutants:
             pol = str(pollutant).upper()
@@ -1074,9 +1139,9 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
                 raise ValueError(
                     f"Runoff concentration for pid={pid}, pollutant={pol} is required"
                 )
-            if bool(getattr(ctx, "groundwater_loads", False)) and pol in {"TN", "TP"} and pol not in groundwater_concentrations[i]:
+            if pol != "TSS" and pol not in groundwater_concentrations[i]:
                 raise ValueError(
-                    f"Groundwater concentration for pid={pid}, pollutant={pol} is required when groundwater loads are enabled"
+                    f"Groundwater concentration for pid={pid}, pollutant={pol} is required in plet_rusle mode"
                 )
             if pol == "TSS" and not rusle[i] and pol not in concentrations[i]:
                 raise ValueError(
@@ -1099,17 +1164,18 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
             combined.setdefault(f"load_multiplier_{str(pol).lower()}", 1.0)
         parameters.append(combined)
         has_rusle.append(all(name in combined for name in _REQUIRED_RUSLE))
-        parcel_pathway_yields, parcel_untreated_groundwater_yields = calculate_load_components(
+        parcel_pathway_yields = calculate_plet_pathway_yields(
             combined,
             concentrations[i],
             groundwater_concentrations[i],
             ctx.pollutants,
-            groundwater_loads=bool(getattr(ctx, "groundwater_loads", False)),
-            treat_groundwater_with_bmps=bool(getattr(ctx, "load_generation", {}).get("treat_groundwater_with_bmps", False)),
         )
         pathway_yields[i, :, :] = parcel_pathway_yields
-        untreated_groundwater_yields[i, :] = parcel_untreated_groundwater_yields
-        yields[i, :] = np.sum(pathway_yields[i, :, :], axis=1) + untreated_groundwater_yields[i, :]
+        # Compatibility field retained for callers/tests that inspect the old
+        # protected-groundwater array. Actual PLET subsurface load is now in
+        # pathway_yields[:, :, 1], so this stays zero.
+        untreated_groundwater_yields[i, :] = 0.0
+        yields[i, :] = np.sum(pathway_yields[i, :, :], axis=1)
 
     state = LoadState(
         parcel_ids=parcel_ids,

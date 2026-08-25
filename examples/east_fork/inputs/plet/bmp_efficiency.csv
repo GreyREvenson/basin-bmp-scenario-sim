@@ -1,0 +1,43 @@
+cps,name,pollutant,pathway,min,mean,max
+340,Cover Crop,TN,subsurface,0,0,0
+340,Cover Crop,TP,subsurface,0,0,0
+340,Cover Crop,TSS,subsurface,0,0,0
+329,Residue and Tillage Management No Till,TN,subsurface,0,0,0
+329,Residue and Tillage Management No Till,TP,subsurface,0,0,0
+329,Residue and Tillage Management No Till,TSS,subsurface,0,0,0
+590,Nutrient Management,TN,subsurface,0,0,0
+590,Nutrient Management,TP,subsurface,0,0,0
+590,Nutrient Management,TSS,subsurface,0,0,0
+412,Grassed Waterway,TN,subsurface,0,0,0
+412,Grassed Waterway,TP,subsurface,0,0,0
+412,Grassed Waterway,TSS,subsurface,0,0,0
+656,Constructed Wetland,TN,subsurface,0,0,0
+656,Constructed Wetland,TP,subsurface,0,0,0
+656,Constructed Wetland,TSS,subsurface,0,0,0
+391,Riparian Forest Buffer,TN,subsurface,0,0,0
+391,Riparian Forest Buffer,TP,subsurface,0,0,0
+391,Riparian Forest Buffer,TSS,subsurface,0,0,0
+606,Subsurface Drain,TN,subsurface,0,0,0
+606,Subsurface Drain,TP,subsurface,0,0,0
+606,Subsurface Drain,TSS,subsurface,0,0,0
+340,Cover Crop,TN,surface,0.15,0.35,0.55
+340,Cover Crop,TP,surface,0.20,0.40,0.65
+340,Cover Crop,TSS,surface,0.40,0.60,0.85
+329,Residue and Tillage Management No Till,TN,surface,0.05,0.15,0.25
+329,Residue and Tillage Management No Till,TP,surface,0.30,0.50,0.70
+329,Residue and Tillage Management No Till,TSS,surface,0.50,0.70,0.90
+590,Nutrient Management,TN,surface,0.15,0.30,0.45
+590,Nutrient Management,TP,surface,0.20,0.40,0.60
+590,Nutrient Management,TSS,surface,0.00,0.05,0.15
+412,Grassed Waterway,TN,surface,0.10,0.20,0.35
+412,Grassed Waterway,TP,surface,0.20,0.35,0.55
+412,Grassed Waterway,TSS,surface,0.40,0.65,0.80
+656,Constructed Wetland,TN,surface,0.25,0.45,0.70
+656,Constructed Wetland,TP,surface,0.30,0.50,0.75
+656,Constructed Wetland,TSS,surface,0.50,0.75,0.90
+391,Riparian Forest Buffer,TN,surface,0.30,0.50,0.75
+391,Riparian Forest Buffer,TP,surface,0.40,0.60,0.80
+391,Riparian Forest Buffer,TSS,surface,0.60,0.80,0.95
+606,Subsurface Drain,TN,surface,-0.15,-0.05,0.05
+606,Subsurface Drain,TP,surface,-0.20,-0.05,0.10
+606,Subsurface Drain,TSS,surface,-0.10,0.00,0.10

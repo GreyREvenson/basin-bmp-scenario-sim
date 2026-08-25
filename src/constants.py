@@ -64,9 +64,10 @@ LOAD_TREAT_GROUNDWATER_WITH_BMPS = "treat_groundwater_with_bmps"
 CFG_BMP_FAIL_RATE = "bmp_fail_rate"            # probability [0,1] a BMP fails
 CFG_BMP_FAIL_REDUCTION = "bmp_fail_reduction"  # efficiency scale [0,1] on failure
 
-# Fractions used to split statistical-mode parcel yields by pathway
+# New: fractions to split parcel yields by pathway
 CFG_POLLUTANT_YIELD_FRAC_SURFACE = "pollutant_yield_frac_surface"
 CFG_POLLUTANT_YIELD_FRAC_SHALLOW = "pollutant_yield_frac_shallow"
+CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS = "pollutant_yield_pathway_fractions"
 
 # Data payload keys (used in the validated data dict passed to Model)
 DATA_PARCELS = "parcels"
@@ -93,6 +94,9 @@ DATA_PLET_INPUTS = "plet_inputs"
 DATA_RUSLE_INPUTS = "rusle_inputs"
 DATA_POLLUTANT_CONCENTRATIONS = "pollutant_concentrations"
 DATA_GROUNDWATER_CONCENTRATIONS = "groundwater_concentrations"
+DATA_PATHWAYS = "pathways"
+DATA_POLLUTANT_YIELD_PATHWAY_FRACTIONS = "pollutant_yield_pathway_fractions"
+DATA_POLLUTANT_YIELD_IS_AGGREGATE = "pollutant_yield_is_aggregate"
 
 # Common column names
 COL_PID = "pid"
@@ -173,3 +177,4 @@ BMP_CPS_NAME_MAP = {
 
 # Canonical pathway labels
 PATHWAY_VALUES = ("surface", "shallow subsurface", "deep subsurface")
+PLET_PATHWAY_VALUES = ("surface", "subsurface")
