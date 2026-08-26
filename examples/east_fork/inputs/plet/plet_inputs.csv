@@ -6,6 +6,3 @@ pid,parameter,value,distribution_id,mean,sd,min,p05,p50,p95,max,sample_group,uni
 *,land_cover,cropland,,,,,,,,,,classification,Fixed classification; distributions are not allowed
 *,hsg,B,,,,,,,,,,classification,Fixed classification; distributions are not allowed
 *,ia_ratio,0.0,,,,,,,,,,fraction,
-*,irrigated_fraction,0.0,,,,,,,,,,fraction,
-*,irrigation_depth_in,0.0,,,,,,,,,,in/event,
-*,irrigation_frequency,0.0,,,,,,,,,,events/year,

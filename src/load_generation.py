@@ -100,11 +100,6 @@ _PARAMETER_ALIASES: Dict[str, str] = {
     "shallow_subsurface_fraction": "fraction_subsurface_shallow",
     "fraction_shallow_subsurface": "fraction_subsurface_shallow",
     "subsurface_shallow_fraction": "fraction_subsurface_shallow",
-    "irrigated_area_fraction": "irrigated_fraction",
-    "irrigation_area_fraction": "irrigated_fraction",
-    "irrigation_depth": "irrigation_depth_in",
-    "irrigation_inches": "irrigation_depth_in",
-    "irrigation_frequency_per_year": "irrigation_frequency",
 }
 
 _REQUIRED_PLET_INPUTS = (
@@ -482,50 +477,15 @@ def rusle_sediment_yield_kg_ha(parameters: Mapping[str, Any]) -> float:
     return gross_ton_ac * sdr * TON_PER_ACRE_TO_KG_PER_HA * sediment_multiplier * delivery_multiplier
 
 
-def plet_annual_irrigation_runoff_in(parameters: Mapping[str, Any]) -> float:
-    """Estimate annual irrigation runoff depth.
-
-    The calculation uses the same curve-number runoff equation as the storm
-    runoff helper, then scales the per-event runoff by irrigation frequency and
-    the irrigated fraction.
-
-    Parameters
-    ----------
-    parameters : Mapping[str, Any]
-        Mapping containing irrigation and curve-number parameters.
-
-    Returns
-    -------
-    float
-        Annual irrigation runoff depth in inches.
-    """
-    irrigation_depth_in = max(0.0, float(parameters.get("irrigation_depth_in", 0.0)))
-    irrigation_frequency = max(0.0, float(parameters.get("irrigation_frequency", 0.0)))
-    irrigated_fraction = float(np.clip(parameters.get("irrigated_fraction", 1.0), 0.0, 1.0))
-    if irrigation_depth_in <= 0.0 or irrigation_frequency <= 0.0 or irrigated_fraction <= 0.0:
-        return 0.0
-
-    retention = max(0.0, (1000.0 / float(np.clip(parameters.get("cn", 100.0), 1.0e-6, 100.0))) - 10.0)
-    ia_ratio = max(0.0, float(parameters.get("ia_ratio", 0.0)))
-    initial_abstraction = ia_ratio * retention
-    if irrigation_depth_in <= initial_abstraction:
-        event_runoff = 0.0
-    else:
-        numerator = (irrigation_depth_in - initial_abstraction) ** 2
-        denominator = irrigation_depth_in - initial_abstraction + retention
-        event_runoff = numerator / denominator if denominator > 0.0 else 0.0
-    return float(event_runoff * irrigation_frequency * irrigated_fraction)
-
-
 def plet_annual_surface_runoff_in(
     parameters: Mapping[str, Any],
 ) -> Tuple[float, float, float, float]:
-    """Estimate annual surface runoff depth including irrigation runoff.
+    """Estimate annual surface runoff depth from precipitation.
 
     Parameters
     ----------
     parameters : Mapping[str, Any]
-        Mapping containing runoff and irrigation parameters.
+        Mapping containing precipitation and runoff parameters.
 
     Returns
     -------
@@ -541,9 +501,8 @@ def plet_annual_surface_runoff_in(
         parameters["cn"],
         parameters.get("ia_ratio", 0.0),
     )
-    annual_irrigation_runoff = plet_annual_irrigation_runoff_in(parameters)
     runoff_multiplier = max(0.0, float(parameters.get("runoff_multiplier", 1.0)))
-    annual_total_runoff = (annual_storm_runoff + annual_irrigation_runoff) * runoff_multiplier
+    annual_total_runoff = annual_storm_runoff * runoff_multiplier
     return event_rainfall, event_runoff, annual_storm_runoff, annual_total_runoff
 
 
@@ -674,6 +633,18 @@ def validate_plet_input_table(
     """
 
     normalized = table.copy()
+    raw_parameter_labels = normalized["parameter"].map(
+        lambda value: str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    )
+    removed_parameters = sorted(
+        set(raw_parameter_labels[raw_parameter_labels.str.startswith("irrigat")])
+    )
+    if removed_parameters:
+        raise ValueError(
+            "PLET irrigation parameters are no longer supported: "
+            f"{removed_parameters}"
+        )
+
     normalized["parameter"] = normalized["parameter"].map(
         canonical_parameter_name
     )
@@ -942,7 +913,6 @@ def calculate_load_diagnostics(parameters: Mapping[str, Any]) -> Dict[str, float
         "event_rainfall_in": float(event_rainfall),
         "event_runoff_in": float(event_runoff),
         "annual_storm_runoff_in": float(annual_storm_runoff),
-        "annual_irrigation_runoff_in": float(plet_annual_irrigation_runoff_in(parameters)),
         "annual_runoff_in": float(annual_runoff),
         "annual_infiltration_in": float(plet_annual_infiltration_in(parameters)),
         "sediment_kg_ha": float(sediment),

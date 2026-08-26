@@ -123,13 +123,7 @@ Potential retention is:
 S = 1000 / CN - 10
 ```
 
-The event runoff calculation uses the configured initial-abstraction ratio. The default `ia_ratio` is 0. Annual storm runoff is event runoff multiplied by runoff days. Optional irrigation parameters can contribute additional runoff.
-
-Relevant optional irrigation parameters include:
-
-- `irrigated_fraction`;
-- `irrigation_depth_in`; and
-- `irrigation_frequency`.
+The event runoff calculation uses the configured initial-abstraction ratio. The default `ia_ratio` is 0. Annual runoff is event runoff multiplied by runoff days.
 
 ## Infiltration and subsurface load
 
