@@ -231,21 +231,10 @@ class Model:
             self.parcel_selection_ids = sel["pid"].astype(str).tolist()
             self.parcel_selection_probs = sel["probability"].astype(float).values
             self.selection_source_idxs = [self.pid_to_index[pid] for pid in self.parcel_selection_ids]
-            self.selection_pid_to_index = {pid: idx for idx, pid in enumerate(self.parcel_selection_ids)}
-            self.selection_area_ha = [self.parcel_area_ha[idx] for idx in self.selection_source_idxs]
-            self.selection_perim_m = [self.parcel_perim_m[idx] for idx in self.selection_source_idxs]
-
-            # Translate outlet/upstream mappings to the selectable parcel index
-            # space used by scenario arrays.  This also makes parcel_p subsets safe.
-            self.selection_out_oids = [
-                self.parcel_out_oids[idx] for idx in self.selection_source_idxs
-            ]
-            self.selection_up_idxs = []
-            for pid in self.parcel_selection_ids:
-                up_pids = pu_map.get(pid, [])
-                self.selection_up_idxs.append(
-                    [self.selection_pid_to_index[u] for u in up_pids if u in self.selection_pid_to_index]
-                )
+            # ``parcel_p`` defines only the BMP-placement universe.  Hydrologic
+            # state remains indexed to every modeled parcel so upstream parcels
+            # continue to contribute loads to downstream structural practices
+            # even when those upstream parcels are not themselves BMP-eligible.
 
             # Outlet IDs and optional targets/means
             self.outlet_oids = list(self.data[DATA_OUTLET_LOC]["oid"].astype(str).tolist())
@@ -333,10 +322,6 @@ class Model:
                         entry[path] = stats  # type: ignore[index]
             elif self.load_generation_mode != LOAD_MODE_PLET_RUSLE:
                 raise ValueError("pollutant_yield is required in statistical load-generation mode")
-            self.selection_pollutant_yield_stats = [
-                self.pollutant_yield_stats[idx] for idx in self.selection_source_idxs
-            ]
-
             # BMP selection probabilities (possibly via costs or explicit table)
             bmp_probs = self._get_bmp_selection_probs(self.cfg.get(CFG_BMP_SEL))
             self.bmp_cps = bmp_probs["cps"].astype(int).tolist()
@@ -360,21 +345,27 @@ class Model:
         return dict(
             cfg=self.cfg,
             data=self.data,
-            parcel_ids=self.parcel_selection_ids,
-            pid_to_index=self.selection_pid_to_index,
+            # Full hydrologic parcel universe.  Scenario load arrays, routing,
+            # and upstream relationships use these indices.
+            parcel_ids=self.parcel_ids,
+            pid_to_index=self.pid_to_index,
             pollutants=self.pollutants,
-            parcel_area_ha=np.asarray(self.selection_area_ha, dtype=float),
-            parcel_perim_m=np.asarray(self.selection_perim_m, dtype=float),
-            parcel_out_oids=self.selection_out_oids,
-            parcel_up_idxs=self.selection_up_idxs,
+            parcel_area_ha=np.asarray(self.parcel_area_ha, dtype=float),
+            parcel_perim_m=np.asarray(self.parcel_perim_m, dtype=float),
+            parcel_out_oids=self.parcel_out_oids,
+            parcel_up_idxs=self.parcel_up_idxs,
+            # BMP placement remains restricted to the parcel_p universe.  The
+            # selection position is translated to a full parcel index through
+            # selection_source_idxs inside the scenario loop.
             parcel_selection_ids=self.parcel_selection_ids,
             parcel_selection_probs=np.asarray(self.parcel_selection_probs, dtype=float),
+            selection_source_idxs=np.asarray(self.selection_source_idxs, dtype=int),
             outlet_oids=self.outlet_oids,
             outlet_target_map=self.outlet_target_map,
             outlet_mean_map=self.outlet_mean_map,
             delivery_coeffs=self.delivery_coeffs,
             bmp_efficiency_stats=self.bmp_efficiency_stats,
-            pollutant_yield_stats=self.selection_pollutant_yield_stats,
+            pollutant_yield_stats=self.pollutant_yield_stats,
             load_generation=self.load_generation,
             load_generation_mode=self.load_generation_mode,
             plet_inputs=self.plet_inputs,
@@ -476,7 +467,7 @@ class _ScenarioContext:
         for k, v in shared.items():
             setattr(self, k, v)
 
-        # Keep a direct PID->selection-index map for repeated lookups.
+        # Keep the full hydrologic PID->parcel-index map normalized for repeated lookups.
         self.pid_to_index = {str(pid): int(idx) for pid, idx in self.pid_to_index.items()}
 
         # Bind helpers with self as first arg
@@ -554,12 +545,12 @@ def _run_one_scenario(
             ctx.pathway_names = ["surface", "subsurface"]
             logger.info("Generated baseline PLET/RUSLE yields for surface and subsurface pathways")
         else:
-            baseline = np.zeros((len(ctx.parcel_selection_ids), n_pol), dtype=float)
+            baseline = np.zeros((len(ctx.parcel_ids), n_pol), dtype=float)
             yields = np.zeros_like(baseline)
             pathway_yields = np.zeros(
-                (len(ctx.parcel_selection_ids), n_pol, len(ctx.pathway_names)), dtype=float
+                (len(ctx.parcel_ids), n_pol, len(ctx.pathway_names)), dtype=float
             )
-            for i, _pid in enumerate(ctx.parcel_selection_ids):
+            for i, _pid in enumerate(ctx.parcel_ids):
                 for pol_idx in range(n_pol):
                     entry = ctx.pollutant_yield_stats[i][pol_idx]
                     if ctx.pollutant_yield_is_aggregate:
@@ -618,8 +609,9 @@ def _run_one_scenario(
             if limit_n is not None and total_bmp >= limit_n:
                 break
 
-            parcel_idx = ctx._sample_parcel_index()
-            pid = ctx.parcel_selection_ids[parcel_idx]
+            selection_idx = ctx._sample_parcel_index()
+            parcel_idx = int(ctx.selection_source_idxs[selection_idx])
+            pid = ctx.parcel_ids[parcel_idx]
 
             # Filter CPS by what has already been applied to this parcel
             already = applied_by_pid[str(pid)]
@@ -755,7 +747,7 @@ def _run_one_scenario(
                                 records[(pol, oid, xax, yax)].append((sid, xval, yval))
 
         # Parcel-level before/after
-        for parcel_idx, pid_i in enumerate(ctx.parcel_selection_ids):
+        for parcel_idx, pid_i in enumerate(ctx.parcel_ids):
             row = dict(scenario=sid, pid=str(pid_i))
             for pol_idx, pol in enumerate(ctx.pollutants):
                 row[f"baseline_{pol}"] = float(baseline[parcel_idx, pol_idx])
@@ -764,7 +756,7 @@ def _run_one_scenario(
 
         # Realized stochastic PLET/RUSLE inputs and derived diagnostics.
         if load_state is not None:
-            for parcel_idx, pid_i in enumerate(ctx.parcel_selection_ids):
+            for parcel_idx, pid_i in enumerate(ctx.parcel_ids):
                 initial_params = load_state.baseline_parameters[parcel_idx]
                 final_params = load_state.parameters[parcel_idx]
                 initial_conc = load_state.baseline_concentrations[parcel_idx]

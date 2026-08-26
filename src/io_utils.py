@@ -1672,7 +1672,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         if load_mode == LOAD_MODE_PLET_RUSLE:
             plet_inputs = _load_plet_parameter_table(
                 load_generation.get(LOAD_PLET_INPUTS),
-                sel[COL_PID].astype(str).tolist(),
+                parcels[COL_PID].astype(str).tolist(),
                 logger,
                 distribution_catalog,
             )

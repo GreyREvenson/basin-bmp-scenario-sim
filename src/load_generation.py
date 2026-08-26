@@ -1118,7 +1118,13 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
         If required inputs are missing or incomplete for any parcel.
     """
 
-    parcel_ids = [str(pid) for pid in ctx.parcel_selection_ids]
+    # Scenario workers provide the full hydrologic parcel universe via
+    # ``parcel_ids``.  Fall back to ``parcel_selection_ids`` only for legacy
+    # direct callers/tests that construct a minimal context without parcel_ids.
+    parcel_ids = [
+        str(pid)
+        for pid in getattr(ctx, "parcel_ids", getattr(ctx, "parcel_selection_ids", []))
+    ]
     plet = _sample_parameter_table(ctx, ctx.plet_inputs, parcel_ids, cache_prefix="plet")
     rusle = _sample_parameter_table(ctx, ctx.rusle_inputs, parcel_ids, cache_prefix="rusle")
     concentrations = _sample_concentrations(ctx, ctx.pollutant_concentrations, parcel_ids)
