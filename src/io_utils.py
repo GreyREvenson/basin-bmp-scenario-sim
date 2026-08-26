@@ -701,8 +701,11 @@ def _build_parcel_up_map(
     """Build a validated mapping of parcels to upstream parcel IDs.
 
     Each ``pid_up`` cell may contain one ID, a comma-separated list of IDs, or
-    no value. IDs are stripped of surrounding whitespace, deduplicated while
-    preserving their input order, and checked against the loaded parcel set.
+    no value. A single ``pid='*'`` row is also permitted when ``pid_up`` is
+    blank; it explicitly declares that parcels have no upstream parcels by
+    default, while exact parcel rows define the exceptions. IDs are stripped
+    of surrounding whitespace, deduplicated while preserving their input
+    order, and checked against the loaded parcel set.
 
     Parameters
     ----------
@@ -740,17 +743,39 @@ def _build_parcel_up_map(
                 return integer_pid
         return pid
 
+    wildcard_default_seen = False
+
     for row_idx, row in upstream_rows.iterrows():
         raw_pid = row[COL_PID]
         if pd.isna(raw_pid) or not str(raw_pid).strip():
             raise ValueError(f"{CFG_PARCEL_UP} row {row_idx} has a blank {COL_PID}")
+
+        raw_upstream = row[COL_PID_UP]
+        pid_text = str(raw_pid).strip()
+        if pid_text == "*":
+            # A wildcard is intentionally limited to the unambiguous default
+            # case: parcels have no upstream parcels unless an exact pid row
+            # says otherwise. The map is initialized to [] for every parcel,
+            # so no physical expansion of the wildcard row is required.
+            upstream_is_blank = pd.isna(raw_upstream) or not str(raw_upstream).strip()
+            if not upstream_is_blank:
+                raise ValueError(
+                    f"{CFG_PARCEL_UP} row {row_idx} uses pid='*' but {COL_PID_UP} is not blank. "
+                    "The parcel_up wildcard may only declare the default of no upstream parcels; "
+                    "actual upstream relationships must use explicit parcel IDs."
+                )
+            if wildcard_default_seen:
+                raise ValueError(
+                    f"{CFG_PARCEL_UP} may contain at most one pid='*' row with a blank {COL_PID_UP}"
+                )
+            wildcard_default_seen = True
+            continue
 
         pid = resolve_pid(raw_pid)
         if pid not in valid_pids:
             unknown_pids.add(pid)
             continue
 
-        raw_upstream = row[COL_PID_UP]
         if pd.isna(raw_upstream):
             continue
 
@@ -780,6 +805,111 @@ def _build_parcel_up_map(
         )
 
     return parcel_up_map
+
+
+def _expand_pid_defaults(
+    df: pd.DataFrame,
+    parcel_ids: Sequence[str],
+    *,
+    label: str,
+    logger: Any,
+    key_columns: Optional[Sequence[str]] = (),
+) -> pd.DataFrame:
+    """Expand ``pid='*'`` defaults to modeled parcels.
+
+    Exact parcel rows override wildcard defaults. When ``key_columns`` is an
+    empty sequence, at most one row may be defined for the wildcard and for
+    each exact parcel (used by ``parcel_p``). When one or more key columns are
+    supplied, overrides are resolved independently for each key combination
+    (used by ``delivery_ratios`` with ``oid``). When ``key_columns`` is
+    ``None``, rows are treated as a parcel-level group: if a parcel has any
+    explicit rows, those rows replace the wildcard group entirely (used by
+    ``parcel_out``).
+
+    Rows whose exact parcel IDs are not present in the clipped parcel layer are
+    removed with a warning. If no wildcard row is present, the function simply
+    returns the valid exact rows, preserving the existing subset behavior.
+    """
+    out = df.copy()
+    out[COL_PID] = out[COL_PID].astype(str).str.strip()
+    ordered_pids = [str(pid).strip() for pid in parcel_ids]
+    valid_pids = set(ordered_pids)
+
+    valid_mask = out[COL_PID].isin(valid_pids | {"*"})
+    removed = out.loc[~valid_mask]
+    if not removed.empty:
+        preview = removed[COL_PID].astype(str).drop_duplicates().head(10).tolist()
+        logger.warning(
+            f"{label}: some PIDs not found in parcels after clipping; they were removed. "
+            f"Example PIDs: {preview}"
+        )
+    out = out.loc[valid_mask].copy()
+    if out.empty:
+        return out.reset_index(drop=True)
+
+    defaults = out[out[COL_PID] == "*"].copy()
+    exact = out[out[COL_PID] != "*"].copy()
+
+    # Validate exact/default row uniqueness even when no wildcard row exists.
+    # Before wildcard support, parcel_p rejected duplicate exact parcel rows;
+    # an early return here would silently weaken that validation.
+    if key_columns is not None:
+        keys = list(key_columns)
+        if keys:
+            if not defaults.empty:
+                _validate_unique_rows(defaults, keys, label)
+            _validate_unique_rows(exact, [COL_PID, *keys], label)
+        else:
+            if len(defaults) > 1:
+                raise ValueError(f"{label} may contain at most one pid='*' default row")
+            if exact[COL_PID].duplicated().any():
+                dup_pids = sorted(
+                    exact.loc[exact[COL_PID].duplicated(keep=False), COL_PID]
+                    .astype(str)
+                    .unique()
+                    .tolist()
+                )
+                raise ValueError(
+                    f"{label} must contain one row per parcel; duplicates found: {dup_pids}"
+                )
+
+    if defaults.empty:
+        return exact.reset_index(drop=True)
+
+    expanded: List[pd.Series] = []
+
+    if key_columns is None:
+        # Parcel-level group override: any explicit row(s) replace the whole
+        # wildcard group for that parcel. This preserves multi-row parcel_out
+        # mappings while still allowing one compact watershed-wide default.
+        for pid in ordered_pids:
+            pid_rows = exact[exact[COL_PID] == pid]
+            source = pid_rows if not pid_rows.empty else defaults
+            for _, row in source.iterrows():
+                copied = row.copy()
+                copied[COL_PID] = pid
+                expanded.append(copied)
+    else:
+        keys = list(key_columns)
+
+        def _key(row: pd.Series) -> Tuple[Any, ...]:
+            return tuple(row[column] for column in keys)
+
+        for pid in ordered_pids:
+            pid_rows = exact[exact[COL_PID] == pid]
+            exact_keys = {_key(row) for _, row in pid_rows.iterrows()}
+            for _, row in defaults.iterrows():
+                if _key(row) in exact_keys:
+                    continue
+                copied = row.copy()
+                copied[COL_PID] = pid
+                expanded.append(copied)
+            for _, row in pid_rows.iterrows():
+                expanded.append(row.copy())
+
+    if not expanded:
+        return out.iloc[0:0].copy().reset_index(drop=True)
+    return pd.DataFrame(expanded, columns=out.columns).reset_index(drop=True)
 
 
 def _load_parcel_outlets(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
@@ -836,17 +966,15 @@ def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: A
                 f"Example rows: {preview}"
             )
         df[COL_PROBABILITY] = probs.astype(float)
-        parcel_pids = set(parcels[COL_PID].astype(str))
-        pid_mask = df[COL_PID].astype(str).isin(parcel_pids)
-        removed = df[~pid_mask]
-        df = df[pid_mask].copy()
-        if not removed.empty:
-            logger.warning(f"{CFG_PARCEL_P}: some PIDs not found in parcels after clipping; they were removed")
+        df = _expand_pid_defaults(
+            df,
+            parcels[COL_PID].astype(str).tolist(),
+            label=CFG_PARCEL_P,
+            logger=logger,
+            key_columns=[],
+        )
         if df.empty:
             raise ValueError(f"{CFG_PARCEL_P} has no {COL_PID}s that exist in parcels after clipping")
-        if df[COL_PID].astype(str).duplicated().any():
-            dup_pids = sorted(df.loc[df[COL_PID].astype(str).duplicated(), COL_PID].astype(str).unique().tolist())
-            raise ValueError(f"{CFG_PARCEL_P} must contain one row per parcel; duplicates found: {dup_pids}")
         total_prob = df[COL_PROBABILITY].sum()
         if total_prob <= 0:
             raise ValueError(f"{CFG_PARCEL_P} probabilities sum to zero or negative")
@@ -1460,6 +1588,13 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
 
         up = _load_parcel_graph(cfg, logger)
         out = _load_parcel_outlets(cfg, logger)
+        out = _expand_pid_defaults(
+            out,
+            parcels[COL_PID].astype(str).tolist(),
+            label=CFG_PARCEL_OUT,
+            logger=logger,
+            key_columns=None,
+        )
         sel = _load_parcel_selection(cfg, parcels, logger)
 
         # Upstream list mapping. A pid_up cell may contain multiple
@@ -1601,6 +1736,14 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             )
 
         delivery_ratios = _load_delivery_ratios(cfg, logger)
+        if delivery_ratios is not None:
+            delivery_ratios = _expand_pid_defaults(
+                delivery_ratios,
+                parcels[COL_PID].astype(str).tolist(),
+                label=CFG_DELIVERY_RATIOS,
+                logger=logger,
+                key_columns=[COL_OID],
+            )
 
         # Precompute averages for selection heuristics and reporting
         avg_area_ha = float(parcels["area_ha"].mean())
