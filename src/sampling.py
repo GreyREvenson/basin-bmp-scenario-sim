@@ -13,7 +13,6 @@ from typing import Dict, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from .model import Model
 
-
 def _trunc_normal(
     self: "Model",
     mean: float,
@@ -23,7 +22,6 @@ def _trunc_normal(
     size: Optional[int] = None,
 ) -> np.ndarray:
     """Draw truncated normal samples.
-
     Parameters
     ----------
     self : Model
@@ -38,7 +36,6 @@ def _trunc_normal(
         Maximum allowed value. Default is ``None``.
     size : int or None, optional
         Number of values to sample. Default is ``None``.
-
     Returns
     -------
     numpy.ndarray
@@ -58,7 +55,6 @@ def _trunc_normal(
     batch = max(4, n)
     max_tries = 20
     tries = 0
-
     while filled < n and tries < max_tries:
         x = self.rng.normal(mean, sd, size=batch)
         if low is not None:
@@ -71,7 +67,6 @@ def _trunc_normal(
             filled += k
         tries += 1
         batch = min(max(batch * 2, n - filled), (n - filled) * 8 + 1024)
-
     if filled < n:
         fallback = mean
         if low is not None:
@@ -89,7 +84,6 @@ def _piecewise_quantile_sample(
     size: int = 1,
 ) -> np.ndarray:
     """Sample values from piecewise percentile statistics.
-
     Parameters
     ----------
     self : Model
@@ -104,7 +98,6 @@ def _piecewise_quantile_sample(
     -------
     numpy.ndarray
         Sampled values interpolated between the supplied percentile points.
-
     Raises
     ------
     ValueError
@@ -118,7 +111,6 @@ def _piecewise_quantile_sample(
         pts.append((0.0, qmin))
     else:
         raise ValueError("Piecewise sampler requires min")
-
     percs = {}
     for k, v in list(cols.items()):
         if k.startswith("p") and k[1:].isdigit():
@@ -132,7 +124,6 @@ def _piecewise_quantile_sample(
         pts.append((1.0, qmax))
     else:
         raise ValueError("Piecewise sampler requires max")
-
     pts = sorted(pts, key=lambda t: t[0])
 
     u = self.rng.uniform(0.0, 1.0, size=size)
@@ -148,7 +139,6 @@ def _piecewise_quantile_sample(
                 break
     return samples
 
-
 def _sample_from_stats(
     self: "Model",
     stats: Dict[str, float],
@@ -158,10 +148,9 @@ def _sample_from_stats(
 
     The sampler chooses an appropriate strategy based on the available
     statistics. Fixed values are returned directly. Mean/standard-deviation
-    rows are sampled with a truncated normal distribution, min/max rows are
-    sampled uniformly, and percentile rows are sampled by piecewise linear
-    interpolation.
-
+    rows are sampled with a truncated normal distribution, honoring any row
+    ``min``/``max`` bounds; min/max rows are sampled uniformly; and percentile
+    rows are sampled by piecewise linear interpolation.
     Parameters
     ----------
     self : Model
@@ -174,7 +163,6 @@ def _sample_from_stats(
         capped at ``1`` or ``"yield"`` to clamp the result at zero. Negative
         efficiencies are preserved because they represent load increases.
         Default is ``None``.
-
     Returns
     -------
     float
@@ -186,7 +174,6 @@ def _sample_from_stats(
         If the supplied statistics are insufficient to determine a sample.
     """
     cols = {str(k).lower(): v for k, v in stats.items()}
-
     has_min = any(k in cols for k in ("min", "minimum", "p0"))
     has_max = any(k in cols for k in ("max", "maximum", "p100"))
     has_sd = any(k in cols for k in ("sd", "std"))
@@ -198,7 +185,6 @@ def _sample_from_stats(
         high = 1.0
     elif kind == "yield":
         low = 0.0
-
     if "value" in cols:
         s = float(cols["value"])
     elif has_min and has_max and has_percentiles:
@@ -218,10 +204,15 @@ def _sample_from_stats(
     elif has_mean and has_sd:
         mn = float(cols.get("mean", cols.get("average", cols.get("avg"))))
         sd = float(cols.get("sd", cols.get("std")))
+        if has_min:
+            row_low = float(cols.get("min", cols.get("minimum", cols.get("p0"))))
+            low = row_low if low is None else max(low, row_low)
+        if has_max:
+            row_high = float(cols.get("max", cols.get("maximum", cols.get("p100"))))
+            high = row_high if high is None else min(high, row_high)
         s = float(self._trunc_normal(mn, sd, low=low, high=high, size=1)[0])
     else:
         raise ValueError("Insufficient distribution statistics to sample")
-
     if low is not None and s < low:
         s = low
     if high is not None and s > high:

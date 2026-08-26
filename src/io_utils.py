@@ -39,9 +39,11 @@ from .constants import (
     CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS,
     CFG_RANDOM_SEED,
     CFG_LOAD_GENERATION,
+    CFG_INPUT_DISTRIBUTIONS,
     LOAD_MODE_STATISTICAL,
     LOAD_MODE_PLET_RUSLE,
     LOAD_PLET_INPUTS,
+    LOAD_HYDROLOGY_LOOKUP,
     LOAD_RUSLE_INPUTS,
     LOAD_CONCENTRATIONS,
     LOAD_GROUNDWATER_CONCENTRATIONS,
@@ -74,8 +76,20 @@ from .utils import ci_get, normalize_columns, normalize_pollutant_label
 from .logging_utils import log_scope
 from .load_generation import (
     PLET_CLASSIFICATION_PARAMETERS,
+    PLET_LAND_COVERS,
+    PLET_HSG_VALUES,
     canonical_parameter_name,
+    normalize_plet_land_cover,
+    normalize_plet_hsg,
     validate_plet_input_table,
+)
+from .input_distributions import (
+    DISTRIBUTION_ID,
+    load_distribution_catalog,
+    resolve_distribution_references,
+    statistic_columns,
+    validate_distribution_bounds,
+    validate_numeric_distribution_rows,
 )
 
 
@@ -308,73 +322,16 @@ def _normalize_pathway_column(df: pd.DataFrame, label: str, logger: Any) -> pd.D
     return df
 
 def _validate_stats_table(df: pd.DataFrame, label: str) -> None:
-    """Validate that a table exposes sampling statistics.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Table to validate.
-    label : str
-        Human-readable dataset name used in errors.
-
-    Returns
-    -------
-    None
-
-    Raises
-    ------
-    ValueError
-        If the table does not contain fixed values, summary statistics, or
-        percentile columns.
-    """
-    cols = set(df.columns)
-    ok = (
-        ({"mean", "sd"} <= cols)
-        or ({"min", "max"} <= cols)
-        or ("value" in cols)
-        or any(str(c).lower().startswith("p") and str(c)[1:].isdigit() for c in cols)
-    )
-    if not ok:
-        raise ValueError(f"{label} must provide value, mean/sd, min/max, or percentiles")
+    """Compatibility wrapper for the standardized row-level validator."""
+    validate_numeric_distribution_rows(df, label)
 
 
 def _validate_stats_rows(df: pd.DataFrame, label: str) -> None:
-    """Validate that each row contains usable sampling statistics.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Table to validate.
-    label : str
-        Human-readable dataset name used in errors.
-
-    Returns
-    -------
-    None
-
-    Raises
-    ------
-    ValueError
-        If any row lacks a fixed value or a complete set of statistics.
-    """
-    stat_cols = {"value", "mean", "sd", "std", "min", "max", "minimum", "maximum", "p0", "p100"}
-    stat_cols.update(c for c in df.columns if str(c).startswith("p") and str(c)[1:].isdigit())
-    if not stat_cols.intersection(df.columns):
-        raise ValueError(f"{label} must provide value, mean/sd, min/max, or percentiles")
-    for idx, row in df.iterrows():
-        supplied = [c for c in stat_cols if c in df.columns and not pd.isna(row.get(c))]
-        if not supplied:
-            raise ValueError(f"{label} row {idx} has no value or distribution statistics")
-        if "value" not in supplied:
-            row_cols = set(supplied)
-            valid = ("mean" in row_cols and ({"sd", "std"} & row_cols)) or ({"min", "max"} <= row_cols) or ({"minimum", "maximum"} <= row_cols) or ({"p0", "p100"} <= row_cols)
-            if not valid:
-                raise ValueError(
-                    f"{label} row {idx} needs a fixed value, mean/sd, or complete lower/upper bounds"
-                )
+    """Validate every row using the shared numeric input-distribution schema."""
+    validate_numeric_distribution_rows(df, label)
 
 
-def _load_parameter_stats_table(path: Any, label: str, logger: Any) -> Optional[pd.DataFrame]:
+def _load_parameter_stats_table(path: Any, label: str, logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
     """Load a parcel parameter statistics table.
 
     Parameters
@@ -396,7 +353,9 @@ def _load_parameter_stats_table(path: Any, label: str, logger: Any) -> Optional[
         return None
     df = _merge_csvs(path, [COL_PID, "parameter"], label, logger)
     df[COL_PID] = df[COL_PID].astype(str)
-    df["parameter"] = df["parameter"].astype(str).str.strip().str.lower()
+    df["parameter"] = df["parameter"].map(canonical_parameter_name)
+    _validate_unique_rows(df, [COL_PID, "parameter"], label)
+    df = resolve_distribution_references(df, distribution_catalog, label)
     _validate_stats_rows(df, label)
     return df
 
@@ -405,6 +364,7 @@ def _load_plet_parameter_table(
     path: Any,
     parcel_ids: Sequence[str],
     logger: Any,
+    distribution_catalog: Optional[pd.DataFrame] = None,
 ) -> Optional[pd.DataFrame]:
     """Load PLET numeric parameters and required categorical classifications.
 
@@ -432,16 +392,118 @@ def _load_plet_parameter_table(
     df = _merge_csvs(path, [COL_PID, "parameter"], LOAD_PLET_INPUTS, logger)
     df[COL_PID] = df[COL_PID].astype(str)
     df["parameter"] = df["parameter"].map(canonical_parameter_name)
+    _validate_unique_rows(df, [COL_PID, "parameter"], LOAD_PLET_INPUTS)
 
     categorical_mask = df["parameter"].isin(PLET_CLASSIFICATION_PARAMETERS)
+    categorical_rows = df.loc[categorical_mask].copy()
+    if DISTRIBUTION_ID in categorical_rows.columns:
+        bad = categorical_rows[DISTRIBUTION_ID].notna() & categorical_rows[DISTRIBUTION_ID].astype(str).str.strip().ne("")
+        if bad.any():
+            raise ValueError("PLET land_cover and hsg are classifications and must use fixed value, not distribution_id")
+    # Classification rows are intentionally deterministic. Reject numeric
+    # distribution columns rather than silently ignoring them.
+    categorical_stat_cols = [
+        col for col in statistic_columns(categorical_rows.columns) if str(col).strip().lower() != "value"
+    ]
+    if categorical_stat_cols and not categorical_rows.empty:
+        bad_stats = categorical_rows[categorical_stat_cols].notna().any(axis=1)
+        if bad_stats.any():
+            rows = categorical_rows.index[bad_stats].tolist()
+            raise ValueError(
+                "PLET land_cover and hsg are classifications and must use only a fixed value; "
+                f"distribution statistics were supplied at rows {rows}"
+            )
     numeric_rows = df.loc[~categorical_mask].copy()
     if not numeric_rows.empty:
+        numeric_rows = resolve_distribution_references(
+            numeric_rows, distribution_catalog, LOAD_PLET_INPUTS
+        )
         _validate_stats_rows(numeric_rows, LOAD_PLET_INPUTS)
-
+    df = pd.concat([categorical_rows, numeric_rows], axis=0).sort_index()
     return validate_plet_input_table(df, parcel_ids)
 
 
-def _load_pollutant_concentrations(path: Any, pollutants: List[str], logger: Any) -> Optional[pd.DataFrame]:
+def _load_plet_hydrology_lookup(
+    path: Any,
+    logger: Any,
+    distribution_catalog: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    """Load required land-cover/HSG hydrology distributions for PLET mode.
+
+    The table is long-form with one row per ``land_cover`` x ``hsg`` x
+    ``parameter``. Exactly two parameters are required for every supported
+    pairing: ``cn`` and ``infiltration_fraction``. Each row follows the same
+    fixed-value/distribution schema as other numeric model inputs.
+    """
+    if path is None:
+        raise ValueError(
+            "load_generation.hydrology_lookup is required for mode='plet_rusle'"
+        )
+    paths = [path] if isinstance(path, (str, Path)) else list(path)
+    frames: List[pd.DataFrame] = []
+    for item in paths:
+        logger.verbose(f"Reading {LOAD_HYDROLOGY_LOOKUP} from {item}")
+        frame = pd.read_csv(item)
+        frame = normalize_columns(frame)
+        _require_cols(
+            frame,
+            ["land_cover", "hsg", "parameter"],
+            f"{LOAD_HYDROLOGY_LOOKUP} ({item})",
+            logger,
+        )
+        frames.append(frame)
+    table = pd.concat(frames, ignore_index=True)
+    table["land_cover"] = table["land_cover"].map(normalize_plet_land_cover)
+    table["hsg"] = table["hsg"].map(normalize_plet_hsg)
+    table["parameter"] = table["parameter"].map(canonical_parameter_name)
+
+    allowed_parameters = {"cn", "infiltration_fraction"}
+    unexpected_parameters = sorted(set(table["parameter"]) - allowed_parameters)
+    if unexpected_parameters:
+        raise ValueError(
+            f"{LOAD_HYDROLOGY_LOOKUP} contains unsupported parameters: "
+            f"{unexpected_parameters}; expected only cn and infiltration_fraction"
+        )
+
+    table = resolve_distribution_references(
+        table, distribution_catalog, LOAD_HYDROLOGY_LOOKUP
+    )
+    _validate_stats_rows(table, LOAD_HYDROLOGY_LOOKUP)
+    _validate_unique_rows(
+        table, ["land_cover", "hsg", "parameter"], LOAD_HYDROLOGY_LOOKUP
+    )
+
+    expected = {
+        (land_cover, hsg, parameter)
+        for land_cover in PLET_LAND_COVERS
+        for hsg in PLET_HSG_VALUES
+        for parameter in ("cn", "infiltration_fraction")
+    }
+    supplied = set(
+        zip(table["land_cover"], table["hsg"], table["parameter"])
+    )
+    missing = sorted(expected - supplied)
+    extra = sorted(supplied - expected)
+    if missing or extra:
+        raise ValueError(
+            f"{LOAD_HYDROLOGY_LOOKUP} must define cn and infiltration_fraction "
+            "for every supported land_cover x hsg pairing; "
+            f"missing={missing}, unexpected={extra}"
+        )
+
+    validate_distribution_bounds(
+        table,
+        LOAD_HYDROLOGY_LOOKUP,
+        parameter_col="parameter",
+        bounds={
+            "cn": (1.0e-9, 100.0),
+            "infiltration_fraction": (0.0, 1.0),
+        },
+    )
+    return table.reset_index(drop=True)
+
+
+def _load_pollutant_concentrations(path: Any, pollutants: List[str], logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
     """Load parcel pollutant concentration inputs.
 
     Parameters
@@ -465,11 +527,13 @@ def _load_pollutant_concentrations(path: Any, pollutants: List[str], logger: Any
     df = _normalize_pollutant_column(df, COL_POLLUTANT, LOAD_CONCENTRATIONS, logger)
     df[COL_PID] = df[COL_PID].astype(str)
     df = df[df[COL_POLLUTANT].isin(pollutants)].copy()
+    _validate_unique_rows(df, [COL_PID, COL_POLLUTANT], LOAD_CONCENTRATIONS)
+    df = resolve_distribution_references(df, distribution_catalog, LOAD_CONCENTRATIONS)
     _validate_stats_rows(df, LOAD_CONCENTRATIONS)
     return df
 
 
-def _load_groundwater_concentrations(path: Any, pollutants: List[str], logger: Any) -> Optional[pd.DataFrame]:
+def _load_groundwater_concentrations(path: Any, pollutants: List[str], logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
     """Load optional parcel groundwater concentration inputs.
 
     Parameters
@@ -493,6 +557,8 @@ def _load_groundwater_concentrations(path: Any, pollutants: List[str], logger: A
     df = _normalize_pollutant_column(df, COL_POLLUTANT, LOAD_GROUNDWATER_CONCENTRATIONS, logger)
     df[COL_PID] = df[COL_PID].astype(str)
     df = df[df[COL_POLLUTANT].isin(pollutants)].copy()
+    _validate_unique_rows(df, [COL_PID, COL_POLLUTANT], LOAD_GROUNDWATER_CONCENTRATIONS)
+    df = resolve_distribution_references(df, distribution_catalog, LOAD_GROUNDWATER_CONCENTRATIONS)
     _validate_stats_rows(df, LOAD_GROUNDWATER_CONCENTRATIONS)
     return df
 
@@ -1133,6 +1199,7 @@ def _load_bmp_efficiency(
     logger: Any,
     *,
     complete_legacy: bool = True,
+    distribution_catalog: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Load and normalize BMP effectiveness inputs.
 
@@ -1143,15 +1210,21 @@ def _load_bmp_efficiency(
     df = _merge_csvs(ci_get(cfg, CFG_BMP_EFFICIENCY), [COL_CPS, COL_POLLUTANT], CFG_BMP_EFFICIENCY, logger)
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_BMP_EFFICIENCY, logger)
     df = _normalize_pathway_column(df, CFG_BMP_EFFICIENCY, logger)
-    _validate_stats_table(df, CFG_BMP_EFFICIENCY)
+    df = resolve_distribution_references(df, distribution_catalog, CFG_BMP_EFFICIENCY)
     df = df[df[COL_CPS].astype(int).isin(cps) & df[COL_POLLUTANT].isin(pollutants)].copy()
     if df.empty:
         raise ValueError("bmp_efficiency has no records for specified cps+pollutants")
+
+    # Delay statistic validation until pathway coverage is resolved. PLET/RUSLE
+    # and the legacy public loader intentionally allow a blank subsurface row,
+    # which is converted to a fixed zero efficiency by their completion logic.
+    # Statistical mode performs its own strict validation after coverage checks,
+    # so blank statistical-mode efficiencies still fail as intended.
     if complete_legacy:
         return _complete_bmp_efficiency_coverage(df, cps, pollutants, logger)
     return df
 
-def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any) -> Optional[pd.DataFrame]:
+def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
     """Optionally load BMP cost inputs.
 
     Parameters
@@ -1173,6 +1246,7 @@ def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any) -> Optional
     if path is None:
         return None
     df = _merge_csvs(path, [COL_CPS, COL_UNIT], CFG_BMP_COST, logger)
+    df = resolve_distribution_references(df, distribution_catalog, CFG_BMP_COST)
     _validate_stats_table(df, CFG_BMP_COST)
     df = df[df[COL_CPS].astype(int).isin(cps)].copy()
     if df.empty:
@@ -1181,7 +1255,64 @@ def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any) -> Optional
     return df
 
 
-def _load_pollutant_yield(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants: List[str], logger: Any) -> pd.DataFrame:
+def _expand_pollutant_yield_defaults(
+    df: pd.DataFrame,
+    parcel_ids: Sequence[str],
+    pollutants: Sequence[str],
+) -> pd.DataFrame:
+    """Expand ``pid='*'`` yield defaults while preserving exact overrides.
+
+    This lets large statistical-mode applications define one distribution for
+    many or all parcels and add only the parcel-specific exceptions. Exact
+    parcel rows override wildcard rows for the same pollutant/pathway.
+    """
+    out = df.copy()
+    out[COL_PID] = out[COL_PID].astype(str)
+    valid_pids = {str(pid) for pid in parcel_ids}
+    out = out[
+        out[COL_PID].isin(valid_pids | {"*"})
+        & out[COL_POLLUTANT].isin(list(pollutants))
+    ].copy()
+    if out.empty or not (out[COL_PID] == "*").any():
+        return out[out[COL_PID].isin(valid_pids)].reset_index(drop=True)
+
+    explicit = COL_PATHWAY in out.columns
+    keys = [COL_PID, COL_POLLUTANT] + ([COL_PATHWAY] if explicit else [])
+    _validate_unique_rows(out, keys, CFG_POLLUTANT_YIELD)
+    pathways: List[Optional[str]] = (
+        list(dict.fromkeys(out[COL_PATHWAY].astype(str).tolist()))
+        if explicit else [None]
+    )
+
+    defaults: Dict[Tuple[str, Optional[str]], pd.Series] = {}
+    exact: Dict[Tuple[str, str, Optional[str]], pd.Series] = {}
+    for _, row in out.iterrows():
+        path = str(row[COL_PATHWAY]) if explicit else None
+        pollutant = str(row[COL_POLLUTANT])
+        pid = str(row[COL_PID])
+        if pid == "*":
+            defaults[(pollutant, path)] = row
+        else:
+            exact[(pid, pollutant, path)] = row
+
+    expanded: List[pd.Series] = []
+    for pid in map(str, parcel_ids):
+        for pollutant in map(str, pollutants):
+            for path in pathways:
+                row = exact.get((pid, pollutant, path))
+                if row is None:
+                    row = defaults.get((pollutant, path))
+                if row is None:
+                    continue
+                copied = row.copy()
+                copied[COL_PID] = pid
+                expanded.append(copied)
+    if not expanded:
+        return out.iloc[0:0].copy()
+    return pd.DataFrame(expanded).reset_index(drop=True)
+
+
+def _load_pollutant_yield(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants: List[str], logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     """Load parcel pollutant yields for non-PLET mode.
 
     Parameters
@@ -1203,9 +1334,12 @@ def _load_pollutant_yield(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants
     df = _merge_csvs(ci_get(cfg, CFG_POLLUTANT_YIELD), [COL_PID, COL_POLLUTANT], CFG_POLLUTANT_YIELD, logger)
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_POLLUTANT_YIELD, logger)
     df = _normalize_pathway_column(df, CFG_POLLUTANT_YIELD, logger)
+    df = resolve_distribution_references(df, distribution_catalog, CFG_POLLUTANT_YIELD)
     _validate_stats_table(df, CFG_POLLUTANT_YIELD)
     df[COL_PID] = df[COL_PID].astype(str)
-    df = df[df[COL_PID].isin(parcels[COL_PID].astype(str)) & df[COL_POLLUTANT].isin(pollutants)].copy()
+    df = _expand_pollutant_yield_defaults(
+        df, parcels[COL_PID].astype(str).tolist(), pollutants
+    )
     if df.empty:
         raise ValueError("pollutant_yield has no records for specified parcels+pollutants")
     _validate_stats_rows(df, CFG_POLLUTANT_YIELD)
@@ -1358,6 +1492,12 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             raise ValueError(f"Unsupported load_generation mode: {load_mode}")
         load_generation["mode"] = load_mode
 
+        # One optional catalog can define reusable numeric distributions for
+        # any model input table. References are expanded during input loading.
+        distribution_catalog = load_distribution_catalog(
+            ci_get(cfg, CFG_INPUT_DISTRIBUTIONS), logger
+        )
+
         outlet_loc = _load_outlet_loc(cfg, domain, logger)
         outlet_target = _load_optional_outlet_stats(cfg, CFG_OUTLET_TARGET, [COL_OID, COL_POLLUTANT, COL_TARGET], CFG_OUTLET_TARGET, logger)
         outlet_mean = _load_optional_outlet_stats(cfg, CFG_OUTLET_MEAN, [COL_OID, COL_POLLUTANT, COL_MEAN], CFG_OUTLET_MEAN, logger)
@@ -1384,8 +1524,11 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
 
         if ci_get(cfg, CFG_BMP_EFFICIENCY) is None:
             raise ValueError("bmp_efficiency is required")
-        bmp_eff = _load_bmp_efficiency(cfg, cps, pollutants, logger, complete_legacy=False)
-        bmp_cost = _load_bmp_cost(cfg, cps, logger)
+        bmp_eff = _load_bmp_efficiency(
+            cfg, cps, pollutants, logger, complete_legacy=False,
+            distribution_catalog=distribution_catalog,
+        )
+        bmp_cost = _load_bmp_cost(cfg, cps, logger, distribution_catalog)
 
         plet_inputs = None
         rusle_inputs = None
@@ -1396,17 +1539,31 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 load_generation.get(LOAD_PLET_INPUTS),
                 sel[COL_PID].astype(str).tolist(),
                 logger,
+                distribution_catalog,
             )
             if plet_inputs is None:
                 raise ValueError("load_generation.plet_inputs is required for mode='plet_rusle'")
+            plet_hydrology_lookup = _load_plet_hydrology_lookup(
+                load_generation.get(LOAD_HYDROLOGY_LOOKUP),
+                logger,
+                distribution_catalog,
+            )
+            # Keep the normalized/resolved table with the validated load-generation
+            # settings so workers receive it without requiring Model changes or
+            # repeatedly reading the CSV. The leading underscore marks it as an
+            # internal resolved input rather than a user-facing config key.
+            load_generation["_hydrology_lookup_table"] = plet_hydrology_lookup
             rusle_inputs = _load_parameter_stats_table(
-                load_generation.get(LOAD_RUSLE_INPUTS), LOAD_RUSLE_INPUTS, logger
+                load_generation.get(LOAD_RUSLE_INPUTS), LOAD_RUSLE_INPUTS, logger,
+                distribution_catalog,
             )
             pollutant_concentrations = _load_pollutant_concentrations(
-                load_generation.get(LOAD_CONCENTRATIONS), pollutants, logger
+                load_generation.get(LOAD_CONCENTRATIONS), pollutants, logger,
+                distribution_catalog,
             )
             groundwater_concentrations = _load_groundwater_concentrations(
-                load_generation.get(LOAD_GROUNDWATER_CONCENTRATIONS), pollutants, logger
+                load_generation.get(LOAD_GROUNDWATER_CONCENTRATIONS), pollutants, logger,
+                distribution_catalog,
             )
             if any(p in {"TN", "TP"} for p in pollutants) and pollutant_concentrations is None:
                 raise ValueError(
@@ -1422,7 +1579,9 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             pollutant_yield_pathway_fractions: Dict[str, float] = {}
             bmp_eff = _complete_plet_bmp_efficiency_coverage(bmp_eff, cps, pollutants, logger)
         else:
-            pollutant_yield = _load_pollutant_yield(cfg, parcels, pollutants, logger)
+            pollutant_yield = _load_pollutant_yield(
+                cfg, parcels, pollutants, logger, distribution_catalog
+            )
             yield_pathways, pollutant_yield_is_aggregate = _validate_statistical_yields(
                 pollutant_yield, parcels, pollutants
             )

@@ -2,6 +2,18 @@
 
 [← Back to main README](../readme.md)
 
+## Common numeric value/distribution schema
+
+Numeric model inputs use a common row-level schema. Depending on the table, identifier columns come first, followed by any of these distribution columns:
+
+```text
+value, distribution_id, mean, sd, min, p05, p50, p95, max
+```
+
+Percentile columns may use other `pXX` levels. Accepted forms and validation rules are documented in [Standardized numeric inputs and distributions](input_distributions.md).
+
+The optional top-level `input_distributions` CSV stores reusable named distributions. A use-site row can reference one with `distribution_id` instead of repeating its statistics.
+
 ## Common input files
 
 ### `domain`
@@ -28,15 +40,25 @@ Optional upstream parcel connectivity. This is used by BMP calculations that req
 
 Optional parcel-selection probability information. Probabilities must be valid for the parcels used by the scenario engine.
 
+### `input_distributions`
+
+Optional reusable numeric distribution catalog configured at the top level:
+
+```yaml
+input_distributions: ./inputs/input_distributions.csv
+```
+
+Key column: `distribution_id`. Every catalog row must contain one valid fixed-value/distribution specification.
+
 ### `bmp_efficiency`
 
-BMP efficiency distributions by CPS, pollutant, and—when pathway-aware—pathway.
+BMP efficiency values/distributions by CPS, pollutant, and—when pathway-aware—pathway.
 
 Statistical mode requires complete coverage for every active pathway. `plet_rusle` requires surface coverage and defaults missing correctly labeled subsurface efficiency to zero with logging.
 
 ### `bmp_cost`
 
-Optional BMP cost distributions used for cost accounting and, when configured, BMP-selection weighting.
+Optional BMP cost values/distributions used for cost accounting and, when configured, BMP-selection weighting. The existing `unit` column remains required because cost scaling depends on the cost unit.
 
 ### `delivery_ratios`
 
@@ -56,8 +78,10 @@ Optional outlet mean-load reference values.
 
 Required in statistical mode. It may contain:
 
-- explicit parcel × pollutant × pathway distributions; or
-- one aggregate parcel × pollutant distribution that is subsequently split with configured pathway fractions.
+- explicit parcel × pollutant × pathway values/distributions; or
+- one aggregate parcel × pollutant value/distribution that is subsequently split with configured pathway fractions.
+
+`pid="*"` may define a default for all parcels, with exact parcel rows overriding the default for the same pollutant/pathway.
 
 See [Statistical load-generation mode](statistical_mode.md).
 
@@ -65,29 +89,45 @@ See [Statistical load-generation mode](statistical_mode.md).
 
 ### `load_generation.plet_inputs`
 
-Required long-form PLET parameter table. It supplies climate and classification inputs used to resolve Curve Number and infiltration fraction and calculate annual runoff/infiltration.
+Required long-form PLET parcel parameter table. It supplies climate variables and fixed `land_cover`/`hsg` classifications. Numeric rows use the standardized fixed-value/distribution schema and may use `pid="*"` defaults with parcel-specific overrides.
+
+`cn` and `infiltration_fraction` are **not** supplied in this table.
+
+### `load_generation.hydrology_lookup`
+
+Required long-form land-cover/HSG hydrology input table. It contains exactly one `cn` and one `infiltration_fraction` row for every supported land-cover × HSG pairing.
+
+Both parameters may be supplied as fixed values or distributions. This file replaces the old source-code data file `src/data/plet_hydrology_lookup.csv`.
 
 ### `load_generation.rusle_inputs`
 
-Optional long-form RUSLE parameter table. A parcel with RUSLE data must have a complete factor set and an SDR or watershed area value required by the current delivery formulation.
+Optional long-form RUSLE parameter table. Numeric rows use the common distribution schema and may use `pid="*"` defaults. A parcel with RUSLE data must have a complete factor set and an SDR or watershed area value required by the current delivery formulation.
 
 ### `load_generation.pollutant_concentrations`
 
-Runoff concentrations. Required when TN or TP is modeled. TSS concentration is also needed when RUSLE is not available for a parcel and TSS is modeled.
+Runoff concentration values/distributions. Required when TN or TP is modeled. TSS concentration is also needed when RUSLE is not available for a parcel and TSS is modeled. `pid="*"` defaults and parcel-specific overrides are supported.
 
 ### `load_generation.groundwater_concentrations`
 
-Required for each modeled non-TSS pollutant. Used with PLET infiltration volume to calculate the `subsurface` pathway.
+Required for each modeled non-TSS pollutant. Used with PLET infiltration volume to calculate the `subsurface` pathway. `pid="*"` defaults and parcel-specific overrides are supported.
 
-## Statistical input formats
+## Recommended PLET input layout
 
-Input tables may provide a fixed `value` or statistical information supported by the model, such as combinations of:
+```text
+inputs/
+  plet/
+    input_distributions.csv       # optional named distributions
+    plet_inputs.csv               # parcel PLET variables/classifications
+    plet_hydrology_lookup.csv     # REQUIRED CN/infiltration by land-cover/HSG
+    rusle_inputs.csv              # optional RUSLE variables
+    pollutant_concentrations.csv  # surface-runoff concentrations
+    groundwater_concentrations.csv
+    bmp_efficiency.csv
+    bmp_cost.csv
+    ...spatial/routing inputs...
+```
 
-- `mean` and `sd`;
-- `min` and `max`; or
-- percentile fields such as `p05`, `p50`, and `p95`.
-
-The applicable loader validates required key columns and supported statistical information for each table.
+The model keeps conceptually different variable families in separate files while using the same distribution columns for all numeric quantities.
 
 ## Output directory
 
@@ -148,7 +188,7 @@ Summary `plot_*` outputs visualize scenario trajectories such as implementation 
 
 ## Interpreting outputs
 
-Each scenario is one possible implementation realization. Scientific interpretation should focus on the **distribution** of outcomes across scenarios rather than treating a single scenario as a prediction.
+Each scenario is one possible implementation realization. Scientific interpretation should focus on the **distribution** of outcomes across scenarios.
 
 Useful summaries include:
 

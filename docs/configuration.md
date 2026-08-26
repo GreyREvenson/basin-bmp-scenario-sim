@@ -21,15 +21,16 @@ Typical common requirements are:
 - `parcel_out` — CSV mapping parcels to outlet IDs;
 - `pollutants` — modeled pollutant labels;
 - `cps` — BMP/conservation-practice CPS codes;
-- `bmp_efficiency` — BMP efficiency statistics;
+- `bmp_efficiency` — BMP efficiency values/distributions;
 - `n_scenarios` — number of Monte Carlo scenarios; and
 - at least one of `bmp_limit_n` or `bmp_limit_usd`.
 
 Common optional settings include:
 
+- `input_distributions` — reusable named numeric distributions referenced from other input tables;
 - `parcel_up` — upstream parcel relationships;
 - `parcel_p` — parcel-selection probability weights;
-- `bmp_cost` — BMP cost statistics;
+- `bmp_cost` — BMP cost values/distributions;
 - `delivery_ratios` — parcel-to-outlet delivery ratios;
 - `outlet_target` — outlet pollutant reduction targets;
 - `outlet_mean` — outlet mean-load reference values;
@@ -43,6 +44,32 @@ Common optional settings include:
 - `parallel` — parallel execution settings.
 
 Pollutant aliases such as `nitrogen`, `phosphorus`, and `sediment` are normalized to canonical pollutant labels where supported.
+
+## Standard numeric input schema
+
+Numeric input tables use a common fixed-value/distribution convention. New files should use canonical columns:
+
+```text
+value, distribution_id, mean, sd, min, p05, p50, p95, max
+```
+
+Only the columns needed for a given row must contain values. Accepted forms and precedence rules are described in [Standardized numeric inputs and distributions](input_distributions.md).
+
+A top-level reusable catalog is optional:
+
+```yaml
+input_distributions: ./inputs/input_distributions.csv
+```
+
+Example catalog:
+
+```csv
+distribution_id,value,mean,sd,min,p05,p50,p95,max,units,notes
+annual_precip_default,,42,3,34,,,,50,in/year,Example bounded normal
+runoff_tn_default,3,,,,,,,,mg/L,Fixed value
+```
+
+A row in another table can then reference `distribution_id` rather than repeat the statistics. A catalog reference reuses the distribution definition; it does not automatically share the same random draw among parcels.
 
 ## Statistical mode configuration
 
@@ -72,6 +99,9 @@ parcel_p: ./inputs/parcel_p.csv
 pollutants: [TN, TP, TSS]
 cps: [340, 329, 590, 412, 656]
 
+# Optional reusable catalog.
+input_distributions: ./inputs/input_distributions.csv
+
 pollutant_yield: ./inputs/pollutant_yield.csv
 bmp_efficiency: ./inputs/bmp_efficiency.csv
 bmp_cost: ./inputs/bmp_cost.csv
@@ -85,6 +115,18 @@ bmp_limit_n: 200
 bmp_fail_rate: 0.25
 bmp_fail_reduction: 0.25
 ```
+
+### Large parcel datasets
+
+`pollutant_yield.csv` may use `pid="*"` as a default distribution for all parcels. Exact parcel rows override the wildcard row for the same pollutant/pathway.
+
+```csv
+pid,pollutant,pathway,value,distribution_id,mean,sd,min,max,units
+*,TN,surface,,tn_surface_default,,,,,kg/ha/yr
+P104,TN,surface,,,9.2,1.4,6,13,kg/ha/yr
+```
+
+This is useful when thousands of parcels share an assumption. When parcel distributions are genuinely unique, supply one row per parcel × pollutant × pathway (or one aggregate row per parcel × pollutant).
 
 ### Statistical mode with aggregate yields
 
@@ -112,28 +154,32 @@ verbose: true
 outputs: ./outputs
 random_seed: 42
 
-domain: ./inputs/domain.gpkg
-parcels: ./inputs/parcels.gpkg
-outlet_loc: ./inputs/outlet_loc.gpkg
-parcel_out: ./inputs/parcel_out.csv
-parcel_up: ./inputs/parcel_up.csv
-parcel_p: ./inputs/parcel_p.csv
+domain: ./inputs/plet/domain.gpkg
+parcels: ./inputs/plet/parcels.gpkg
+outlet_loc: ./inputs/plet/outlet_loc.gpkg
+parcel_out: ./inputs/plet/parcel_out.csv
+parcel_up: ./inputs/plet/parcel_up.csv
+parcel_p: ./inputs/plet/parcel_p.csv
 
 pollutants: [TN, TP, TSS]
 cps: [340, 329, 590, 412, 656]
 
-bmp_efficiency: ./inputs/bmp_efficiency_plet.csv
-bmp_cost: ./inputs/bmp_cost.csv
+# Optional named distributions shared by the input files below.
+input_distributions: ./inputs/plet/input_distributions.csv
+
+bmp_efficiency: ./inputs/plet/bmp_efficiency.csv
+bmp_cost: ./inputs/plet/bmp_cost.csv
 
 load_generation:
   mode: plet_rusle
   plet_inputs: ./inputs/plet/plet_inputs.csv
+  hydrology_lookup: ./inputs/plet/plet_hydrology_lookup.csv
   rusle_inputs: ./inputs/plet/rusle_inputs.csv
   pollutant_concentrations: ./inputs/plet/pollutant_concentrations.csv
   groundwater_concentrations: ./inputs/plet/groundwater_concentrations.csv
 
-outlet_target: ./inputs/outlet_target.csv
-outlet_mean: ./inputs/outlet_mean.csv
+outlet_target: ./inputs/plet/outlet_target.csv
+outlet_mean: ./inputs/plet/outlet_mean.csv
 
 n_scenarios: 1000
 bmp_limit_n: 200
@@ -149,13 +195,16 @@ In `plet_rusle` mode:
 - `pollutant_yield` is not used;
 - production pathways are fixed to `surface` and `subsurface`;
 - `plet_inputs` is required;
+- **`hydrology_lookup` is required**;
+- every supported land-cover × HSG pairing in `hydrology_lookup` must define both `cn` and `infiltration_fraction` as either a fixed value or a valid distribution;
+- parcel `plet_inputs` must supply fixed `land_cover` and `hsg` classifications and may not supply `cn` or `infiltration_fraction` directly;
 - `pollutant_concentrations` is required when TN or TP is modeled;
 - `groundwater_concentrations` is required for every modeled non-TSS pollutant;
 - `rusle_inputs` is optional, but a parcel that supplies RUSLE inputs must supply a complete RUSLE factor set and either `sdr` or `watershed_area_mi2`;
 - `pathway_mode` has been removed and is an error if supplied; and
 - statistical pathway-fraction settings do not control PLET/RUSLE pathways.
 
-Legacy `groundwater_loads` and `treat_groundwater_with_bmps` settings do not control production PLET/RUSLE pathway generation. The production calculation always estimates the lookup-derived subsurface load, and BMP treatment is controlled by the `subsurface` BMP efficiency.
+Legacy `groundwater_loads` and `treat_groundwater_with_bmps` settings do not control production PLET/RUSLE pathway generation. The production calculation always estimates the subsurface load from groundwater concentration and the sampled infiltration fraction. BMP treatment is controlled by the `subsurface` BMP efficiency.
 
 See [PLET/RUSLE load-generation mode](plet_rusle_mode.md).
 

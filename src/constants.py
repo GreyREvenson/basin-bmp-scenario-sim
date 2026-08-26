@@ -43,6 +43,7 @@ CFG_OUTPUTS = "outputs"
 CFG_VERBOSE = "verbose"
 CFG_BUFFER_DEPTH_FT = "buffer_depth_ft"
 CFG_BMP_SEL_PROB_VIA_COSTS = "bmp_sel_prob_via_costs"
+CFG_INPUT_DISTRIBUTIONS = "input_distributions"
 
 # Canonical output folders/files
 DIR_SCENARIO_METRICS = "scenario_metrics"
@@ -54,6 +55,7 @@ CFG_LOAD_GENERATION = "load_generation"
 LOAD_MODE_STATISTICAL = "statistical"
 LOAD_MODE_PLET_RUSLE = "plet_rusle"
 LOAD_PLET_INPUTS = "plet_inputs"
+LOAD_HYDROLOGY_LOOKUP = "hydrology_lookup"
 LOAD_RUSLE_INPUTS = "rusle_inputs"
 LOAD_CONCENTRATIONS = "pollutant_concentrations"
 LOAD_GROUNDWATER_CONCENTRATIONS = "groundwater_concentrations"
@@ -123,6 +125,8 @@ PERCENTILE_PREFIX = "p"
 
 # New: optional pathway column
 COL_PATHWAY = "pathway"
+COL_DISTRIBUTION_ID = "distribution_id"
+COL_SAMPLE_GROUP = "sample_group"
 
 # Output and axis constants
 XAXIS_COST = "cost"

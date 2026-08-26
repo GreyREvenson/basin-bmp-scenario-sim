@@ -1,11 +1,11 @@
-pid,parameter,value,units
-*,annual_precip_in,42.0,in/year
-*,rain_days,120.0,days/year
-*,rain_correction_fraction,0.90,fraction
-*,runoff_day_fraction,0.35,fraction
-*,land_cover,cropland,classification
-*,hsg,B,classification
-*,ia_ratio,0.0,fraction
-*,irrigated_fraction,0.00,fraction
-*,irrigation_depth_in,0.00,in/event
-*,irrigation_frequency,0.00,events/year
+pid,parameter,value,distribution_id,mean,sd,min,p05,p50,p95,max,sample_group,units,notes
+*,annual_precip_in,,annual_precip_east_fork,,,,,,,,,in/year,Defined once in input_distributions.csv
+*,rain_days,120.0,,,,,,,,,,days/year,
+*,rain_correction_fraction,0.9,,,,,,,,,,fraction,
+*,runoff_day_fraction,0.35,,,,,,,,,,fraction,
+*,land_cover,cropland,,,,,,,,,,classification,Fixed classification; distributions are not allowed
+*,hsg,B,,,,,,,,,,classification,Fixed classification; distributions are not allowed
+*,ia_ratio,0.0,,,,,,,,,,fraction,
+*,irrigated_fraction,0.0,,,,,,,,,,fraction,
+*,irrigation_depth_in,0.0,,,,,,,,,,in/event,
+*,irrigation_frequency,0.0,,,,,,,,,,events/year,

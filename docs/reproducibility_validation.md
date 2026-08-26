@@ -48,7 +48,7 @@ Scientific model development should maintain tests covering at least:
 - input schema and coverage validation;
 - parcel/outlet and upstream parsing;
 - statistical pathway behavior;
-- PLET land-cover/HSG lookup behavior;
+- validation and sampling of the user-supplied PLET land-cover/HSG hydrology table;
 - PLET runoff and infiltration calculations;
 - RUSLE sediment calculations;
 - surface/subsurface mass balance in `plet_rusle`;
@@ -77,7 +77,7 @@ Evaluate PLET/RUSLE inputs and outputs against appropriate benchmarks, including
 - nutrient concentrations and loads; and
 - parcel- or watershed-scale mass balance.
 
-The bundled land-cover/HSG lookup constrains hydrologic parameters consistently, but that does not guarantee that the resulting annual runoff or subsurface load is accurate for every local setting.
+The required user-supplied land-cover/HSG hydrology table constrains Curve Number and infiltration fraction explicitly, but that does not guarantee that the resulting annual runoff or subsurface load is accurate for every local setting. Fixed values or distributions for these parameters should be justified and archived with the analysis.
 
 ## Structural assumptions and limitations
 
@@ -114,7 +114,7 @@ A scientific or technical report using the model should document:
 - selected load-generation mode;
 - pathway definitions;
 - all major input data sources;
-- probability distributions and their rationale;
+- probability distributions, reusable distribution definitions, Curve Number/infiltration assumptions, and their rationale;
 - BMP interaction/failure assumptions;
 - number of Monte Carlo scenarios;
 - random seed;

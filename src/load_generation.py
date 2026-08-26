@@ -15,6 +15,12 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+from .input_distributions import (
+    sample_group_key,
+    sample_stats_bounded,
+    stats_from_row,
+)
+
 
 INCH_OVER_HA_TO_LITERS = 254_000.0
 TON_PER_ACRE_TO_KG_PER_HA = 907.18474 / 0.40468564224
@@ -27,8 +33,11 @@ PLET_PATHWAY_NAMES = ("surface", "subsurface")
 PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
 PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
 PLET_HSG_VALUES = ("A", "B", "C", "D")
+# Default example path retained only for the public deterministic helper.
+# Production plet_rusle runs require load_generation.hydrology_lookup explicitly.
 PLET_HYDROLOGY_LOOKUP_PATH = (
-    Path(__file__).resolve().parent / "data" / "plet_hydrology_lookup.csv"
+    Path(__file__).resolve().parents[1]
+    / "examples" / "east_fork" / "inputs" / "plet" / "plet_hydrology_lookup.csv"
 )
 
 _PLET_DERIVED_PARAMETERS = ("cn", "infiltration_fraction")
@@ -272,69 +281,81 @@ def normalize_plet_hsg(value: Any) -> str:
 def _load_plet_hydrology_records(
     lookup_path: str,
 ) -> Dict[Tuple[str, str], Tuple[float, float]]:
-    """Load and validate the bundled PLET hydrology reference table."""
+    """Load fixed CN/infiltration values for the deterministic public helper.
 
+    New production inputs use a long-form table with one ``parameter`` row for
+    ``cn`` and one for ``infiltration_fraction`` per land-cover/HSG pairing.
+    The legacy wide format is still accepted here for backward-compatible
+    helper/tests, but stochastic rows cannot be resolved without a model RNG.
+    """
     path = Path(lookup_path)
     if not path.exists():
         raise FileNotFoundError(f"PLET hydrology lookup table not found: {path}")
 
     table = pd.read_csv(path)
-    required_columns = {
-        "land_cover",
-        "hsg",
-        "curve_number",
-        "infiltration_fraction",
-    }
-    missing_columns = sorted(required_columns.difference(table.columns))
-    if missing_columns:
+    table.columns = [str(c).strip().lower() for c in table.columns]
+    records: Dict[Tuple[str, str], Dict[str, float]] = {}
+
+    if {"land_cover", "hsg", "parameter"} <= set(table.columns):
+        for row_index, row in table.iterrows():
+            land_cover = normalize_plet_land_cover(row["land_cover"])
+            hsg = normalize_plet_hsg(row["hsg"])
+            parameter = canonical_parameter_name(row["parameter"])
+            if parameter not in _PLET_DERIVED_PARAMETERS:
+                continue
+            stats = stats_from_row(row)
+            if set(stats) != {"value"}:
+                raise ValueError(
+                    "plet_hydrology_from_classifications is deterministic and "
+                    f"cannot resolve stochastic {parameter} row {row_index}; "
+                    "production plet_rusle runs sample this table through the scenario context"
+                )
+            records.setdefault((land_cover, hsg), {})[parameter] = float(stats["value"])
+    elif {"land_cover", "hsg", "curve_number", "infiltration_fraction"} <= set(table.columns):
+        # Legacy compatibility while users migrate existing lookup files.
+        for row_index, row in table.iterrows():
+            land_cover = normalize_plet_land_cover(row["land_cover"])
+            hsg = normalize_plet_hsg(row["hsg"])
+            records[(land_cover, hsg)] = {
+                "cn": float(row["curve_number"]),
+                "infiltration_fraction": float(row["infiltration_fraction"]),
+            }
+    else:
         raise ValueError(
-            f"PLET hydrology lookup table is missing columns: {missing_columns}"
+            "PLET hydrology lookup must use long-form columns "
+            "land_cover,hsg,parameter plus value/distribution statistics"
         )
-
-    records: Dict[Tuple[str, str], Tuple[float, float]] = {}
-    for row_index, row in table.iterrows():
-        land_cover = normalize_plet_land_cover(row["land_cover"])
-        hsg = normalize_plet_hsg(row["hsg"])
-        key = (land_cover, hsg)
-        if key in records:
-            raise ValueError(
-                "PLET hydrology lookup table contains a duplicate row for "
-                f"land_cover={land_cover}, hsg={hsg}"
-            )
-
-        try:
-            curve_number = float(row["curve_number"])
-            infiltration_fraction = float(row["infiltration_fraction"])
-        except (TypeError, ValueError) as ex:
-            raise ValueError(
-                f"PLET hydrology lookup row {row_index} contains nonnumeric values"
-            ) from ex
-        if not np.isfinite(curve_number) or not 0.0 < curve_number <= 100.0:
-            raise ValueError(
-                f"PLET hydrology lookup curve_number must be in (0, 100]; "
-                f"row {row_index} has {curve_number}"
-            )
-        if not np.isfinite(infiltration_fraction) or not 0.0 <= infiltration_fraction <= 1.0:
-            raise ValueError(
-                "PLET hydrology lookup infiltration_fraction must be in [0, 1]; "
-                f"row {row_index} has {infiltration_fraction}"
-            )
-        records[key] = (curve_number, infiltration_fraction)
 
     expected_keys = {
         (land_cover, hsg)
         for land_cover in PLET_LAND_COVERS
         for hsg in PLET_HSG_VALUES
     }
-    missing_keys = sorted(expected_keys.difference(records))
-    unexpected_keys = sorted(set(records).difference(expected_keys))
-    if missing_keys or unexpected_keys:
+    if set(records) != expected_keys:
+        missing = sorted(expected_keys - set(records))
+        extra = sorted(set(records) - expected_keys)
         raise ValueError(
-            "PLET hydrology lookup table must contain exactly one row for every "
-            "supported land-cover/HSG combination; "
-            f"missing={missing_keys}, unexpected={unexpected_keys}"
+            "PLET hydrology lookup table must contain every supported "
+            f"land-cover/HSG combination; missing={missing}, unexpected={extra}"
         )
-    return records
+
+    resolved: Dict[Tuple[str, str], Tuple[float, float]] = {}
+    for key, values in records.items():
+        if set(values) != set(_PLET_DERIVED_PARAMETERS):
+            raise ValueError(
+                f"PLET hydrology lookup {key} must define both cn and infiltration_fraction"
+            )
+        curve_number = float(values["cn"])
+        infiltration_fraction = float(values["infiltration_fraction"])
+        if not np.isfinite(curve_number) or not 0.0 < curve_number <= 100.0:
+            raise ValueError(f"PLET hydrology lookup cn must be in (0,100]; {key} has {curve_number}")
+        if not np.isfinite(infiltration_fraction) or not 0.0 <= infiltration_fraction <= 1.0:
+            raise ValueError(
+                "PLET hydrology lookup infiltration_fraction must be in [0,1]; "
+                f"{key} has {infiltration_fraction}"
+            )
+        resolved[key] = (curve_number, infiltration_fraction)
+    return resolved
 
 
 def plet_hydrology_from_classifications(
@@ -343,35 +364,18 @@ def plet_hydrology_from_classifications(
     *,
     lookup_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Resolve PLET curve number and infiltration fraction from classifications.
+    """Resolve fixed hydrology values from a lookup table.
 
-    The bundled CSV reproduces PLET Version 2.0's reference curve-number table
-    and soil-infiltration table. Feedlots are intentionally not included because
-    PLET derives feedlot hydrology from percent paved rather than HSG alone.
-
-    Parameters
-    ----------
-    land_cover : Any
-        PLET land-cover classification.
-    hsg : Any
-        Hydrologic soil group (A through D).
-    lookup_path : pathlib.Path, optional
-        Alternate lookup table used primarily for validation and testing.
-
-    Returns
-    -------
-    dict[str, Any]
-        Canonical ``land_cover`` and ``hsg`` values plus the corresponding
-        numeric ``cn`` and ``infiltration_fraction`` values.
+    This helper remains for compatibility and deterministic validation. The
+    actual PLET/RUSLE scenario path samples the required hydrology input table,
+    allowing each CN and infiltration fraction to be a fixed value or a
+    distribution.
     """
-
     canonical_land_cover = normalize_plet_land_cover(land_cover)
     canonical_hsg = normalize_plet_hsg(hsg)
     path = Path(lookup_path or PLET_HYDROLOGY_LOOKUP_PATH).resolve()
     records = _load_plet_hydrology_records(str(path))
-    curve_number, infiltration_fraction = records[
-        (canonical_land_cover, canonical_hsg)
-    ]
+    curve_number, infiltration_fraction = records[(canonical_land_cover, canonical_hsg)]
     return {
         "land_cover": canonical_land_cover,
         "hsg": canonical_hsg,
@@ -574,31 +578,8 @@ def plet_annual_infiltration_in(parameters: Mapping[str, Any]) -> float:
 
 
 def _stats_from_row(row: Mapping[str, Any], exclude: Iterable[str]) -> Dict[str, float]:
-    """Extract sampling statistics from a table row.
-
-    Parameters
-    ----------
-    row : Mapping[str, Any]
-        Source row containing values and sampling statistics.
-    exclude : Iterable[str]
-        Column names that should not be considered as numeric statistics.
-
-    Returns
-    -------
-    dict[str, float]
-        Numeric statistics suitable for sampling.
-    """
-    excluded = {str(x).lower() for x in exclude}
-    stats: Dict[str, float] = {}
-    for key, value in row.items():
-        key_l = str(key).strip().lower()
-        if key_l in excluded or pd.isna(value):
-            continue
-        if key_l == "value" or key_l in {"mean", "sd", "std", "min", "max", "minimum", "maximum", "p0", "p100"}:
-            stats[key_l] = float(value)
-        elif key_l.startswith("p") and key_l[1:].isdigit():
-            stats[key_l] = float(value)
-    return stats
+    """Backward-compatible wrapper around the shared statistics extractor."""
+    return stats_from_row(row, exclude)
 
 
 def _sample_stats(ctx: Any, stats: Mapping[str, float], *, nonnegative: bool = False) -> float:
@@ -668,8 +649,10 @@ def validate_plet_input_table(
     """Validate required PLET classifications for every modeled parcel.
 
     ``land_cover`` and ``hsg`` must be supplied as fixed ``value`` rows. Curve
-    number and infiltration fraction are prohibited as inputs because they are
-    derived from the repository's PLET reference table.
+    number and infiltration fraction are intentionally kept out of the parcel
+    parameter table because they are supplied in the required
+    ``load_generation.hydrology_lookup`` input, where each land-cover/HSG
+    pairing can define a fixed value or a distribution.
 
     Parameters
     ----------
@@ -703,9 +686,9 @@ def validate_plet_input_table(
     )
     if supplied_derived:
         raise ValueError(
-            "PLET inputs may not specify "
-            f"{supplied_derived}; curve number and infiltration fraction are "
-            "derived from required land_cover and hsg classifications"
+            "PLET parcel inputs may not specify "
+            f"{supplied_derived}; define cn and infiltration_fraction in the "
+            "required load_generation.hydrology_lookup table instead"
         )
 
     classification_mask = normalized["parameter"].isin(
@@ -744,10 +727,6 @@ def validate_plet_input_table(
                 f"PLET inputs for pid={pid} are missing required "
                 f"classifications: {missing}"
             )
-        plet_hydrology_from_classifications(
-            effective["land_cover"]["value"],
-            effective["hsg"]["value"],
-        )
     return normalized
 
 
@@ -782,12 +761,10 @@ def _sample_parameter_table(
         values: Dict[str, Any] = {}
         for row in _rows_for_pid(table, str(pid)):
             parameter = canonical_parameter_name(row["parameter"])
-            group_value = row.get("group_id", None)
-            if group_value is None or pd.isna(group_value) or str(group_value).strip() == "":
-                group_id = "__global__" if str(row.get("pid", "")) == "*" else str(pid)
-            else:
-                group_id = str(group_value)
-            cache_key = (cache_prefix, parameter, group_id)
+            variable_key, group_key = sample_group_key(
+                row, pid=str(pid), variable=parameter
+            )
+            cache_key = (cache_prefix, variable_key, group_key)
             if cache_key not in cache:
                 if parameter in PLET_CLASSIFICATION_PARAMETERS:
                     raw_value = row.get("value")
@@ -802,7 +779,7 @@ def _sample_parameter_table(
                         cache[cache_key] = normalize_plet_hsg(raw_value)
                 else:
                     stats = _stats_from_row(
-                        row, {"pid", "parameter", "group_id", "units"}
+                        row, {"pid", "parameter", "sample_group", "distribution_id", "units"}
                     )
                     if not stats:
                         raise ValueError(
@@ -850,20 +827,97 @@ def _sample_concentrations(ctx: Any, table: Optional[pd.DataFrame], parcel_ids: 
             combined = combined.drop_duplicates(subset=["pollutant"], keep="last")
         for _, row in combined.iterrows():
             pollutant = str(row["pollutant"]).strip().upper()
-            group_value = row.get("group_id", None)
-            if group_value is None or pd.isna(group_value) or str(group_value).strip() == "":
-                group_id = "__global__" if str(row.get("pid", "")) == "*" else str(pid)
-            else:
-                group_id = str(group_value)
-            key = (pollutant, group_id)
+            variable_key, group_key = sample_group_key(
+                row, pid=str(pid), variable=pollutant
+            )
+            key = (variable_key, group_key)
             if key not in cache:
-                stats = _stats_from_row(row, {"pid", "pollutant", "group_id", "units"})
+                stats = _stats_from_row(
+                    row, {"pid", "pollutant", "sample_group", "distribution_id", "units"}
+                )
                 if not stats:
                     raise ValueError(f"No concentration value or statistics supplied for {pid}/{pollutant}")
                 cache[key] = _sample_stats(ctx, stats, nonnegative=True)
             values[pollutant] = cache[key]
         sampled.append(values)
     return sampled
+
+
+def _sample_plet_hydrology(
+    ctx: Any,
+    land_cover: Any,
+    hsg: Any,
+    *,
+    pid: str,
+    cache: Dict[Tuple[str, str], float],
+) -> Dict[str, Any]:
+    """Sample CN and infiltration fraction for one parcel's PLET class pair.
+
+    Production ``plet_rusle`` runs require a user-supplied long-form hydrology
+    table stored in ``load_generation.hydrology_lookup``.  Each land-cover/HSG
+    pairing has one ``cn`` row and one ``infiltration_fraction`` row, and each
+    row may be a fixed value or a distribution.  Rows are sampled independently
+    for each parcel unless an explicit ``sample_group`` requests a shared draw.
+    """
+    load_generation = getattr(ctx, "load_generation", {}) or {}
+    table = load_generation.get("_hydrology_lookup_table")
+    if table is None or not isinstance(table, pd.DataFrame) or table.empty:
+        raise ValueError(
+            "plet_rusle requires a validated load_generation.hydrology_lookup table"
+        )
+
+    canonical_land_cover = normalize_plet_land_cover(land_cover)
+    canonical_hsg = normalize_plet_hsg(hsg)
+    subset = table[
+        (table["land_cover"].astype(str) == canonical_land_cover)
+        & (table["hsg"].astype(str) == canonical_hsg)
+    ]
+    values: Dict[str, Any] = {
+        "land_cover": canonical_land_cover,
+        "hsg": canonical_hsg,
+    }
+    for parameter in _PLET_DERIVED_PARAMETERS:
+        rows = subset[subset["parameter"].astype(str) == parameter]
+        if len(rows) != 1:
+            raise ValueError(
+                "hydrology_lookup must contain exactly one row for "
+                f"land_cover={canonical_land_cover}, hsg={canonical_hsg}, "
+                f"parameter={parameter}; found {len(rows)}"
+            )
+        row = rows.iloc[0]
+        stats = stats_from_row(
+            row,
+            {
+                "land_cover",
+                "hsg",
+                "parameter",
+                "distribution_id",
+                "sample_group",
+                "units",
+                "notes",
+            },
+        )
+        if not stats:
+            raise ValueError(
+                f"hydrology_lookup has no value/distribution for "
+                f"{canonical_land_cover}/{canonical_hsg}/{parameter}"
+            )
+        variable = f"hydrology:{canonical_land_cover}:{canonical_hsg}:{parameter}"
+        variable_key, group_key = sample_group_key(
+            row, pid=str(pid), variable=variable
+        )
+        cache_key = (variable_key, group_key)
+        if cache_key not in cache:
+            if parameter == "cn":
+                cache[cache_key] = sample_stats_bounded(
+                    ctx, stats, low=1.0e-9, high=100.0
+                )
+            else:
+                cache[cache_key] = sample_stats_bounded(
+                    ctx, stats, low=0.0, high=1.0
+                )
+        values[parameter] = float(cache[cache_key])
+    return values
 
 
 def calculate_load_diagnostics(parameters: Mapping[str, Any]) -> Dict[str, float]:
@@ -1105,6 +1159,7 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
     yields = np.zeros((len(parcel_ids), len(ctx.pollutants)), dtype=float)
     pathway_yields = np.zeros((len(parcel_ids), len(ctx.pollutants), len(PLET_PATHWAY_NAMES)), dtype=float)
     untreated_groundwater_yields = np.zeros((len(parcel_ids), len(ctx.pollutants)), dtype=float)
+    hydrology_cache: Dict[Tuple[str, str], float] = {}
     for i, pid in enumerate(parcel_ids):
         missing_plet = [
             name for name in _REQUIRED_PLET_INPUTS if name not in plet[i]
@@ -1119,7 +1174,8 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
         if supplied_derived:
             raise ValueError(
                 f"PLET inputs for pid={pid} may not specify {supplied_derived}; "
-                "these values are derived from land_cover and hsg"
+                "these values must be defined in load_generation.hydrology_lookup "
+                "for the parcel's land_cover and hsg"
             )
 
         if rusle[i]:
@@ -1148,9 +1204,12 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
                     f"TSS for pid={pid} requires complete RUSLE inputs or a TSS concentration"
                 )
 
-        derived_hydrology = plet_hydrology_from_classifications(
+        derived_hydrology = _sample_plet_hydrology(
+            ctx,
             plet[i]["land_cover"],
             plet[i]["hsg"],
+            pid=pid,
+            cache=hydrology_cache,
         )
         combined = dict(plet[i])
         combined.update(derived_hydrology)

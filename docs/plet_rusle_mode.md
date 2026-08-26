@@ -13,7 +13,7 @@ The production model has exactly two pathways:
 
 Earlier shallow/deep subsurface splits are not part of the production `plet_rusle` pathway representation.
 
-## Required PLET inputs
+## Required PLET parcel inputs
 
 Every modeled parcel must resolve these PLET inputs:
 
@@ -39,36 +39,75 @@ HSG must be one of `A`, `B`, `C`, or `D`.
 Example long-form PLET table:
 
 ```csv
-pid,parameter,value,mean,sd,min,max
-*,annual_precip_in,,42,2,36,48
-*,rain_days,,100,10,80,120
-*,rain_correction_fraction,0.90,,,,
-*,runoff_day_fraction,0.25,,,,
-1,land_cover,cropland,,,,
-1,hsg,B,,,,
-2,land_cover,pastureland,,,,
-2,hsg,C,,,,
+pid,parameter,value,distribution_id,mean,sd,min,max,units
+*,annual_precip_in,,annual_precip_default,,,,,in/year
+*,rain_days,,,100,10,80,120,days/year
+*,rain_correction_fraction,0.90,,,,,,fraction
+*,runoff_day_fraction,0.25,,,,,,fraction
+*,land_cover,cropland,,,,,,classification
+*,hsg,B,,,,,,classification
+P205,land_cover,pastureland,,,,,,classification
+P205,hsg,C,,,,,,classification
 ```
 
-Rows with `pid="*"` may provide defaults, with parcel-specific rows overriding the default for the same parameter.
+Rows with `pid="*"` provide defaults. Parcel-specific rows override the default for the same parameter. Numeric wildcard rows are sampled independently for each parcel unless an explicit `sample_group` requests a shared draw.
 
-## Land cover/HSG lookup
+## Required land-cover/HSG hydrology input
 
-The user does **not** provide `cn` or `infiltration_fraction` directly. Both are derived from the bundled PLET hydrology lookup table using parcel `land_cover` and `hsg`.
+Curve Number and infiltration fraction are no longer hidden source-code constants. `plet_rusle` requires a user-supplied hydrology input table:
+
+```yaml
+load_generation:
+  mode: plet_rusle
+  plet_inputs: ./inputs/plet/plet_inputs.csv
+  hydrology_lookup: ./inputs/plet/plet_hydrology_lookup.csv
+```
+
+The table must contain exactly one `cn` row and one `infiltration_fraction` row for every supported land-cover × HSG pairing. With five supported land-cover classes and four HSG classes, the complete table has 40 parameter rows.
+
+```csv
+land_cover,hsg,parameter,value,distribution_id,mean,sd,min,max,units
+cropland,B,cn,78,,,,,,dimensionless
+cropland,B,infiltration_fraction,0.30,,,,,,fraction
+pastureland,C,cn,,,79,2,72,86,dimensionless
+pastureland,C,infiltration_fraction,,,0.15,0.02,0.10,0.22,fraction
+```
+
+Both quantities may therefore be deterministic or uncertain:
 
 ```text
-land cover + HSG
-        ↓
-PLET hydrology lookup
-        ↓
-Curve Number + infiltration fraction
+parcel land_cover + HSG
+          ↓
+required hydrology input row
+          ↓
+sample CN + infiltration fraction
+          ↓
+PLET runoff + infiltration calculations
 ```
 
-Supplying `cn` or `infiltration_fraction` directly in the PLET input table is rejected because those parameters are derived quantities in this mode.
+CN must remain in `(0, 100]`. Infiltration fraction must remain in `[0, 1]`. The loader validates each distribution's stated support/statistics against these physical limits.
+
+A fixed or uncertain class-pair definition is sampled independently for each parcel that uses that pairing. If a scenario should intentionally use one shared hydrologic draw for multiple parcels, set `sample_group` explicitly on the corresponding row.
+
+The old source file:
+
+```text
+src/data/plet_hydrology_lookup.csv
+```
+
+is no longer a production model input and should be removed. The East Fork example places the table at:
+
+```text
+examples/east_fork/inputs/plet/plet_hydrology_lookup.csv
+```
+
+The example preserves the previous PLET reference values as fixed `value` entries, but users can replace any CN or infiltration-fraction row with a distribution.
+
+Supplying `cn` or `infiltration_fraction` directly in `plet_inputs.csv` is rejected. The hydrology table is the single source of those parameters in `plet_rusle` mode.
 
 ## Surface runoff
 
-The PLET-style calculation derives the number of runoff-producing days and representative event precipitation from annual precipitation, rain-day frequency, rainfall correction, and runoff-day fraction. Curve Number is then used in the SCS/NRCS runoff relationship.
+The PLET-style calculation derives the number of runoff-producing days and representative event precipitation from annual precipitation, rain-day frequency, rainfall correction, and runoff-day fraction. The sampled Curve Number is then used in the SCS/NRCS runoff relationship.
 
 Conceptually:
 
@@ -94,7 +133,7 @@ Relevant optional irrigation parameters include:
 
 ## Infiltration and subsurface load
 
-Annual infiltration is calculated from annual precipitation and the lookup-derived infiltration fraction:
+Annual infiltration is calculated from annual precipitation and the sampled land-cover/HSG infiltration fraction:
 
 ```text
 annual infiltration
@@ -182,14 +221,13 @@ TSS_total = TSS_surface
 
 ## BMP efficiencies in `plet_rusle`
 
-BMP efficiencies operate on the two production pathways independently.
+BMP efficiencies operate on the two production pathways independently and use the same standardized fixed-value/distribution columns as other numeric inputs.
 
 ```csv
-cps,pollutant,pathway,mean,min,max
-340,TN,surface,0.35,0.20,0.50
-340,TN,subsurface,0.10,0.00,0.20
-340,TP,surface,0.25,0.10,0.40
-340,TP,subsurface,0.00,0.00,0.00
+cps,pollutant,pathway,value,distribution_id,mean,sd,min,max
+340,TN,surface,,,0.35,,0.20,0.50
+340,TN,subsurface,0,,,,,
+340,TP,surface,,,0.25,,0.10,0.40
 ```
 
 ### Surface efficiency
@@ -210,11 +248,17 @@ Unexpected pathway labels such as `shallow subsurface` or `deep subsurface` are 
 
 This prevents an incorrectly labeled row from silently changing infiltration-derived nutrient treatment.
 
+## Standardized values and distributions
+
+PLET parameters, RUSLE parameters, runoff concentrations, groundwater concentrations, hydrology inputs, BMP efficiencies, and BMP costs can all use the common fixed-value/distribution schema where those inputs are numeric. Reusable definitions can be placed in `input_distributions.csv` and referenced with `distribution_id`.
+
+See [Standardized numeric inputs and distributions](input_distributions.md).
+
 ## Removed/legacy configuration concepts
 
 `load_generation.pathway_mode` has been removed. `plet_rusle` always derives its two production pathways from PLET/RUSLE inputs.
 
-Legacy `groundwater_loads` and `treat_groundwater_with_bmps` keys do not determine production pathway generation. The current production calculation always estimates subsurface load from groundwater concentration and lookup-derived infiltration. Whether a BMP reduces that load is determined by the BMP's `subsurface` efficiency.
+Legacy `groundwater_loads` and `treat_groundwater_with_bmps` keys do not determine production pathway generation. The current production calculation always estimates subsurface load from groundwater concentration and sampled infiltration. Whether a BMP reduces that load is determined by the BMP's `subsurface` efficiency.
 
 `pollutant_yield` and statistical pathway-fraction settings are not used to generate baseline PLET/RUSLE loads.
 
