@@ -12,7 +12,7 @@ import run_model
 
 def test_example_config_runs_end_to_end(tmp_path, monkeypatch) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    example_cfg = repo_root / "examples" / "east_fork" / "east_fork.yaml"
+    example_cfg = repo_root / "examples" / "east_fork" / "inputs" / "default" / "east_fork.yaml"
     cfg = yaml.safe_load(example_cfg.read_text(encoding="utf-8"))
 
     cfg["outputs"] = str(tmp_path / "outputs")
@@ -40,7 +40,7 @@ def test_example_config_runs_end_to_end(tmp_path, monkeypatch) -> None:
 
 def test_plet_groundwater_is_rain_corrected_and_unchanged_by_bmps(tmp_path, monkeypatch) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    example_cfg = repo_root / "examples" / "east_fork" / "east_fork_plet.yaml"
+    example_cfg = repo_root / "examples" / "east_fork" / "inputs" / "plet" / "east_fork_plet.yaml"
     cfg = yaml.safe_load(example_cfg.read_text(encoding="utf-8"))
 
     cfg["outputs"] = str(tmp_path / "outputs")

@@ -14,7 +14,6 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import numpy as np
 import pandas as pd
-
 from .constants import (
     CFG_BMP_COST,
     CFG_OUTLET_MEAN,
@@ -40,21 +39,9 @@ from .constants import DIR_OUTLET_TRAJECTORIES, FILE_ALL_SCENARIOS_PARQUET
 def _build_denominator_maps(
     data: Dict[str, Any],
 ) -> Tuple[Dict[Tuple[str, str], float], Dict[Tuple[str, str], float]]:
-    """Build denominator lookup maps for outlet plots.
-
-    Parameters
-    ----------
-    data : dict[str, Any]
-        Validated data bundle containing optional outlet summary tables.
-
-    Returns
-    -------
-    tuple[dict[tuple[str, str], float], dict[tuple[str, str], float]]
-        Target and mean denominator maps keyed by outlet ID and pollutant.
-    """
+    """Build denominator lookup maps for outlet plots."""
     target_map: Dict[Tuple[str, str], float] = {}
     mean_map: Dict[Tuple[str, str], float] = {}
-
     tgt_df = data.get(DATA_OUTLET_TARGET)
     if tgt_df is not None and not tgt_df.empty:
         for _, row in tgt_df.iterrows():
@@ -63,7 +50,6 @@ def _build_denominator_maps(
                 target_map[key] = float(row[COL_TARGET])
             except (TypeError, ValueError):
                 continue
-
     mean_df = data.get(DATA_OUTLET_MEAN)
     if mean_df is not None and not mean_df.empty:
         for _, row in mean_df.iterrows():
@@ -76,37 +62,61 @@ def _build_denominator_maps(
     return target_map, mean_map
 
 
-def _load_records_from_trajectory_table(path: Path) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
-    """Load canonical trajectory rows into the plotting record shape.
-
-    Parameters
-    ----------
-    path : pathlib.Path
-        Path to the canonical parquet trajectory table.
-
-    Returns
-    -------
-    dict[tuple[str, str, str, str], list[tuple[int, float, float]]]
-        Legacy plot record structure keyed by pollutant, outlet, x-axis, and
-        y-axis.
-
-    Raises
-    ------
-    ValueError
-        If required columns are missing from the parquet file.
-    """
+def _load_records_from_trajectory_table(
+    path: Path,
+) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
+    """Load canonical trajectory rows into the plotting record shape."""
     df = pd.read_parquet(path)
     needed = {"scenario", "pollutant", "oid", "x_axis", "y_axis", "step", "x_value", "y_value"}
     if not needed.issubset(set(df.columns)):
         missing = sorted(needed - set(df.columns))
         raise ValueError(f"Canonical trajectory table is missing required columns: {missing}")
-
     out: Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]] = defaultdict(list)
+    # Canonical trajectory rows explicitly carry simulation step. Preserve that
+    # ordering so plots follow BMP application order rather than sorting by the
+    # numeric x value after the fact.
     df = df.sort_values(["scenario", "pollutant", "oid", "x_axis", "y_axis", "step"])
     for _, row in df.iterrows():
         key = (str(row["pollutant"]), str(row["oid"]), str(row["x_axis"]), str(row["y_axis"]))
         out[key].append((int(row["scenario"]), float(row["x_value"]), float(row["y_value"])))
     return out
+
+
+def _build_line_segments(
+    by_scenario: Dict[int, List[Tuple[float, float]]],
+    *,
+    pollutant: str,
+    oid: str,
+    x_axis: str,
+    y_axis: str,
+) -> List[List[Tuple[float, float]]]:
+    """Build plot line segments while preserving simulation record order.
+
+    Non-finite trajectory coordinates are treated as invalid model output and
+    raise an actionable error instead of silently producing an empty or
+    malformed plot.
+    """
+    lines: List[List[Tuple[float, float]]] = []
+    for sid, points in sorted(by_scenario.items()):
+        xs = [0.0]
+        ys = [0.0]
+        for point_index, (raw_x, raw_y) in enumerate(points, start=1):
+            x_value = float(raw_x)
+            y_value = float(raw_y)
+            if not np.isfinite(x_value) or not np.isfinite(y_value):
+                raise ValueError(
+                    "Non-finite trajectory value while plotting: "
+                    f"scenario={sid}, pollutant={pollutant}, outlet={oid}, "
+                    f"x_axis={x_axis}, y_axis={y_axis}, point={point_index}, "
+                    f"x_value={x_value}, y_value={y_value}"
+                )
+            xs.append(x_value)
+            ys.append(y_value)
+
+        lines.extend(
+            [[(xs[i], ys[i]), (xs[i + 1], ys[i + 1])] for i in range(len(xs) - 1)]
+        )
+    return lines
 
 
 def make_summary_plots(
@@ -116,25 +126,7 @@ def make_summary_plots(
     outputs_dir: Path,
     logger,
 ) -> None:
-    """Write one plot image per pollutant/outlet/axis combination.
-
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Scenario configuration mapping.
-    data : dict[str, Any]
-        Validated data bundle.
-    scenario_records : dict[tuple[str, str, str, str], list[tuple[int, float, float]]] or None
-        In-memory plotting records, if already available.
-    outputs_dir : pathlib.Path
-        Directory where plot images should be written.
-    logger : Any
-        Logger used for progress and warning messages.
-
-    Returns
-    -------
-    None
-    """
+    """Write one plot image per pollutant/outlet/axis combination."""
     scenario_records = scenario_records or {}
     canonical_traj = Path(outputs_dir) / DIR_OUTLET_TRAJECTORIES / FILE_ALL_SCENARIOS_PARQUET
     # Prefer in-memory records produced by the current run; loading/parsing the
@@ -148,7 +140,6 @@ def make_summary_plots(
                 f"Failed to load canonical trajectory table ({canonical_traj}); "
                 f"falling back to in-memory records: {ex}"
             )
-
     pollutants = data[DATA_POLLUTANTS]
     oids = [str(x) for x in data[DATA_OUTLET_LOC][COL_OID].astype(str).tolist()]
     logger.verbose(f"Generating summary plots for pollutants={pollutants} outlets={oids}")
@@ -162,13 +153,11 @@ def make_summary_plots(
         y_axes.append(YAXIS_TARGET)
     if cfg.get(CFG_OUTLET_MEAN):
         y_axes.append(YAXIS_MEAN)
-
     target_map, mean_map = _build_denominator_maps(data)
     warned_missing_denominator = set()
 
     plots_dir = Path(outputs_dir) / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
-
     with log_scope(logger=logger):
         for pol in pollutants:
             for oid in oids:
@@ -197,31 +186,33 @@ def make_summary_plots(
                                         )
                                         warned_missing_denominator.add(key)
                                     continue
-
-                            by_scenario = defaultdict(list)
+                            by_scenario: Dict[int, List[Tuple[float, float]]] = defaultdict(list)
                             for (p, o, xa, ya), trip in scenario_records.items():
                                 if p == pol and o == oid and xa == xax and ya == yax:
-                                    for (sid, xx, yy) in trip:
+                                    for sid, xx, yy in trip:
                                         by_scenario[sid].append((xx, yy))
                             if not by_scenario:
                                 continue
 
+                            lines = _build_line_segments(
+                                by_scenario,
+                                pollutant=str(pol),
+                                oid=str(oid),
+                                x_axis=str(xax),
+                                y_axis=str(yax),
+                            )
+                            if not lines:
+                                logger.warning(
+                                    f"Skipping empty plot for pol={pol} oid={oid} x={xax} y={yax}: "
+                                    "no trajectory segments"
+                                )
+                                continue
+
                             plt.figure(figsize=(7, 5), dpi=200)
                             ax = plt.gca()
-
-                            # Draw multi-segment lines scenario-by-scenario (baseline at 0,0)
-                            lines = []
-                            for sid, pts in sorted(by_scenario.items()):
-                                pts = sorted(pts, key=lambda t: t[0])
-                                xs = [0] + [x for x, _ in pts]
-                                ys = [0] + [y for _, y in pts]
-                                segments = [[(xs[i], ys[i]), (xs[i + 1], ys[i + 1])] for i in range(len(xs) - 1)]
-                                lines.extend(segments)
-
                             lc = LineCollection(lines, colors="steelblue", linewidths=1.25, alpha=0.5)
                             ax.add_collection(lc)
                             ax.autoscale()
-
                             plt.xlabel("total cost (USD)" if xax == XAXIS_COST else "total bmp count")
                             if yax == YAXIS_TOTAL:
                                 plt.ylabel(f"total {pol} load reduction (delivered)")
@@ -229,13 +220,13 @@ def make_summary_plots(
                                 plt.ylabel(f"{pol} reduction (% of target)")
                             else:
                                 plt.ylabel(f"{pol} reduction (% of mean load)")
-
                             plt.title(f"{pol} | outlet {oid} | x={xax} | y={yax}")
                             plt.grid(True, linestyle=":", linewidth=0.5, alpha=0.6)
-
                             fname = plots_dir / f"plot_{pol}_oid{oid}_x{xax}_y{yax}.jpg"
                             plt.tight_layout()
-                            logger.verbose(f"Saving plot file={fname} xax={xax} yax={yax} pollutant={pol} oid={oid}")
+                            logger.verbose(
+                                f"Saving plot file={fname} xax={xax} yax={yax} pollutant={pol} oid={oid}"
+                            )
                             plt.savefig(fname, format="jpg", dpi=300)
                             plt.close()
                             logger.info(f"Saved plot: {fname}")

@@ -12,7 +12,6 @@ from typing import Dict, Optional, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .model import Model
-
 from .constants import (
     COL_CPS,
     DATA_AVG_PERIM_M,
@@ -31,6 +30,28 @@ PROB_EST_WETLAND_MAX_AREA_HA: float = 0.8
 PROB_EST_BUFFER_PERIM_FRACTION: float = 0.2
 
 FT_TO_M = 0.3048  # meters per foot
+
+
+def _finite_numeric_row_values(row: pd.Series) -> Dict[str, float]:
+    """Return finite numeric row values keyed by normalized column name.
+
+    Blank cells in standardized input tables are commonly represented as NaN.
+    Those cells must behave as absent statistics rather than overriding other
+    valid distribution parameters (for example, a blank ``value`` alongside
+    valid ``min``/``max`` bounds).
+    """
+    values: Dict[str, float] = {}
+    for key, raw_value in row.items():
+        if pd.isna(raw_value):
+            continue
+        try:
+            numeric_value = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if not np.isfinite(numeric_value):
+            continue
+        values[str(key).lower()] = numeric_value
+    return values
 
 
 def _get_bmp_cost(
@@ -64,18 +85,23 @@ def _get_bmp_cost(
         if bmp_cost_df.empty:
             self.logger.verbose(f"no cost entry found for cps={cps}; returning cost=$0.0")
             return 0.0
-
         row = bmp_cost_df.iloc[0]  # Assumes one row per CPS; validated upstream
         unit = str(row[COL_UNIT]).lower().strip()
 
+        finite_values = _finite_numeric_row_values(row)
         stats: Dict[str, float] = {
-            k: row[k]
-            for k in row.index
-            if k in ("value", "mean", "sd", "min", "max") or (str(k).startswith("p") and str(k)[1:].isdigit())
+            key: value
+            for key, value in finite_values.items()
+            if key in ("value", "mean", "sd", "min", "max")
+            or (key.startswith("p") and key[1:].isdigit())
         }
-        rate_value = float(self._sample_from_stats(stats, kind=None))
-        self.logger.verbose(f"sampled cost rate {rate_value:.4f} for cps={cps}, unit={unit}")
+        if not stats:
+            raise ValueError(f"No finite BMP cost value or distribution statistics for cps={cps}")
 
+        rate_value = float(self._sample_from_stats(stats, kind=None))
+        if not np.isfinite(rate_value):
+            raise ValueError(f"Sampled non-finite BMP cost rate for cps={cps}: {rate_value}")
+        self.logger.verbose(f"sampled cost rate {rate_value:.4f} for cps={cps}, unit={unit}")
         cost_total: float
         if unit in ("usd/ha", "usd per ha", "usd_per_ha", "usd per unit area"):
             if quantity and quantity > 0:
@@ -86,7 +112,6 @@ def _get_bmp_cost(
                 else:
                     area_ha = float(self.data[DATA_AVG_AREA_HA])
             cost_total = rate_value * area_ha
-
         elif unit in ("usd/m", "usd per m", "usd_per_m", "usd per unit length"):
             if quantity and quantity > 0:
                 # quantity represents area_ha for grassed buffers; convert to length via depth (m)
@@ -98,12 +123,13 @@ def _get_bmp_cost(
                 # Fallback to average-perimeter heuristic (selection-time heuristic reused)
                 length_m = float(PROB_EST_BUFFER_PERIM_FRACTION * self.data[DATA_AVG_PERIM_M])
             cost_total = rate_value * length_m
-
         elif unit in ("usd/project", "usd per project", "usd_per_project"):
             cost_total = rate_value * 1.0
         else:
             cost_total = rate_value
 
+        if not np.isfinite(cost_total):
+            raise ValueError(f"Computed non-finite BMP cost for cps={cps}: {cost_total}")
         self.logger.verbose(
             f"computed cost for cps={cps} using rate={rate_value:.4f}, unit='{unit}', "
             f"realized_quantity={quantity:.4f} => cost={cost_total:.2f}"
@@ -135,27 +161,35 @@ def _select_cost_rate_median(
     Raises
     ------
     ValueError
-        If no representative rate can be inferred from the row.
+        If no representative finite rate can be inferred from the row.
     """
     with log_scope(label=f"select_cost_rate_median cps={cps}", logger=self.logger):
         self.logger.verbose("calling _select_cost_rate_median")
-        cols = {str(k).lower(): v for k, v in row.items()}
+        cols = _finite_numeric_row_values(row)
 
         if "value" in cols:
-            rate_value = float(cols["value"])
+            rate_value = cols["value"]
         elif "p50" in cols:
-            rate_value = float(cols["p50"])
+            rate_value = cols["p50"]
         elif "median" in cols:
-            rate_value = float(cols["median"])
+            rate_value = cols["median"]
         elif any(k in cols for k in ("mean", "average", "avg")):
-            rate_value = float(cols.get("mean", cols.get("average", cols.get("avg"))))
+            rate_value = cols.get("mean", cols.get("average", cols.get("avg")))
         else:
-            rate_min = float(cols.get("min", cols.get("minimum", cols.get("p0"))))
-            rate_max = float(cols.get("max", cols.get("maximum", cols.get("p100"))))
+            rate_min = next(
+                (cols[k] for k in ("min", "minimum", "p0") if k in cols),
+                None,
+            )
+            rate_max = next(
+                (cols[k] for k in ("max", "maximum", "p100") if k in cols),
+                None,
+            )
+            if rate_min is None or rate_max is None:
+                raise ValueError(f"Could not determine finite cost rate for cps={cps}")
             rate_value = (rate_min + rate_max) / 2.0
 
-        if rate_value is None:
-            raise ValueError(f"Could not determine cost rate for cps={cps}")
+        if rate_value is None or not np.isfinite(float(rate_value)):
+            raise ValueError(f"Could not determine finite cost rate for cps={cps}")
         self.logger.verbose(f"selected representative cost rate {rate_value:.4f} for cps={cps}")
         return float(rate_value)
 
@@ -185,15 +219,15 @@ def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
     with log_scope(label="estimate_costs_for_probabilities", logger=self.logger):
         self.logger.verbose("calling _estimate_costs_for_probabilities")
         rows: list[Dict[str, float]] = []
-
         for cps in sorted(set(int(x) for x in self.data[DATA_CPS])):
             bmp_cost_df = self.data[DATA_BMP_COST]
             sub = bmp_cost_df[bmp_cost_df[COL_CPS].astype(int) == int(cps)]
             if sub.empty:
-                self.logger.warning(f"no cost entry found for cps={cps}; assigning small placeholder cost for probability estimation")
+                self.logger.warning(
+                    f"no cost entry found for cps={cps}; assigning small placeholder cost for probability estimation"
+                )
                 rows.append({"cps": int(cps), "est_total_cost": float(0.01)})
                 continue
-
             row = sub.iloc[0]
             unit = str(row[COL_UNIT]).lower().strip()
             rate_value = self._select_cost_rate_median(row, cps=cps)
@@ -204,7 +238,6 @@ def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
                 else:
                     area_ha = float(self.data[DATA_AVG_AREA_HA])
                 total = rate_value * area_ha
-
             elif unit in ("usd/m", "usd per m", "usd_per_m", "usd per unit length"):
                 length_m = float(PROB_EST_BUFFER_PERIM_FRACTION * self.data[DATA_AVG_PERIM_M])
                 total = rate_value * length_m
@@ -214,20 +247,24 @@ def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
             else:
                 total = rate_value
 
+            if not np.isfinite(total):
+                raise ValueError(f"Computed non-finite representative BMP cost for cps={cps}: {total}")
             rows.append({"cps": int(cps), "est_total_cost": float(max(total, 0.01))})
-
         df = pd.DataFrame(rows)
         if df.empty:
             raise ValueError("Could not estimate costs for probability computation")
 
         inv = 1.0 / df["est_total_cost"].values
         probs = inv / inv.sum()
+        if not np.all(np.isfinite(probs)):
+            raise ValueError("Cost-based BMP selection produced non-finite probabilities")
         df[COL_PROBABILITY] = probs
-
         self.logger.verbose(
             "Probability estimation constants: "
             f"PROB_EST_WETLAND_MAX_AREA_HA={PROB_EST_WETLAND_MAX_AREA_HA}, "
             f"PROB_EST_BUFFER_PERIM_FRACTION={PROB_EST_BUFFER_PERIM_FRACTION}"
         )
-        self.logger.verbose(f"estimated probabilities: {df[[COL_CPS, COL_PROBABILITY]].to_dict(orient='records')}")
+        self.logger.verbose(
+            f"estimated probabilities: {df[[COL_CPS, COL_PROBABILITY]].to_dict(orient='records')}"
+        )
         return df[[COL_CPS, COL_PROBABILITY]]
