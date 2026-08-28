@@ -119,6 +119,89 @@ from src.constants import (
 )
 
 
+# Current production runs use an annual timestep. Multiplying annual load rates
+# (kg/yr) by one year converts them to mass (kg) without changing the numeric
+# value. Future dynamic implementations should replace this constant with the
+# actual timestep duration in years before aggregating mass.
+_CURRENT_TIMESTEP_YEARS = 1.0
+
+
+def _safe_mass_ratio(numerator: float, denominator: float) -> Optional[float]:
+    """Return a dimensionless mass ratio, or ``None`` when undefined."""
+    numerator = float(numerator)
+    denominator = float(denominator)
+    if not np.isfinite(numerator) or not np.isfinite(denominator) or denominator <= 0.0:
+        return None
+    return numerator / denominator
+
+
+def _bmp_impacted_parcel_indices(ctx: Any, parcel_idx: int, bmp_rec: Dict[str, Any]) -> List[int]:
+    """Return full-hydrologic-universe parcel indices represented by one BMP.
+
+    For wetlands, ``impacted_pids`` may include upstream parcels in addition to
+    the placement parcel. Other BMP types operate on the placement parcel only.
+    The placement parcel is always included defensively even when the wetland
+    output contains an empty or partial impacted-PID string.
+    """
+    pids: List[str] = [str(ctx.parcel_ids[parcel_idx])]
+    raw = str(bmp_rec.get(OUTPUT_IMPACTED_PIDS, "") or "")
+    for token in raw.split(","):
+        pid = token.strip()
+        if pid and pid not in pids:
+            pids.append(pid)
+    pid_to_index = getattr(ctx, "pid_to_index", None) or {
+        str(pid): idx for idx, pid in enumerate(ctx.parcel_ids)
+    }
+    return [int(pid_to_index[pid]) for pid in pids if pid in pid_to_index]
+
+
+def _baseline_mass_before_bmp_kg(
+    ctx: Any,
+    pre_bmp_yields: np.ndarray,
+    parcel_idx: int,
+    bmp_rec: Dict[str, Any],
+) -> np.ndarray:
+    """Calculate pre-BMP pollutant mass for the parcels represented by a BMP.
+
+    ``pre_bmp_yields`` contains the current load rate immediately before this
+    BMP is applied. For the present annual model, rate × area × 1 year gives kg.
+    Wetland denominators include all hydrologically impacted parcels identified
+    by the wetland routine, including parcels that are not BMP-selectable.
+    """
+    n_pol = int(pre_bmp_yields.shape[1])
+    mass = np.zeros(n_pol, dtype=float)
+    for idx in _bmp_impacted_parcel_indices(ctx, parcel_idx, bmp_rec):
+        area_ha = float(ctx.parcel_area_ha[idx])
+        mass += np.asarray(pre_bmp_yields[idx, :], dtype=float) * area_ha * _CURRENT_TIMESTEP_YEARS
+    return mass
+
+
+def _add_mass_metrics_to_bmp_record(
+    bmp_rec: Dict[str, Any],
+    pollutants: List[str],
+    baseline_mass_kg: np.ndarray,
+    treated_mass_kg: np.ndarray,
+    removed_mass_kg: np.ndarray,
+) -> None:
+    """Write explicit mass accounting and dimensionless BMP metrics to a record."""
+    bmp_rec["mass_timestep_years"] = float(_CURRENT_TIMESTEP_YEARS)
+    for pol_idx, pol in enumerate(pollutants):
+        baseline_mass = float(baseline_mass_kg[pol_idx])
+        treated_mass = float(treated_mass_kg[pol_idx])
+        removed_mass = float(removed_mass_kg[pol_idx])
+
+        bmp_rec[f"baseline_mass_{pol}_kg"] = baseline_mass
+        bmp_rec[f"treated_baseline_mass_{pol}_kg"] = treated_mass
+        bmp_rec[f"removed_mass_{pol}_kg"] = removed_mass
+
+        exposure = _safe_mass_ratio(treated_mass, baseline_mass)
+        realized = _safe_mass_ratio(removed_mass, treated_mass)
+        overall = _safe_mass_ratio(removed_mass, baseline_mass)
+        bmp_rec[f"treatment_exposure_fraction_{pol}"] = exposure
+        bmp_rec[f"realized_efficiency_{pol}"] = realized
+        bmp_rec[f"overall_reduction_fraction_{pol}"] = overall
+
+
 
 
 class Model:
@@ -683,6 +766,11 @@ def _run_one_scenario(
 
                 bmp_outputs = {OUTPUT_TREATED: np.zeros(n_pol, dtype=float), OUTPUT_REMOVED: np.zeros(n_pol, dtype=float)}
 
+                # Preserve the current pre-BMP load state long enough to derive a
+                # true mass denominator after the BMP routine identifies its
+                # impacted parcels. This is especially important for wetlands.
+                pre_bmp_yields = yields.copy()
+
                 # Apply BMP using sampled efficiency by flow pathway.
                 if cps in (656, 657):
                     ctx._simulate_wetland(parcel_idx, eff_maps, yields, bmp_rec, bmp_outputs)
@@ -702,18 +790,31 @@ def _run_one_scenario(
                 # Mark CPS as applied for this parcel
                 applied_by_pid[str(pid)].add(int(cps))
 
-                # Finalize the BMP record
+                # Finalize the BMP record. Existing treated_/removed_ fields are
+                # retained as backward-compatible annual mass-rate aliases. New
+                # explicit *_mass_* fields are interpreted as kg over the current
+                # one-year timestep and are the basis for all dimensionless metrics.
                 bmp_rec[OUTPUT_COST_USD] = cost_this
+                treated_mass_kg = np.asarray(bmp_outputs[OUTPUT_TREATED], dtype=float) * _CURRENT_TIMESTEP_YEARS
+                removed_mass_kg = np.asarray(bmp_outputs[OUTPUT_REMOVED], dtype=float) * _CURRENT_TIMESTEP_YEARS
+                baseline_mass_kg = _baseline_mass_before_bmp_kg(
+                    ctx, pre_bmp_yields, parcel_idx, bmp_rec
+                )
+                _add_mass_metrics_to_bmp_record(
+                    bmp_rec,
+                    list(ctx.pollutants),
+                    baseline_mass_kg,
+                    treated_mass_kg,
+                    removed_mass_kg,
+                )
                 for pol_idx, pol in enumerate(ctx.pollutants):
                     bmp_rec[f"{OUTPUT_TREATED_PREFIX}{pol}"] = float(bmp_outputs[OUTPUT_TREATED][pol_idx])
                     bmp_rec[f"{OUTPUT_REMOVED_PREFIX}{pol}"] = float(bmp_outputs[OUTPUT_REMOVED][pol_idx])
                 scenario_bmps.append(bmp_rec)
 
-                # Add to summary collector
-                pid_baseline_yields = {
-                    pol: float(baseline[parcel_idx, i]) for i, pol in enumerate(ctx.pollutants)
-                }
-                collector.add_bmp_record(bmp_rec, pid_baseline_yields)
+                # Summary metrics are calculated from accumulated masses rather
+                # than from parcel yield-rate denominators or averaged efficiencies.
+                collector.add_bmp_record(bmp_rec)
 
                 # Delivered reductions for plots
                 oids = ctx._get_parcel_out_oids(parcel_idx)
