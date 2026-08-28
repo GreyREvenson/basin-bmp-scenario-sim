@@ -22,74 +22,36 @@ from .constants import (
 )
 
 
-def _sample_yield(self: "Model", parcel_idx: int, pol_idx: int) -> float:
-    """Sample a baseline pollutant yield for one parcel and pollutant.
+def _sample_load_rate(self: "Model", parcel_idx: int, pol_idx: int) -> float:
+    """Sample a baseline areal pollutant load rate for one parcel/pollutant.
 
-    Parameters
-    ----------
-    self : Model
-        Active simulation model instance.
-    parcel_idx : int
-        Index of the parcel in the model arrays.
-    pol_idx : int
-        Index of the pollutant in ``self.pollutants``.
-
-    Returns
-    -------
-    float
-        Sampled pollutant yield for the requested parcel/pollutant pair.
-
-    Raises
-    ------
-    KeyError
-        If no yield statistics exist for the requested parcel and pollutant.
+    In the current annual model the returned value has units of kg/ha/yr.
+    Dynamic implementations can retain this helper name while changing the
+    rate's time basis explicitly in the timestep state.
     """
-    stats = self.pollutant_yield_stats[parcel_idx][pol_idx]
+    stats = self.pollutant_load_rate_stats[parcel_idx][pol_idx]
     if stats is None:
         raise KeyError(
-            f"No pollutant yield stats found for pid={self.parcel_ids[parcel_idx]}, pollutant={self.pollutants[pol_idx]}"
+            "No pollutant load-rate stats found for "
+            f"pid={self.parcel_ids[parcel_idx]}, pollutant={self.pollutants[pol_idx]}"
         )
-    return self._sample_from_stats(stats, kind="yield")
+    return self._sample_from_stats(stats, kind="load_rate")
+
+
+# Backward-compatible helper alias. New internal code should use
+# ``_sample_load_rate``; ``pollutant_yield`` remains the public input name.
+_sample_yield = _sample_load_rate
 
 
 def _sample_parcel_index(self: "Model") -> int:
-    """Sample the next parcel to receive a BMP attempt.
-
-    Parameters
-    ----------
-    self : Model
-        Active simulation model instance.
-
-    Returns
-    -------
-    int
-        Index into ``self.parcel_selection_ids`` for the selected parcel.
-    """
+    """Sample the next parcel to receive a BMP attempt."""
     idx = self.rng.choice(len(self.parcel_selection_ids), p=self.parcel_selection_probs)
     self.logger.verbose(f"selected parcel idx={idx} with pid={self.parcel_selection_ids[idx]}")
     return idx
 
 
 def _get_parcel_metadata(self: "Model", pid: Union[int, str]) -> pd.Series:
-    """Return metadata for one parcel.
-
-    Parameters
-    ----------
-    self : Model
-        Active simulation model instance.
-    pid : int or str
-        Parcel identifier.
-
-    Returns
-    -------
-    pandas.Series
-        Row of parcel metadata for the requested parcel.
-
-    Raises
-    ------
-    KeyError
-        If the parcel ID is not present after clipping to the domain.
-    """
+    """Return metadata for one parcel."""
     sub = self.data[DATA_PARCELS]
     match = sub[sub[COL_PID].astype(str) == str(pid)]
     if match.empty:
@@ -101,59 +63,17 @@ def _get_parcel_metadata(self: "Model", pid: Union[int, str]) -> pd.Series:
 
 
 def _get_parcel_up_list(self: "Model", pid: Union[int, str]) -> List[str]:
-    """Return upstream parcel IDs for one parcel.
-
-    Parameters
-    ----------
-    self : Model
-        Active simulation model instance.
-    pid : int or str
-        Parcel identifier.
-
-    Returns
-    -------
-    list[str]
-        Parcel IDs that drain into the requested parcel.
-    """
+    """Return upstream parcel IDs for one parcel."""
     return list(self.data[DATA_PARCEL_UP_MAP].get(str(pid), []))
 
 
 def _get_parcel_out_oids(self: "Model", parcel_idx: int) -> List[str]:
-    """Return outlet IDs connected to one parcel.
-
-    Parameters
-    ----------
-    self : Model
-        Active simulation model instance.
-    parcel_idx : int
-        Parcel index.
-
-    Returns
-    -------
-    list[str]
-        Outlet IDs connected to the selected parcel.
-    """
+    """Return outlet IDs connected to one parcel."""
     return list(self.parcel_out_oids[parcel_idx])
 
 
 def _get_delivery_coeffs(self: "Model", pid: Union[int, str], oid: Union[int, str]) -> Dict[str, float]:
-    """Return delivery coefficients for a parcel-to-outlet path.
-
-    Parameters
-    ----------
-    self : Model
-        Active simulation model instance.
-    pid : int or str
-        Parcel identifier.
-    oid : int or str
-        Outlet identifier.
-
-    Returns
-    -------
-    dict[str, float]
-        Delivery factors for sediment and nutrient routing. Missing entries
-        default to ``1.0`` for every factor.
-    """
+    """Return delivery coefficients for a parcel-to-outlet path."""
     return self.delivery_coeffs.get(
         (str(pid), str(oid)),
         dict(sdr_f_to_s=1.0, sdr_s_to_o=1.0, ndr_f_to_s=1.0, ndr_s_to_o=1.0),

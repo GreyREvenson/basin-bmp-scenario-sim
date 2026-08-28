@@ -8,14 +8,14 @@ import pytest
 
 from src.bmp import (
     _apply_pathway_reduction,
-    _get_current_total_yield,
-    _get_pathway_yields,
+    _get_current_total_load_rate,
+    _get_pathway_load_rates,
     _simulate_infield,
 )
 from src.constants import OUTPUT_REMOVED, OUTPUT_TREATED
 from src.load_generation import (
     INCH_OVER_HA_TO_LITERS,
-    calculate_load_components,
+    calculate_load_rate_components,
     plet_annual_infiltration_in,
 )
 
@@ -34,7 +34,6 @@ def _plet_parameters() -> dict[str, float]:
 
 def test_plet_infiltration_uses_rain_corrected_precipitation() -> None:
     parameters = _plet_parameters() | {"groundwater_multiplier": 1.25}
-
     assert plet_annual_infiltration_in(parameters) == pytest.approx(
         10.0 * 0.5 * 0.2 * 1.25
     )
@@ -42,28 +41,26 @@ def test_plet_infiltration_uses_rain_corrected_precipitation() -> None:
 
 def test_plet_runoff_load_is_always_assigned_to_surface_pathway() -> None:
     parameters = _plet_parameters() | {"ia_ratio": 0.0}
-    pathways, untreated_groundwater = calculate_load_components(
+    pathway_load_rates, untreated_groundwater_load_rates = calculate_load_rate_components(
         parameters,
         {"TN": 2.0},
         None,
         ["TN"],
     )
-
-    assert pathways[0, 0] > 0.0
-    assert pathways[0, 1:] == pytest.approx([0.0, 0.0])
-    assert untreated_groundwater[0] == pytest.approx(0.0)
+    assert pathway_load_rates[0, 0] > 0.0
+    assert pathway_load_rates[0, 1:] == pytest.approx([0.0, 0.0])
+    assert untreated_groundwater_load_rates[0] == pytest.approx(0.0)
 
 
 def test_untreated_groundwater_is_separate_and_mass_balanced() -> None:
     parameters = _plet_parameters()
-    expected_groundwater = (
+    expected_groundwater_load_rate = (
         4.0
         * plet_annual_infiltration_in(parameters)
         * INCH_OVER_HA_TO_LITERS
         / 1_000_000.0
     )
-
-    pathways, untreated_groundwater = calculate_load_components(
+    pathway_load_rates, untreated_groundwater_load_rates = calculate_load_rate_components(
         parameters,
         {"TN": 0.0},
         {"TN": 4.0},
@@ -71,23 +68,26 @@ def test_untreated_groundwater_is_separate_and_mass_balanced() -> None:
         groundwater_loads=True,
         treat_groundwater_with_bmps=False,
     )
-    totals = np.sum(pathways, axis=1) + untreated_groundwater
+    total_load_rates = np.sum(pathway_load_rates, axis=1) + untreated_groundwater_load_rates
 
-    assert pathways[0] == pytest.approx([0.0, 0.0, 0.0])
-    assert untreated_groundwater[0] == pytest.approx(expected_groundwater)
-    assert totals[0] == pytest.approx(pathways[0].sum() + untreated_groundwater[0])
+    assert pathway_load_rates[0] == pytest.approx([0.0, 0.0, 0.0])
+    assert untreated_groundwater_load_rates[0] == pytest.approx(
+        expected_groundwater_load_rate
+    )
+    assert total_load_rates[0] == pytest.approx(
+        pathway_load_rates[0].sum() + untreated_groundwater_load_rates[0]
+    )
 
 
 def test_treatable_groundwater_uses_configured_shallow_deep_split() -> None:
     parameters = _plet_parameters() | {"fraction_subsurface_shallow": 0.25}
-    expected_groundwater = (
+    expected_groundwater_load_rate = (
         4.0
         * plet_annual_infiltration_in(parameters)
         * INCH_OVER_HA_TO_LITERS
         / 1_000_000.0
     )
-
-    pathways, untreated_groundwater = calculate_load_components(
+    pathway_load_rates, untreated_groundwater_load_rates = calculate_load_rate_components(
         parameters,
         {"TN": 0.0},
         {"TN": 4.0},
@@ -96,10 +96,14 @@ def test_treatable_groundwater_uses_configured_shallow_deep_split() -> None:
         treat_groundwater_with_bmps=True,
     )
 
-    assert pathways[0] == pytest.approx(
-        [0.0, expected_groundwater * 0.25, expected_groundwater * 0.75]
+    assert pathway_load_rates[0] == pytest.approx(
+        [
+            0.0,
+            expected_groundwater_load_rate * 0.25,
+            expected_groundwater_load_rate * 0.75,
+        ]
     )
-    assert untreated_groundwater[0] == pytest.approx(0.0)
+    assert untreated_groundwater_load_rates[0] == pytest.approx(0.0)
 
 
 def test_infield_bmp_does_not_treat_or_reduce_protected_groundwater() -> None:
@@ -107,28 +111,30 @@ def test_infield_bmp_does_not_treat_or_reduce_protected_groundwater() -> None:
         logger=logging.getLogger("test-groundwater"),
         pollutants=["TN"],
         parcel_area_ha=np.array([2.0]),
-        current_pathway_yields=np.array([[[10.0, 0.0, 0.0]]]),
-        current_untreated_groundwater_yields=np.array([[4.0]]),
+        current_pathway_load_rates=np.array([[[10.0, 0.0, 0.0]]]),
+        current_untreated_groundwater_load_rates=np.array([[4.0]]),
     )
-    model._get_pathway_yields = MethodType(_get_pathway_yields, model)
-    model._get_current_total_yield = MethodType(_get_current_total_yield, model)
+    model._get_pathway_load_rates = MethodType(_get_pathway_load_rates, model)
+    model._get_current_total_load_rate = MethodType(_get_current_total_load_rate, model)
     model._apply_pathway_reduction = MethodType(_apply_pathway_reduction, model)
 
-    yields = np.array([[14.0]])
+    load_rates = np.array([[14.0]])
     outputs = {
         OUTPUT_TREATED: np.zeros(1, dtype=float),
         OUTPUT_REMOVED: np.zeros(1, dtype=float),
     }
-    efficiency = [{
-        "surface": 0.5,
-        "shallow subsurface": 0.5,
-        "deep subsurface": 0.5,
-    }]
+    efficiency = [
+        {
+            "surface": 0.5,
+            "shallow subsurface": 0.5,
+            "deep subsurface": 0.5,
+        }
+    ]
 
-    _simulate_infield(model, 0, efficiency, yields, {}, outputs)
+    _simulate_infield(model, 0, efficiency, load_rates, {}, outputs)
 
-    assert model.current_pathway_yields[0, 0] == pytest.approx([5.0, 0.0, 0.0])
-    assert model.current_untreated_groundwater_yields[0, 0] == pytest.approx(4.0)
-    assert yields[0, 0] == pytest.approx(9.0)
+    assert model.current_pathway_load_rates[0, 0] == pytest.approx([5.0, 0.0, 0.0])
+    assert model.current_untreated_groundwater_load_rates[0, 0] == pytest.approx(4.0)
+    assert load_rates[0, 0] == pytest.approx(9.0)
     assert outputs[OUTPUT_TREATED][0] == pytest.approx(20.0)
     assert outputs[OUTPUT_REMOVED][0] == pytest.approx(10.0)

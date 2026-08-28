@@ -3,7 +3,7 @@
 This module contains the logic used to choose best management practices
 (BMPs), sample their effectiveness, and apply their impacts to parcel-level
 pollutant loads. The functions are implemented as model helpers and operate
-on shared model state such as parcel geometry, pollutant yields, and
+on shared model state such as parcel geometry, pollutant load_rates, and
 simulation outputs.
 """
 
@@ -48,23 +48,29 @@ def _active_pathways(self: "Model") -> List[str]:
     return list(configured) if configured else list(PATHWAY_VALUES)
 
 
-def _get_pathway_yields(self: "Model", parcel_idx: int, pol_idx: int, total_yield: float) -> Dict[str, float]:
-    """Return current parcel yield contributions by active pathway."""
+def _get_pathway_load_rates(self: "Model", parcel_idx: int, pol_idx: int, total_load_rate: float) -> Dict[str, float]:
+    """Return current parcel areal load rate contributions by active pathway."""
     pathways = _active_pathways(self)
-    pathway_yields = getattr(self, "current_pathway_yields", None)
-    if pathway_yields is not None:
-        values = pathway_yields[parcel_idx, pol_idx, :]
+    pathway_load_rates = getattr(self, "current_pathway_load_rates", None)
+    if pathway_load_rates is None:
+        pathway_load_rates = getattr(self, "current_pathway_yields", None)  # deprecated state alias
+    if pathway_load_rates is not None:
+        values = pathway_load_rates[parcel_idx, pol_idx, :]
         return {pathways[i]: float(values[i]) for i in range(len(pathways))}
 
-    fractions = dict(getattr(self, "pollutant_yield_pathway_fractions", {}) or {})
+    fractions = dict(
+        getattr(self, "pollutant_load_rate_pathway_fractions", None)
+        or getattr(self, "pollutant_yield_pathway_fractions", {})
+        or {}
+    )
     if not fractions:
         if len(pathways) != 1:
-            raise ValueError("Multiple active pathways require tracked pathway yields or pathway fractions")
+            raise ValueError("Multiple active pathways require tracked pathway load_rates or pathway fractions")
         fractions = {pathways[0]: 1.0}
-    return {path: float(total_yield) * float(fractions.get(path, 0.0)) for path in pathways}
+    return {path: float(total_load_rate) * float(fractions.get(path, 0.0)) for path in pathways}
 
-def _get_current_total_yield(
-    self: "Model", parcel_idx: int, pol_idx: int, fallback_yield: float
+def _get_current_total_load_rate(
+    self: "Model", parcel_idx: int, pol_idx: int, fallback_load_rate: float
 ) -> float:
     """Return the current total across tracked pathways.
 
@@ -72,12 +78,16 @@ def _get_current_total_yield(
     compatibility with pre-revision scenario objects, but PLET/RUSLE now keeps
     all modeled nutrient load in surface/subsurface pathway state.
     """
-    pathway_yields = getattr(self, "current_pathway_yields", None)
-    if pathway_yields is None:
-        return float(fallback_yield)
-    protected = getattr(self, "current_untreated_groundwater_yields", None)
+    pathway_load_rates = getattr(self, "current_pathway_load_rates", None)
+    if pathway_load_rates is None:
+        pathway_load_rates = getattr(self, "current_pathway_yields", None)  # deprecated state alias
+    if pathway_load_rates is None:
+        return float(fallback_load_rate)
+    protected = getattr(self, "current_untreated_groundwater_load_rates", None)
+    if protected is None:
+        protected = getattr(self, "current_untreated_groundwater_yields", None)  # deprecated state alias
     protected_value = 0.0 if protected is None else float(protected[parcel_idx, pol_idx])
-    return float(np.sum(pathway_yields[parcel_idx, pol_idx, :]) + protected_value)
+    return float(np.sum(pathway_load_rates[parcel_idx, pol_idx, :]) + protected_value)
 
 
 def _apply_pathway_reduction(
@@ -87,7 +97,7 @@ def _apply_pathway_reduction(
     treatment_fraction: float,
     eff_map: Dict[str, float],
 ) -> float:
-    """Apply pathway-specific BMP reduction to in-memory pathway yields.
+    """Apply pathway-specific BMP reduction to in-memory pathway load_rates.
 
     The reduction is applied only when the model is tracking pathway-specific
     loads. Each pathway is reduced by ``treatment_fraction * eff_map[path]``.
@@ -112,19 +122,26 @@ def _apply_pathway_reduction(
     float
         Total load removed across all pathways.
     """
-    pathway_yields = getattr(self, "current_pathway_yields", None)
-    if pathway_yields is None:
+    pathway_load_rates = getattr(self, "current_pathway_load_rates", None)
+    if pathway_load_rates is None:
+        pathway_load_rates = getattr(self, "current_pathway_yields", None)  # deprecated state alias
+    if pathway_load_rates is None:
         return 0.0
 
-    removed = 0.0
+    removed_load_rate = 0.0
     for path_idx, path in enumerate(_active_pathways(self)):
-        current = float(pathway_yields[parcel_idx, pol_idx, path_idx])
+        current_load_rate = float(pathway_load_rates[parcel_idx, pol_idx, path_idx])
         eff = float(eff_map.get(path, 0.0))
-        new_value = max(0.0, current * (1.0 - treatment_fraction * eff))
-        removed += current - new_value
-        pathway_yields[parcel_idx, pol_idx, path_idx] = new_value
-    return float(removed)
+        new_value = max(0.0, current_load_rate * (1.0 - treatment_fraction * eff))
+        removed_load_rate += current_load_rate - new_value
+        pathway_load_rates[parcel_idx, pol_idx, path_idx] = new_value
+    return float(removed_load_rate)
 
+
+# Backward-compatible helper aliases for external callers/tests. Internal code
+# uses load-rate terminology so these names do not define model state.
+_get_pathway_yields = _get_pathway_load_rates
+_get_current_total_yield = _get_current_total_load_rate
 
 def _select_bmp_type(self: "Model") -> int:
     """Randomly choose the next BMP CPS code.
@@ -221,9 +238,9 @@ def _simulate_wetland(
     self: "Model",
     parcel_idx: int,
     eff_maps: Sequence[Dict[str, float]],
-    yields: np.ndarray,
+    load_rates: np.ndarray,
     bmp_rec: Dict[str, Any],
-    bmp_outputs: Dict[str, np.ndarray],
+    bmp_mass_rate_outputs: Dict[str, np.ndarray],
     cps: Union[int, str] = 656,
 ) -> None:
     """Apply a wetland BMP and update parcel loads.
@@ -241,11 +258,11 @@ def _simulate_wetland(
         Index of the parcel receiving the wetland BMP.
     eff_maps : sequence of dict[str, float]
         Effectiveness maps, one per pollutant, keyed by pathway name.
-    yields : numpy.ndarray
-        Parcel-by-pollutant yield array updated in place.
+    load_rates : numpy.ndarray
+        Parcel-by-pollutant areal load-rate array updated in place.
     bmp_rec : dict[str, Any]
         Record for the current BMP placement, updated with wetland metadata.
-    bmp_outputs : dict[str, numpy.ndarray]
+    bmp_mass_rate_outputs : dict[str, numpy.ndarray]
         Accumulators for treated and removed pollutant loads.
     cps : int or str, optional
         BMP CPS code associated with the wetland. Default is ``656``.
@@ -307,49 +324,49 @@ def _simulate_wetland(
         # Apply reductions across impacted parcels
         remaining = impacted_area_ha
         for p_idx in impacted_idxs:
-            A = float(self.parcel_area_ha[p_idx])
+            parcel_area_ha = float(self.parcel_area_ha[p_idx])
             if remaining <= 0:
-                frac = 0.0
-            elif remaining < A:
-                frac = remaining / A
+                treated_area_fraction = 0.0
+            elif remaining < parcel_area_ha:
+                treated_area_fraction = remaining / parcel_area_ha
             else:
-                frac = 1.0
+                treated_area_fraction = 1.0
             self.logger.verbose(
                 f"processing wetland-impacted parcel pid={self.parcel_ids[p_idx]}, "
-                f"area={A:.2f} ha, fraction draining={frac:.2f}"
+                f"area={parcel_area_ha:.2f} ha, fraction draining={treated_area_fraction:.2f}"
             )
 
             for pol_idx, pollutant in enumerate(self.pollutants):
-                y = float(yields[p_idx, pol_idx])
-                components = self._get_pathway_yields(p_idx, pol_idx, y)
-                emap = eff_maps[pol_idx]
+                load_rate = float(load_rates[p_idx, pol_idx])
+                pathway_load_rates_by_name = self._get_pathway_load_rates(p_idx, pol_idx, load_rate)
+                efficiency_by_pathway = eff_maps[pol_idx]
 
-                treated = sum(components.values()) * (A * frac)
-                removed = (A * frac) * sum(
-                    components.get(path, 0.0) * emap.get(path, 0.0)
+                treated_baseline_mass_rate_kg_per_yr = sum(pathway_load_rates_by_name.values()) * (parcel_area_ha * treated_area_fraction)
+                removed_mass_rate_kg_per_yr = (parcel_area_ha * treated_area_fraction) * sum(
+                    pathway_load_rates_by_name.get(path, 0.0) * efficiency_by_pathway.get(path, 0.0)
                     for path in _active_pathways(self)
                 )
-                self._apply_pathway_reduction(p_idx, pol_idx, frac, emap)
+                self._apply_pathway_reduction(p_idx, pol_idx, treated_area_fraction, efficiency_by_pathway)
 
-                bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
-                bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-                y_new = (
-                    self._get_current_total_yield(p_idx, pol_idx, y)
-                    if getattr(self, "current_pathway_yields", None) is not None
-                    else (y - removed / A)
+                bmp_mass_rate_outputs[OUTPUT_TREATED][pol_idx] += treated_baseline_mass_rate_kg_per_yr
+                bmp_mass_rate_outputs[OUTPUT_REMOVED][pol_idx] += removed_mass_rate_kg_per_yr
+                updated_load_rate = (
+                    self._get_current_total_load_rate(p_idx, pol_idx, load_rate)
+                    if getattr(self, "current_pathway_load_rates", None) is not None
+                    else (load_rate - removed_mass_rate_kg_per_yr / parcel_area_ha)
                 )
-                yields[p_idx, pol_idx] = max(0.0, y_new)
+                load_rates[p_idx, pol_idx] = max(0.0, updated_load_rate)
 
-            remaining -= A
+            remaining -= parcel_area_ha
 
 
 def _simulate_grassed(
     self: "Model",
     parcel_idx: int,
     eff_maps: Sequence[Dict[str, float]],
-    yields: np.ndarray,
+    load_rates: np.ndarray,
     bmp_rec: Dict[str, Any],
-    bmp_outputs: Dict[str, np.ndarray],
+    bmp_mass_rate_outputs: Dict[str, np.ndarray],
 ) -> None:
     """Apply a grassed buffer BMP to the selected parcel.
 
@@ -365,11 +382,11 @@ def _simulate_grassed(
         Index of the parcel receiving the BMP.
     eff_maps : sequence of dict[str, float]
         Effectiveness maps, one per pollutant, keyed by pathway name.
-    yields : numpy.ndarray
-        Parcel-by-pollutant yield array updated in place.
+    load_rates : numpy.ndarray
+        Parcel-by-pollutant areal load-rate array updated in place.
     bmp_rec : dict[str, Any]
         Record for the current BMP placement, updated with buffer metadata.
-    bmp_outputs : dict[str, numpy.ndarray]
+    bmp_mass_rate_outputs : dict[str, numpy.ndarray]
         Accumulators for treated and removed pollutant loads.
 
     Returns
@@ -398,46 +415,46 @@ def _simulate_grassed(
 
         # Portion treated
         frac_stats = {"min": 0.2, "max": 0.4, "mean": 0.3}  # heuristic
-        frac_treated = self._sample_from_stats(stats=frac_stats, kind=None)
+        treated_area_fraction = self._sample_from_stats(stats=frac_stats, kind=None)
 
         # Update record and outputs
         bmp_rec[OUTPUT_LINEAR_LENGTH] = float(length_m)
         bmp_rec[OUTPUT_BUFFER_AREA] = float(area_ha)
-        bmp_rec[OUTPUT_PORTION_TREATED] = float(frac_treated)
+        bmp_rec[OUTPUT_PORTION_TREATED] = float(treated_area_fraction)
 
-        A = float(self.parcel_area_ha[parcel_idx])
+        parcel_area_ha = float(self.parcel_area_ha[parcel_idx])
         for pol_idx, pollutant in enumerate(self.pollutants):
-            y = float(yields[parcel_idx, pol_idx])
-            components = self._get_pathway_yields(parcel_idx, pol_idx, y)
-            emap = eff_maps[pol_idx]
+            load_rate = float(load_rates[parcel_idx, pol_idx])
+            pathway_load_rates_by_name = self._get_pathway_load_rates(parcel_idx, pol_idx, load_rate)
+            efficiency_by_pathway = eff_maps[pol_idx]
 
-            treated = sum(components.values()) * (A * frac_treated)
-            removed = (A * frac_treated) * sum(
-                components.get(path, 0.0) * emap.get(path, 0.0)
+            treated_baseline_mass_rate_kg_per_yr = sum(pathway_load_rates_by_name.values()) * (parcel_area_ha * treated_area_fraction)
+            removed_mass_rate_kg_per_yr = (parcel_area_ha * treated_area_fraction) * sum(
+                pathway_load_rates_by_name.get(path, 0.0) * efficiency_by_pathway.get(path, 0.0)
                 for path in _active_pathways(self)
             )
-            self._apply_pathway_reduction(parcel_idx, pol_idx, frac_treated, emap)
+            self._apply_pathway_reduction(parcel_idx, pol_idx, treated_area_fraction, efficiency_by_pathway)
 
-            bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
-            bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-            y_new = self._get_current_total_yield(parcel_idx, pol_idx, y) if getattr(self, "current_pathway_yields", None) is not None else (y - removed / A)
-            yields[parcel_idx, pol_idx] = max(0.0, y_new)
+            bmp_mass_rate_outputs[OUTPUT_TREATED][pol_idx] += treated_baseline_mass_rate_kg_per_yr
+            bmp_mass_rate_outputs[OUTPUT_REMOVED][pol_idx] += removed_mass_rate_kg_per_yr
+            updated_load_rate = self._get_current_total_load_rate(parcel_idx, pol_idx, load_rate) if getattr(self, "current_pathway_load_rates", None) is not None else (load_rate - removed_mass_rate_kg_per_yr / parcel_area_ha)
+            load_rates[parcel_idx, pol_idx] = max(0.0, updated_load_rate)
 
 
 def _simulate_infield(
     self: "Model",
     parcel_idx: int,
     eff_maps: Sequence[Dict[str, float]],
-    yields: np.ndarray,
+    load_rates: np.ndarray,
     bmp_rec: Dict[str, Any],
-    bmp_outputs: Dict[str, np.ndarray],
+    bmp_mass_rate_outputs: Dict[str, np.ndarray],
 ) -> None:
     """Apply an in-field BMP to the selected parcel.
 
     In-field BMPs are treated as covering the whole parcel. The function
     therefore applies each pollutant's pathway-specific effectiveness across
     the full parcel area and updates both the output accumulators and the
-    yield array in place.
+    areal load-rate array in place.
 
     Parameters
     ----------
@@ -447,11 +464,11 @@ def _simulate_infield(
         Index of the parcel receiving the BMP.
     eff_maps : sequence of dict[str, float]
         Effectiveness maps, one per pollutant, keyed by pathway name.
-    yields : numpy.ndarray
-        Parcel-by-pollutant yield array updated in place.
+    load_rates : numpy.ndarray
+        Parcel-by-pollutant areal load-rate array updated in place.
     bmp_rec : dict[str, Any]
         Record for the current BMP placement.
-    bmp_outputs : dict[str, numpy.ndarray]
+    bmp_mass_rate_outputs : dict[str, numpy.ndarray]
         Accumulators for treated and removed pollutant loads.
 
     Returns
@@ -461,23 +478,23 @@ def _simulate_infield(
     with log_scope(label="simulate_infield", logger=self.logger):
         self.logger.verbose("calling _simulate_infield")
 
-        A = float(self.parcel_area_ha[parcel_idx])
+        parcel_area_ha = float(self.parcel_area_ha[parcel_idx])
         for pol_idx, pollutant in enumerate(self.pollutants):
-            y = float(yields[parcel_idx, pol_idx])
-            components = self._get_pathway_yields(parcel_idx, pol_idx, y)
-            emap = eff_maps[pol_idx]
+            load_rate = float(load_rates[parcel_idx, pol_idx])
+            pathway_load_rates_by_name = self._get_pathway_load_rates(parcel_idx, pol_idx, load_rate)
+            efficiency_by_pathway = eff_maps[pol_idx]
 
-            treated = sum(components.values()) * A
-            removed = A * sum(
-                components.get(path, 0.0) * emap.get(path, 0.0)
+            treated_baseline_mass_rate_kg_per_yr = sum(pathway_load_rates_by_name.values()) * parcel_area_ha
+            removed_mass_rate_kg_per_yr = parcel_area_ha * sum(
+                pathway_load_rates_by_name.get(path, 0.0) * efficiency_by_pathway.get(path, 0.0)
                 for path in _active_pathways(self)
             )
-            self._apply_pathway_reduction(parcel_idx, pol_idx, 1.0, emap)
+            self._apply_pathway_reduction(parcel_idx, pol_idx, 1.0, efficiency_by_pathway)
 
-            bmp_outputs[OUTPUT_TREATED][pol_idx] += treated
-            bmp_outputs[OUTPUT_REMOVED][pol_idx] += removed
-            y_new = self._get_current_total_yield(parcel_idx, pol_idx, y) if getattr(self, "current_pathway_yields", None) is not None else (y - removed / A)
-            yields[parcel_idx, pol_idx] = max(0.0, y_new)
+            bmp_mass_rate_outputs[OUTPUT_TREATED][pol_idx] += treated_baseline_mass_rate_kg_per_yr
+            bmp_mass_rate_outputs[OUTPUT_REMOVED][pol_idx] += removed_mass_rate_kg_per_yr
+            updated_load_rate = self._get_current_total_load_rate(parcel_idx, pol_idx, load_rate) if getattr(self, "current_pathway_load_rates", None) is not None else (load_rate - removed_mass_rate_kg_per_yr / parcel_area_ha)
+            load_rates[parcel_idx, pol_idx] = max(0.0, updated_load_rate)
 
 
 def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.DataFrame:

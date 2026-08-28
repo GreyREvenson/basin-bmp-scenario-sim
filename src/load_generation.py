@@ -126,7 +126,7 @@ class LoadState:
     """Container for per-parcel scenario state.
 
     The state stores current sampled values, baseline values, parcel ordering,
-    and pathway-level yields so that BMP application can update the scenario in
+    and pathway-level load_rates so that BMP application can update the scenario in
     place while still preserving the original starting point.
 
     Attributes
@@ -143,11 +143,11 @@ class LoadState:
         Flags indicating whether each parcel has complete RUSLE inputs.
     pollutants : list[str]
         Pollutants tracked by the simulation.
-    pathway_yields : numpy.ndarray
-        Current pathway-specific parcel yields with shape
+    pathway_load_rates : numpy.ndarray
+        Current pathway-specific parcel load_rates with shape
         ``(n_parcels, n_pollutants, 2)``. In PLET/RUSLE mode the two pathways
         are ``surface`` and ``subsurface``.
-    untreated_groundwater_yields : numpy.ndarray
+    untreated_groundwater_load_rates : numpy.ndarray
         Deprecated compatibility array. PLET/RUSLE subsurface loads are now
         included in the ``subsurface`` pathway, so this array is always zero.
     baseline_parameters : list[dict[str, Any]]
@@ -156,10 +156,10 @@ class LoadState:
         Snapshot of the original runoff concentrations.
     baseline_groundwater_concentrations : list[dict[str, float]]
         Snapshot of the original groundwater concentrations.
-    baseline_pathway_yields : numpy.ndarray or None
-        Snapshot of the original pathway-specific yields.
-    baseline_untreated_groundwater_yields : numpy.ndarray or None
-        Snapshot of the original groundwater yields excluded from BMP
+    baseline_pathway_load_rates : numpy.ndarray or None
+        Snapshot of the original pathway-specific load_rates.
+    baseline_untreated_groundwater_load_rates : numpy.ndarray or None
+        Snapshot of the original groundwater load_rates excluded from BMP
         treatment.
     """
 
@@ -169,13 +169,31 @@ class LoadState:
     groundwater_concentrations: List[Dict[str, float]]
     has_rusle: List[bool]
     pollutants: List[str]
-    pathway_yields: np.ndarray
-    untreated_groundwater_yields: np.ndarray
+    pathway_load_rates: np.ndarray
+    untreated_groundwater_load_rates: np.ndarray
     baseline_parameters: List[Dict[str, Any]] = field(default_factory=list)
     baseline_concentrations: List[Dict[str, float]] = field(default_factory=list)
     baseline_groundwater_concentrations: List[Dict[str, float]] = field(default_factory=list)
-    baseline_pathway_yields: Optional[np.ndarray] = None
-    baseline_untreated_groundwater_yields: Optional[np.ndarray] = None
+    baseline_pathway_load_rates: Optional[np.ndarray] = None
+    baseline_untreated_groundwater_load_rates: Optional[np.ndarray] = None
+
+    # Deprecated compatibility properties. New code uses explicit load-rate
+    # terminology; these aliases can be removed in a future breaking release.
+    @property
+    def pathway_yields(self) -> np.ndarray:
+        return self.pathway_load_rates
+
+    @property
+    def untreated_groundwater_yields(self) -> np.ndarray:
+        return self.untreated_groundwater_load_rates
+
+    @property
+    def baseline_pathway_yields(self) -> Optional[np.ndarray]:
+        return self.baseline_pathway_load_rates
+
+    @property
+    def baseline_untreated_groundwater_yields(self) -> Optional[np.ndarray]:
+        return self.baseline_untreated_groundwater_load_rates
 
     @property
     def index_by_pid(self) -> Dict[str, int]:
@@ -440,8 +458,8 @@ def plet_runoff_depth_in(
     return event_rainfall, event_runoff, event_runoff * runoff_days
 
 
-def rusle_sediment_yield_kg_ha(parameters: Mapping[str, Any]) -> float:
-    """Estimate annual sediment yield per hectare from RUSLE inputs.
+def rusle_sediment_load_rate_kg_ha_yr(parameters: Mapping[str, Any]) -> float:
+    """Estimate the annual areal sediment load rate from RUSLE inputs.
 
     Parameters
     ----------
@@ -452,7 +470,7 @@ def rusle_sediment_yield_kg_ha(parameters: Mapping[str, Any]) -> float:
     Returns
     -------
     float
-        Annual sediment yield in kilograms per hectare.
+        Annual sediment load rate in kilograms per hectare per year.
 
     Raises
     ------
@@ -475,6 +493,10 @@ def rusle_sediment_yield_kg_ha(parameters: Mapping[str, Any]) -> float:
     sediment_multiplier = max(0.0, float(parameters.get("sediment_multiplier", 1.0)))
     delivery_multiplier = max(0.0, float(parameters.get("sediment_delivery_multiplier", 1.0)))
     return gross_ton_ac * sdr * TON_PER_ACRE_TO_KG_PER_HA * sediment_multiplier * delivery_multiplier
+
+
+# Backward-compatible function name. New code uses explicit load-rate units.
+rusle_sediment_yield_kg_ha = rusle_sediment_load_rate_kg_ha_yr
 
 
 def plet_annual_surface_runoff_in(
@@ -561,7 +583,7 @@ def _sample_stats(ctx: Any, stats: Mapping[str, float], *, nonnegative: bool = F
     if "value" in stats:
         value = float(stats["value"])
     else:
-        value = float(ctx._sample_from_stats(dict(stats), kind="yield" if nonnegative else None))
+        value = float(ctx._sample_from_stats(dict(stats), kind="load_rate" if nonnegative else None))
     return max(0.0, value) if nonnegative else value
 
 
@@ -908,18 +930,19 @@ def calculate_load_diagnostics(parameters: Mapping[str, Any]) -> Dict[str, float
 
     event_rainfall, event_runoff, annual_storm_runoff, annual_runoff = plet_annual_surface_runoff_in(parameters)
     has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
-    sediment = rusle_sediment_yield_kg_ha(parameters) if has_rusle else 0.0
+    sediment_load_rate_kg_ha_yr = rusle_sediment_load_rate_kg_ha_yr(parameters) if has_rusle else 0.0
     return {
         "event_rainfall_in": float(event_rainfall),
         "event_runoff_in": float(event_runoff),
         "annual_storm_runoff_in": float(annual_storm_runoff),
         "annual_runoff_in": float(annual_runoff),
         "annual_infiltration_in": float(plet_annual_infiltration_in(parameters)),
-        "sediment_kg_ha": float(sediment),
+        "sediment_kg_ha": float(sediment_load_rate_kg_ha_yr),  # legacy alias
+        "sediment_load_rate_kg_ha_yr": float(sediment_load_rate_kg_ha_yr),
     }
 
 
-def calculate_load_components(
+def calculate_load_rate_components(
     parameters: Mapping[str, Any],
     concentrations: Mapping[str, float],
     groundwater_concentrations: Optional[Mapping[str, float]],
@@ -928,9 +951,9 @@ def calculate_load_components(
     groundwater_loads: bool = False,
     treat_groundwater_with_bmps: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Calculate BMP-treatable pathways and protected groundwater yields.
+    """Calculate BMP-treatable pathways and protected groundwater load_rates.
 
-    Pathway yields are derived directly from PLET/RUSLE runoff, infiltration,
+    Pathway load_rates are derived directly from PLET/RUSLE runoff, infiltration,
     sediment, and pollutant concentrations. Surface runoff and sediment loads
     remain in the surface pathway. BMP-treatable groundwater is split between
     shallow and deep subsurface pathways using
@@ -974,18 +997,18 @@ def calculate_load_components(
     infiltration_l_ha = plet_annual_infiltration_in(parameters) * INCH_OVER_HA_TO_LITERS
 
     has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
-    sediment_kg_ha = rusle_sediment_yield_kg_ha(parameters) if has_rusle else 0.0
+    sediment_load_rate_kg_ha_yr = rusle_sediment_load_rate_kg_ha_yr(parameters) if has_rusle else 0.0
     enrichment_ratio = max(0.0, float(parameters.get("enrichment_ratio", 2.0)))
 
     groundwater_concentrations = groundwater_concentrations or {}
-    out = np.zeros((len(pollutants), len(PATHWAY_NAMES)), dtype=float)
-    untreated_groundwater = np.zeros(len(pollutants), dtype=float)
+    pathway_load_rates = np.zeros((len(pollutants), len(PATHWAY_NAMES)), dtype=float)
+    untreated_groundwater_load_rates = np.zeros(len(pollutants), dtype=float)
     for idx, pollutant in enumerate(pollutants):
         pol = str(pollutant).upper()
-        runoff_load = max(0.0, float(concentrations.get(pol, 0.0))) * runoff_l_ha / 1_000_000.0
-        groundwater_load = 0.0
+        runoff_areal_load_rate = max(0.0, float(concentrations.get(pol, 0.0))) * runoff_l_ha / 1_000_000.0
+        groundwater_areal_load_rate = 0.0
         if groundwater_loads and pol != "TSS":
-            groundwater_load = (
+            groundwater_areal_load_rate = (
                 max(0.0, float(groundwater_concentrations.get(pol, 0.0))) * infiltration_l_ha / 1_000_000.0
             )
         # PLET resolves surface runoff and total subsurface/groundwater load,
@@ -1005,39 +1028,39 @@ def calculate_load_components(
             fraction_subsurface_shallow = 0.0
 
         if pol == "TSS":
-            surface_load = sediment_kg_ha if has_rusle else runoff_load
-            shallow_load = 0.0
-            deep_load = 0.0
+            surface_areal_load_rate = sediment_load_rate_kg_ha_yr if has_rusle else runoff_areal_load_rate
+            shallow_areal_load_rate = 0.0
+            deep_areal_load_rate = 0.0
         elif pol == "TN":
             sediment_fraction = max(0.0, float(parameters.get("sediment_n_pct", 0.0))) / 100.0
-            surface_load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
-            shallow_load = groundwater_load * fraction_subsurface_shallow
-            deep_load = groundwater_load * (1.0 - fraction_subsurface_shallow)
+            surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
+            shallow_areal_load_rate = groundwater_areal_load_rate * fraction_subsurface_shallow
+            deep_areal_load_rate = groundwater_areal_load_rate * (1.0 - fraction_subsurface_shallow)
         elif pol == "TP":
             sediment_fraction = max(0.0, float(parameters.get("sediment_p_pct", 0.0))) / 100.0
-            surface_load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
-            shallow_load = groundwater_load * fraction_subsurface_shallow
-            deep_load = groundwater_load * (1.0 - fraction_subsurface_shallow)
+            surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
+            shallow_areal_load_rate = groundwater_areal_load_rate * fraction_subsurface_shallow
+            deep_areal_load_rate = groundwater_areal_load_rate * (1.0 - fraction_subsurface_shallow)
         else:
-            surface_load = runoff_load
-            shallow_load = groundwater_load * fraction_subsurface_shallow
-            deep_load = groundwater_load * (1.0 - fraction_subsurface_shallow)
+            surface_areal_load_rate = runoff_areal_load_rate
+            shallow_areal_load_rate = groundwater_areal_load_rate * fraction_subsurface_shallow
+            deep_areal_load_rate = groundwater_areal_load_rate * (1.0 - fraction_subsurface_shallow)
 
         load_multiplier = max(
             0.0,
             float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)),
         )
-        out[idx, 0] = max(0.0, surface_load) * load_multiplier
+        pathway_load_rates[idx, 0] = max(0.0, surface_areal_load_rate) * load_multiplier
         if treat_groundwater_with_bmps:
-            out[idx, 1] = max(0.0, shallow_load) * load_multiplier
-            out[idx, 2] = max(0.0, deep_load) * load_multiplier
+            pathway_load_rates[idx, 1] = max(0.0, shallow_areal_load_rate) * load_multiplier
+            pathway_load_rates[idx, 2] = max(0.0, deep_areal_load_rate) * load_multiplier
         else:
-            untreated_groundwater[idx] = max(0.0, groundwater_load) * load_multiplier
-    return out, untreated_groundwater
+            untreated_groundwater_load_rates[idx] = max(0.0, groundwater_areal_load_rate) * load_multiplier
+    return pathway_load_rates, untreated_groundwater_load_rates
 
 
 
-def calculate_plet_pathway_yields(
+def calculate_plet_pathway_load_rates(
     parameters: Mapping[str, Any],
     concentrations: Mapping[str, float],
     groundwater_concentrations: Optional[Mapping[str, float]],
@@ -1059,46 +1082,51 @@ def calculate_plet_pathway_yields(
     runoff_l_ha = annual_runoff_in * INCH_OVER_HA_TO_LITERS
     infiltration_l_ha = plet_annual_infiltration_in(parameters) * INCH_OVER_HA_TO_LITERS
     has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
-    sediment_kg_ha = rusle_sediment_yield_kg_ha(parameters) if has_rusle else 0.0
+    sediment_load_rate_kg_ha_yr = rusle_sediment_load_rate_kg_ha_yr(parameters) if has_rusle else 0.0
     enrichment_ratio = max(0.0, float(parameters.get("enrichment_ratio", 2.0)))
     groundwater_concentrations = groundwater_concentrations or {}
 
-    out = np.zeros((len(pollutants), len(PLET_PATHWAY_NAMES)), dtype=float)
+    pathway_load_rates = np.zeros((len(pollutants), len(PLET_PATHWAY_NAMES)), dtype=float)
     for idx, pollutant in enumerate(pollutants):
         pol = str(pollutant).upper()
-        runoff_load = (
+        runoff_areal_load_rate = (
             max(0.0, float(concentrations.get(pol, 0.0)))
             * runoff_l_ha / 1_000_000.0
         )
-        subsurface_load = 0.0
+        subsurface_areal_load_rate = 0.0
         if pol != "TSS":
-            subsurface_load = (
+            subsurface_areal_load_rate = (
                 max(0.0, float(groundwater_concentrations.get(pol, 0.0)))
                 * infiltration_l_ha / 1_000_000.0
             )
 
         if pol == "TSS":
-            surface_load = sediment_kg_ha if has_rusle else runoff_load
+            surface_areal_load_rate = sediment_load_rate_kg_ha_yr if has_rusle else runoff_areal_load_rate
         elif pol == "TN":
             sediment_fraction = max(0.0, float(parameters.get("sediment_n_pct", 0.0))) / 100.0
-            surface_load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
+            surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
         elif pol == "TP":
             sediment_fraction = max(0.0, float(parameters.get("sediment_p_pct", 0.0))) / 100.0
-            surface_load = runoff_load + sediment_kg_ha * sediment_fraction * enrichment_ratio
+            surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
         else:
-            surface_load = runoff_load
+            surface_areal_load_rate = runoff_areal_load_rate
 
         multiplier = max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
-        out[idx, 0] = max(0.0, surface_load) * multiplier
-        out[idx, 1] = max(0.0, subsurface_load) * multiplier
-    return out
+        pathway_load_rates[idx, 0] = max(0.0, surface_areal_load_rate) * multiplier
+        pathway_load_rates[idx, 1] = max(0.0, subsurface_areal_load_rate) * multiplier
+    return pathway_load_rates
 
+
+# Backward-compatible function aliases. Public input naming remains
+# ``pollutant_yield`` but computational state is expressed as load rates.
+calculate_load_components = calculate_load_rate_components
+calculate_plet_pathway_yields = calculate_plet_pathway_load_rates
 
 def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
     """Create the initial parcel load state for a scenario.
 
     This function samples parcel-level parameters and concentrations, verifies
-    that required inputs are present, computes baseline pathway yields, and
+    that required inputs are present, computes baseline pathway load_rates, and
     returns both the total load array and the mutable scenario state.
 
     Parameters
@@ -1132,9 +1160,9 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
 
     parameters: List[Dict[str, Any]] = []
     has_rusle: List[bool] = []
-    yields = np.zeros((len(parcel_ids), len(ctx.pollutants)), dtype=float)
-    pathway_yields = np.zeros((len(parcel_ids), len(ctx.pollutants), len(PLET_PATHWAY_NAMES)), dtype=float)
-    untreated_groundwater_yields = np.zeros((len(parcel_ids), len(ctx.pollutants)), dtype=float)
+    load_rates = np.zeros((len(parcel_ids), len(ctx.pollutants)), dtype=float)
+    pathway_load_rates = np.zeros((len(parcel_ids), len(ctx.pollutants), len(PLET_PATHWAY_NAMES)), dtype=float)
+    untreated_groundwater_load_rates = np.zeros((len(parcel_ids), len(ctx.pollutants)), dtype=float)
     hydrology_cache: Dict[Tuple[str, str], float] = {}
     for i, pid in enumerate(parcel_ids):
         missing_plet = [
@@ -1199,18 +1227,18 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
             combined.setdefault(f"load_multiplier_{str(pol).lower()}", 1.0)
         parameters.append(combined)
         has_rusle.append(all(name in combined for name in _REQUIRED_RUSLE))
-        parcel_pathway_yields = calculate_plet_pathway_yields(
+        parcel_pathway_load_rates = calculate_plet_pathway_load_rates(
             combined,
             concentrations[i],
             groundwater_concentrations[i],
             ctx.pollutants,
         )
-        pathway_yields[i, :, :] = parcel_pathway_yields
+        pathway_load_rates[i, :, :] = parcel_pathway_load_rates
         # Compatibility field retained for callers/tests that inspect the old
         # protected-groundwater array. Actual PLET subsurface load is now in
-        # pathway_yields[:, :, 1], so this stays zero.
-        untreated_groundwater_yields[i, :] = 0.0
-        yields[i, :] = np.sum(pathway_yields[i, :, :], axis=1)
+        # pathway_load_rates[:, :, 1], so this stays zero.
+        untreated_groundwater_load_rates[i, :] = 0.0
+        load_rates[i, :] = np.sum(pathway_load_rates[i, :, :], axis=1)
 
     state = LoadState(
         parcel_ids=parcel_ids,
@@ -1219,12 +1247,12 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
         groundwater_concentrations=groundwater_concentrations,
         has_rusle=has_rusle,
         pollutants=list(ctx.pollutants),
-        pathway_yields=pathway_yields,
-        untreated_groundwater_yields=untreated_groundwater_yields,
+        pathway_load_rates=pathway_load_rates,
+        untreated_groundwater_load_rates=untreated_groundwater_load_rates,
         baseline_parameters=[dict(values) for values in parameters],
         baseline_concentrations=[dict(values) for values in concentrations],
         baseline_groundwater_concentrations=[dict(values) for values in groundwater_concentrations],
-        baseline_pathway_yields=pathway_yields.copy(),
-        baseline_untreated_groundwater_yields=untreated_groundwater_yields.copy(),
+        baseline_pathway_load_rates=pathway_load_rates.copy(),
+        baseline_untreated_groundwater_load_rates=untreated_groundwater_load_rates.copy(),
     )
-    return yields.copy(), state
+    return load_rates.copy(), state

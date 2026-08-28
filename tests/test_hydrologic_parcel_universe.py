@@ -34,7 +34,7 @@ def _model_with_nonselectable_upstream_parcels() -> Model:
     model.outlet_mean_map = {}
     model.delivery_coeffs = {}
     model.bmp_efficiency_stats = {656: [{"surface": {"value": 0.5}}]}
-    model.pollutant_yield_stats = [
+    model.pollutant_load_rate_stats = [
         [{"value": 10.0}],
         [{"value": 10.0}],
         [{"value": 10.0}],
@@ -46,8 +46,8 @@ def _model_with_nonselectable_upstream_parcels() -> Model:
     model.pollutant_concentrations = None
     model.groundwater_concentrations = None
     model.pathway_names = ["surface"]
-    model.pollutant_yield_pathway_fractions = {"surface": 1.0}
-    model.pollutant_yield_is_aggregate = True
+    model.pollutant_load_rate_pathway_fractions = {"surface": 1.0}
+    model.pollutant_load_rate_is_aggregate = True
     model.groundwater_loads = False
     model.bmp_cps = [656]
     model.bmp_selection_probs = np.asarray([1.0], dtype=float)
@@ -64,13 +64,15 @@ def test_shared_payload_separates_hydrologic_and_selection_universes() -> None:
     assert shared["parcel_up_idxs"][2] == [0, 1]
     assert shared["parcel_selection_ids"] == ["C"]
     assert shared["selection_source_idxs"].tolist() == [2]
-    assert len(shared["pollutant_yield_stats"]) == 3
+    assert len(shared["pollutant_load_rate_stats"]) == 3
 
 
 def test_wetland_treats_nonselectable_upstream_parcels() -> None:
     model = _model_with_nonselectable_upstream_parcels()
     shared = model._shared_payload()
     logger = logging.getLogger("test_element18_wetland")
+    if not hasattr(logger, "verbose"):
+        logger.verbose = logger.debug  # type: ignore[attr-defined]
     ctx = _ScenarioContext({}, shared, logger, seed=1)
 
     # Force a 1-ha wetland with a 2:1 catchment ratio, requiring all three
@@ -78,10 +80,10 @@ def test_wetland_treats_nonselectable_upstream_parcels() -> None:
     draws = iter([1.0, 2.0])
     ctx._sample_from_stats = lambda stats, kind=None: next(draws)
 
-    yields = np.full((3, 1), 10.0, dtype=float)
-    ctx.current_pathway_yields = np.full((3, 1, 1), 10.0, dtype=float)
+    load_rates = np.full((3, 1), 10.0, dtype=float)
+    ctx.current_pathway_load_rates = np.full((3, 1, 1), 10.0, dtype=float)
     bmp_rec = {}
-    bmp_outputs = {
+    bmp_mass_rate_outputs = {
         OUTPUT_TREATED: np.zeros(1, dtype=float),
         OUTPUT_REMOVED: np.zeros(1, dtype=float),
     }
@@ -89,15 +91,15 @@ def test_wetland_treats_nonselectable_upstream_parcels() -> None:
     ctx._simulate_wetland(
         2,
         [{"surface": 0.5}],
-        yields,
+        load_rates,
         bmp_rec,
-        bmp_outputs,
+        bmp_mass_rate_outputs,
     )
 
     assert bmp_rec[OUTPUT_IMPACTED_PIDS] == "C,A,B"
-    assert np.allclose(yields[:, 0], [5.0, 5.0, 5.0])
-    assert bmp_outputs[OUTPUT_TREATED][0] == 30.0
-    assert bmp_outputs[OUTPUT_REMOVED][0] == 15.0
+    assert np.allclose(load_rates[:, 0], [5.0, 5.0, 5.0])
+    assert bmp_mass_rate_outputs[OUTPUT_TREATED][0] == 30.0
+    assert bmp_mass_rate_outputs[OUTPUT_REMOVED][0] == 15.0
 
 
 def test_plet_initialization_uses_full_hydrologic_parcel_universe(monkeypatch) -> None:
@@ -147,13 +149,13 @@ def test_plet_initialization_uses_full_hydrologic_parcel_universe(monkeypatch) -
     )
     monkeypatch.setattr(
         lg,
-        "calculate_plet_pathway_yields",
+        "calculate_plet_pathway_load_rates",
         lambda *_args, **_kwargs: np.asarray([[1.0, 0.0]], dtype=float),
     )
 
-    baseline, state = initialize_plet_rusle_state(ctx)
+    baseline_load_rates, state = initialize_plet_rusle_state(ctx)
 
     assert seen_parameter_calls[0] == ("plet", ["A", "B", "C"])
     assert state.parcel_ids == ["A", "B", "C"]
-    assert baseline.shape == (3, 1)
-    assert np.allclose(baseline[:, 0], 1.0)
+    assert baseline_load_rates.shape == (3, 1)
+    assert np.allclose(baseline_load_rates[:, 0], 1.0)

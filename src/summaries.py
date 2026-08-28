@@ -169,15 +169,17 @@ class BMPSummaryCollector:
     def add_bmp_record(
         self,
         bmp_record: Dict[str, Any],
+        pid_baseline_load_rates: Optional[Dict[str, float]] = None,
+        *,
         pid_baseline_yields: Optional[Dict[str, float]] = None,
     ) -> None:
         """Add one BMP record.
 
-        ``pid_baseline_yields`` is retained only for call-site compatibility with
-        older code. Mass-based performance metrics are read directly from the BMP
-        record, so a yield-rate denominator is never used to calculate efficiency.
+        ``pid_baseline_load_rates`` is the preferred compatibility parameter;
+        ``pid_baseline_yields`` remains accepted as a deprecated keyword. Mass-based performance metrics are read directly from the BMP
+        record, so a areal-load-rate denominator is never used to calculate efficiency.
         """
-        del pid_baseline_yields
+        del pid_baseline_load_rates, pid_baseline_yields
         cps = int(bmp_record["cps"])
         group = self.bmp_by_cps[cps]
         group["records"].append(bmp_record)

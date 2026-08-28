@@ -18,8 +18,8 @@ def test_wetland_baseline_mass_includes_all_impacted_hydrologic_parcels() -> Non
         pid_to_index={"A": 0, "B": 1, "C": 2},
         parcel_area_ha=[2.0, 3.0, 5.0],
     )
-    # Current pre-BMP yields (kg/ha/yr) immediately before this annual BMP step.
-    pre_bmp_yields = np.asarray(
+    # Current pre-BMP areal load rates (kg/ha/yr) immediately before this annual BMP step.
+    pre_bmp_load_rates = np.asarray(
         [
             [10.0, 1.0],
             [20.0, 2.0],
@@ -29,7 +29,7 @@ def test_wetland_baseline_mass_includes_all_impacted_hydrologic_parcels() -> Non
     )
     bmp_rec = {"pid": "C", "impacted_pids": "C,A,B"}
 
-    mass = _baseline_mass_before_bmp_kg(ctx, pre_bmp_yields, 2, bmp_rec)
+    mass = _baseline_mass_before_bmp_kg(ctx, pre_bmp_load_rates, 2, bmp_rec)
 
     # Annual rate * ha * 1 year => kg over the modeled annual timestep.
     assert mass[0] == pytest.approx(10 * 2 + 20 * 3 + 30 * 5)

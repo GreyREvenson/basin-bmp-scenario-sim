@@ -21,8 +21,8 @@ from numpy.random import SeedSequence, default_rng
 from src.bmp import (
     _apply_pathway_reduction,
     _get_bmp_name,
-    _get_current_total_yield,
-    _get_pathway_yields,
+    _get_current_total_load_rate,
+    _get_pathway_load_rates,
     _get_bmp_selection_probs,
     _sample_efficiency,          # legacy scalar sampler (kept for backward-compat)
     _sample_efficiency_map,      # per-pathway sampler
@@ -44,7 +44,7 @@ from src.parcel import (
     _get_parcel_out_oids,
     _get_parcel_up_list,
     _sample_parcel_index,
-    _sample_yield,
+    _sample_load_rate,
 )
 from src.sampling import _piecewise_quantile_sample, _sample_from_stats, _trunc_normal
 from src.summaries import BMPSummaryCollector
@@ -157,22 +157,22 @@ def _bmp_impacted_parcel_indices(ctx: Any, parcel_idx: int, bmp_rec: Dict[str, A
 
 def _baseline_mass_before_bmp_kg(
     ctx: Any,
-    pre_bmp_yields: np.ndarray,
+    pre_bmp_load_rates: np.ndarray,
     parcel_idx: int,
     bmp_rec: Dict[str, Any],
 ) -> np.ndarray:
     """Calculate pre-BMP pollutant mass for the parcels represented by a BMP.
 
-    ``pre_bmp_yields`` contains the current load rate immediately before this
+    ``pre_bmp_load_rates`` contains the current load rate immediately before this
     BMP is applied. For the present annual model, rate × area × 1 year gives kg.
     Wetland denominators include all hydrologically impacted parcels identified
     by the wetland routine, including parcels that are not BMP-selectable.
     """
-    n_pol = int(pre_bmp_yields.shape[1])
+    n_pol = int(pre_bmp_load_rates.shape[1])
     mass = np.zeros(n_pol, dtype=float)
     for idx in _bmp_impacted_parcel_indices(ctx, parcel_idx, bmp_rec):
         area_ha = float(ctx.parcel_area_ha[idx])
-        mass += np.asarray(pre_bmp_yields[idx, :], dtype=float) * area_ha * _CURRENT_TIMESTEP_YEARS
+        mass += np.asarray(pre_bmp_load_rates[idx, :], dtype=float) * area_ha * _CURRENT_TIMESTEP_YEARS
     return mass
 
 
@@ -246,8 +246,11 @@ class Model:
 
         self._select_bmp_type = types.MethodType(_select_bmp_type, self)
         self._get_bmp_name = types.MethodType(_get_bmp_name, self)
-        self._get_pathway_yields = types.MethodType(_get_pathway_yields, self)
-        self._get_current_total_yield = types.MethodType(_get_current_total_yield, self)
+        self._get_pathway_load_rates = types.MethodType(_get_pathway_load_rates, self)
+        self._get_current_total_load_rate = types.MethodType(_get_current_total_load_rate, self)
+        # Deprecated helper aliases retained for external callers during the naming transition.
+        self._get_pathway_yields = self._get_pathway_load_rates
+        self._get_current_total_yield = self._get_current_total_load_rate
         self._apply_pathway_reduction = types.MethodType(_apply_pathway_reduction, self)
         self._sample_efficiency = types.MethodType(_sample_efficiency, self)          # legacy
         self._sample_efficiency_map = types.MethodType(_sample_efficiency_map, self)  # pathway-aware
@@ -258,7 +261,8 @@ class Model:
         self._get_bmp_cost = types.MethodType(_get_bmp_cost, self)
 
         self._sample_parcel_index = types.MethodType(_sample_parcel_index, self)
-        self._sample_yield = types.MethodType(_sample_yield, self)
+        self._sample_load_rate = types.MethodType(_sample_load_rate, self)
+        self._sample_yield = self._sample_load_rate  # deprecated helper alias
         self._get_parcel_metadata = types.MethodType(_get_parcel_metadata, self)
         self._get_parcel_up_list = types.MethodType(_get_parcel_up_list, self)
         self._get_parcel_out_oids = types.MethodType(_get_parcel_out_oids, self)
@@ -267,7 +271,7 @@ class Model:
         self._estimate_costs_for_probabilities = types.MethodType(_estimate_costs_for_probabilities, self)
         self._select_cost_rate_median = types.MethodType(_select_cost_rate_median, self)
 
-        # Pathway definitions and aggregate-yield fractions are validated in
+        # Pathway definitions and aggregate-load-rate fractions are validated in
         # io_utils because statistical mode may use arbitrary pathway names.
         self.pollutant_yield_frac_surface = 0.0
         self.pollutant_yield_frac_shallow = 0.0
@@ -343,10 +347,10 @@ class Model:
 
             # Active pathways are mode-specific and were validated during input loading.
             self.pathway_names = list(self.data.get(DATA_PATHWAYS) or ["surface"])
-            self.pollutant_yield_pathway_fractions = dict(
+            self.pollutant_load_rate_pathway_fractions = dict(
                 self.data.get(DATA_POLLUTANT_YIELD_PATHWAY_FRACTIONS) or {}
             )
-            self.pollutant_yield_is_aggregate = bool(
+            self.pollutant_load_rate_is_aggregate = bool(
                 self.data.get(DATA_POLLUTANT_YIELD_IS_AGGREGATE, False)
             )
 
@@ -380,13 +384,13 @@ class Model:
             self.groundwater_concentrations = self.data.get(DATA_GROUNDWATER_CONCENTRATIONS)
             self.groundwater_loads = self.load_generation_mode == LOAD_MODE_PLET_RUSLE
 
-            # Statistical mode supports either explicit pathway-specific yield
-            # distributions or one aggregate distribution split by validated
+            # Statistical mode supports either explicit pathway-specific load rates
+            # distributions or one aggregate_load_rate distribution split by validated
             # user-defined pathway fractions.
-            self.pollutant_yield_stats = [[None] * len(self.pollutants) for _ in range(len(self.parcel_ids))]
-            pol_y = self.data.get(DATA_POLLUTANT_YIELD)
-            if pol_y is not None:
-                for _, row in pol_y.iterrows():
+            self.pollutant_load_rate_stats = [[None] * len(self.pollutants) for _ in range(len(self.parcel_ids))]
+            pollutant_load_rate_table = self.data.get(DATA_POLLUTANT_YIELD)
+            if pollutant_load_rate_table is not None:
+                for _, row in pollutant_load_rate_table.iterrows():
                     i = self.pid_to_index[str(row["pid"])]
                     j = self.pollutant_to_index[str(row[COL_POLLUTANT])]
                     stats = {
@@ -394,17 +398,25 @@ class Model:
                         for k in row.index
                         if k not in ("pid", COL_POLLUTANT, COL_PATHWAY) and not pd.isna(row[k])
                     }
-                    if self.pollutant_yield_is_aggregate:
-                        self.pollutant_yield_stats[i][j] = stats
+                    if self.pollutant_load_rate_is_aggregate:
+                        self.pollutant_load_rate_stats[i][j] = stats
                     else:
                         path = str(row[COL_PATHWAY]).strip().lower()
-                        entry = self.pollutant_yield_stats[i][j]
+                        entry = self.pollutant_load_rate_stats[i][j]
                         if entry is None:
                             entry = {}
-                            self.pollutant_yield_stats[i][j] = entry
+                            self.pollutant_load_rate_stats[i][j] = entry
                         entry[path] = stats  # type: ignore[index]
             elif self.load_generation_mode != LOAD_MODE_PLET_RUSLE:
                 raise ValueError("pollutant_yield is required in statistical load-generation mode")
+
+            # Deprecated state aliases retained for callers/tests that still use
+            # the historical public-input terminology. New computational code
+            # uses explicit load-rate names.
+            self.pollutant_yield_stats = self.pollutant_load_rate_stats
+            self.pollutant_yield_pathway_fractions = self.pollutant_load_rate_pathway_fractions
+            self.pollutant_yield_is_aggregate = self.pollutant_load_rate_is_aggregate
+
             # BMP selection probabilities (possibly via costs or explicit table)
             bmp_probs = self._get_bmp_selection_probs(self.cfg.get(CFG_BMP_SEL))
             self.bmp_cps = bmp_probs["cps"].astype(int).tolist()
@@ -425,6 +437,25 @@ class Model:
             Serializable data bundle containing the model state needed by
             worker processes.
         """
+        pollutant_load_rate_stats = getattr(
+            self, "pollutant_load_rate_stats", getattr(self, "pollutant_yield_stats", None)
+        )
+        pollutant_load_rate_pathway_fractions = dict(
+            getattr(
+                self,
+                "pollutant_load_rate_pathway_fractions",
+                getattr(self, "pollutant_yield_pathway_fractions", {}),
+            )
+            or {}
+        )
+        pollutant_load_rate_is_aggregate = bool(
+            getattr(
+                self,
+                "pollutant_load_rate_is_aggregate",
+                getattr(self, "pollutant_yield_is_aggregate", False),
+            )
+        )
+
         return dict(
             cfg=self.cfg,
             data=self.data,
@@ -448,7 +479,8 @@ class Model:
             outlet_mean_map=self.outlet_mean_map,
             delivery_coeffs=self.delivery_coeffs,
             bmp_efficiency_stats=self.bmp_efficiency_stats,
-            pollutant_yield_stats=self.pollutant_yield_stats,
+            pollutant_load_rate_stats=pollutant_load_rate_stats,
+            pollutant_yield_stats=pollutant_load_rate_stats,  # deprecated alias
             load_generation=self.load_generation,
             load_generation_mode=self.load_generation_mode,
             plet_inputs=self.plet_inputs,
@@ -456,8 +488,10 @@ class Model:
             pollutant_concentrations=self.pollutant_concentrations,
             groundwater_concentrations=self.groundwater_concentrations,
             pathway_names=self.pathway_names,
-            pollutant_yield_pathway_fractions=self.pollutant_yield_pathway_fractions,
-            pollutant_yield_is_aggregate=self.pollutant_yield_is_aggregate,
+            pollutant_load_rate_pathway_fractions=pollutant_load_rate_pathway_fractions,
+            pollutant_yield_pathway_fractions=pollutant_load_rate_pathway_fractions,  # deprecated alias
+            pollutant_load_rate_is_aggregate=pollutant_load_rate_is_aggregate,
+            pollutant_yield_is_aggregate=pollutant_load_rate_is_aggregate,  # deprecated alias
             groundwater_loads=self.groundwater_loads,
             bmp_cps=self.bmp_cps,
             bmp_selection_probs=self.bmp_selection_probs,
@@ -466,8 +500,8 @@ class Model:
             random_seed=self.data.get("random_seed"),
             # Legacy aliases retained for external helpers; dynamic pathway
             # handling uses pathway_names/pathway fractions above.
-            pollutant_yield_frac_surface=self.pollutant_yield_pathway_fractions.get("surface", 0.0),
-            pollutant_yield_frac_shallow=self.pollutant_yield_pathway_fractions.get("shallow subsurface", 0.0),
+            pollutant_yield_frac_surface=pollutant_load_rate_pathway_fractions.get("surface", 0.0),
+            pollutant_yield_frac_shallow=pollutant_load_rate_pathway_fractions.get("shallow subsurface", 0.0),
         )
 
     def run_all_scenarios(self) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
@@ -560,8 +594,10 @@ class _ScenarioContext:
 
         self._select_bmp_type = types.MethodType(_select_bmp_type, self)
         self._get_bmp_name = types.MethodType(_get_bmp_name, self)
-        self._get_pathway_yields = types.MethodType(_get_pathway_yields, self)
-        self._get_current_total_yield = types.MethodType(_get_current_total_yield, self)
+        self._get_pathway_load_rates = types.MethodType(_get_pathway_load_rates, self)
+        self._get_current_total_load_rate = types.MethodType(_get_current_total_load_rate, self)
+        self._get_pathway_yields = self._get_pathway_load_rates  # deprecated helper alias
+        self._get_current_total_yield = self._get_current_total_load_rate  # deprecated helper alias
         self._apply_pathway_reduction = types.MethodType(_apply_pathway_reduction, self)
         self._sample_efficiency = types.MethodType(_sample_efficiency, self)            # legacy
         self._sample_efficiency_map = types.MethodType(_sample_efficiency_map, self)    # pathway-aware
@@ -572,7 +608,8 @@ class _ScenarioContext:
         self._get_bmp_cost = types.MethodType(_get_bmp_cost, self)
 
         self._sample_parcel_index = types.MethodType(_sample_parcel_index, self)
-        self._sample_yield = types.MethodType(_sample_yield, self)
+        self._sample_load_rate = types.MethodType(_sample_load_rate, self)
+        self._sample_yield = self._sample_load_rate  # deprecated helper alias
         self._get_parcel_metadata = types.MethodType(_get_parcel_metadata, self)
         self._get_parcel_up_list = types.MethodType(_get_parcel_up_list, self)
         self._get_parcel_out_oids = types.MethodType(_get_parcel_out_oids, self)
@@ -621,37 +658,37 @@ def _run_one_scenario(
         load_state = None
 
         if ctx.load_generation_mode == LOAD_MODE_PLET_RUSLE:
-            baseline, load_state = initialize_plet_rusle_state(ctx)
-            yields = baseline.copy()
-            ctx.current_pathway_yields = load_state.pathway_yields
-            ctx.current_untreated_groundwater_yields = load_state.untreated_groundwater_yields
+            baseline_load_rates, load_state = initialize_plet_rusle_state(ctx)
+            load_rates = baseline_load_rates.copy()
+            ctx.current_pathway_load_rates = load_state.pathway_load_rates
+            ctx.current_untreated_groundwater_load_rates = load_state.untreated_groundwater_load_rates
             ctx.pathway_names = ["surface", "subsurface"]
-            logger.info("Generated baseline PLET/RUSLE yields for surface and subsurface pathways")
+            logger.info("Generated baseline_load_rates PLET/RUSLE load_rates for surface and subsurface pathways")
         else:
-            baseline = np.zeros((len(ctx.parcel_ids), n_pol), dtype=float)
-            yields = np.zeros_like(baseline)
-            pathway_yields = np.zeros(
+            baseline_load_rates = np.zeros((len(ctx.parcel_ids), n_pol), dtype=float)
+            load_rates = np.zeros_like(baseline_load_rates)
+            pathway_load_rates = np.zeros(
                 (len(ctx.parcel_ids), n_pol, len(ctx.pathway_names)), dtype=float
             )
             for i, _pid in enumerate(ctx.parcel_ids):
                 for pol_idx in range(n_pol):
-                    entry = ctx.pollutant_yield_stats[i][pol_idx]
-                    if ctx.pollutant_yield_is_aggregate:
-                        aggregate = float(ctx._sample_from_stats(entry, kind="yield"))
+                    entry = ctx.pollutant_load_rate_stats[i][pol_idx]
+                    if ctx.pollutant_load_rate_is_aggregate:
+                        aggregate_load_rate = float(ctx._sample_from_stats(entry, kind="load_rate"))
                         for path_idx, path in enumerate(ctx.pathway_names):
-                            pathway_yields[i, pol_idx, path_idx] = (
-                                aggregate * float(ctx.pollutant_yield_pathway_fractions[path])
+                            pathway_load_rates[i, pol_idx, path_idx] = (
+                                aggregate_load_rate * float(ctx.pollutant_load_rate_pathway_fractions[path])
                             )
                     else:
                         for path_idx, path in enumerate(ctx.pathway_names):
-                            pathway_yields[i, pol_idx, path_idx] = float(
-                                ctx._sample_from_stats(entry[path], kind="yield")
+                            pathway_load_rates[i, pol_idx, path_idx] = float(
+                                ctx._sample_from_stats(entry[path], kind="load_rate")
                             )
-                    baseline[i, pol_idx] = float(np.sum(pathway_yields[i, pol_idx, :]))
-                    yields[i, pol_idx] = baseline[i, pol_idx]
-            ctx.current_pathway_yields = pathway_yields
+                    baseline_load_rates[i, pol_idx] = float(np.sum(pathway_load_rates[i, pol_idx, :]))
+                    load_rates[i, pol_idx] = baseline_load_rates[i, pol_idx]
+            ctx.current_pathway_load_rates = pathway_load_rates
             logger.info(
-                "Generated statistical baseline parcel yields across pathways: "
+                "Generated statistical baseline_load_rates parcel load_rates across pathways: "
                 + ", ".join(ctx.pathway_names)
             )
 
@@ -764,22 +801,22 @@ def _run_one_scenario(
                 bmp_rec[OUTPUT_BMP_FAILED] = bool(failed_flag)
                 bmp_rec["load_generation_mode"] = str(ctx.load_generation_mode)
 
-                bmp_outputs = {OUTPUT_TREATED: np.zeros(n_pol, dtype=float), OUTPUT_REMOVED: np.zeros(n_pol, dtype=float)}
+                bmp_mass_rate_outputs = {OUTPUT_TREATED: np.zeros(n_pol, dtype=float), OUTPUT_REMOVED: np.zeros(n_pol, dtype=float)}
 
                 # Preserve the current pre-BMP load state long enough to derive a
                 # true mass denominator after the BMP routine identifies its
                 # impacted parcels. This is especially important for wetlands.
-                pre_bmp_yields = yields.copy()
+                pre_bmp_load_rates = load_rates.copy()
 
                 # Apply BMP using sampled efficiency by flow pathway.
                 if cps in (656, 657):
-                    ctx._simulate_wetland(parcel_idx, eff_maps, yields, bmp_rec, bmp_outputs)
+                    ctx._simulate_wetland(parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs)
                     quantity = float(bmp_rec[OUTPUT_WETLAND_AREA])
                 elif cps in (412,):
-                    ctx._simulate_grassed(parcel_idx, eff_maps, yields, bmp_rec, bmp_outputs)
+                    ctx._simulate_grassed(parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs)
                     quantity = float(bmp_rec[OUTPUT_BUFFER_AREA]) if bmp_rec[OUTPUT_BUFFER_AREA] else 0.0
                 else:
-                    ctx._simulate_infield(parcel_idx, eff_maps, yields, bmp_rec, bmp_outputs)
+                    ctx._simulate_infield(parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs)
                     quantity = float(ctx.parcel_area_ha[parcel_idx])
 
                 # Costing and totals
@@ -795,10 +832,10 @@ def _run_one_scenario(
                 # explicit *_mass_* fields are interpreted as kg over the current
                 # one-year timestep and are the basis for all dimensionless metrics.
                 bmp_rec[OUTPUT_COST_USD] = cost_this
-                treated_mass_kg = np.asarray(bmp_outputs[OUTPUT_TREATED], dtype=float) * _CURRENT_TIMESTEP_YEARS
-                removed_mass_kg = np.asarray(bmp_outputs[OUTPUT_REMOVED], dtype=float) * _CURRENT_TIMESTEP_YEARS
+                treated_mass_kg = np.asarray(bmp_mass_rate_outputs[OUTPUT_TREATED], dtype=float) * _CURRENT_TIMESTEP_YEARS
+                removed_mass_kg = np.asarray(bmp_mass_rate_outputs[OUTPUT_REMOVED], dtype=float) * _CURRENT_TIMESTEP_YEARS
                 baseline_mass_kg = _baseline_mass_before_bmp_kg(
-                    ctx, pre_bmp_yields, parcel_idx, bmp_rec
+                    ctx, pre_bmp_load_rates, parcel_idx, bmp_rec
                 )
                 _add_mass_metrics_to_bmp_record(
                     bmp_rec,
@@ -808,24 +845,24 @@ def _run_one_scenario(
                     removed_mass_kg,
                 )
                 for pol_idx, pol in enumerate(ctx.pollutants):
-                    bmp_rec[f"{OUTPUT_TREATED_PREFIX}{pol}"] = float(bmp_outputs[OUTPUT_TREATED][pol_idx])
-                    bmp_rec[f"{OUTPUT_REMOVED_PREFIX}{pol}"] = float(bmp_outputs[OUTPUT_REMOVED][pol_idx])
+                    bmp_rec[f"{OUTPUT_TREATED_PREFIX}{pol}"] = float(bmp_mass_rate_outputs[OUTPUT_TREATED][pol_idx])
+                    bmp_rec[f"{OUTPUT_REMOVED_PREFIX}{pol}"] = float(bmp_mass_rate_outputs[OUTPUT_REMOVED][pol_idx])
                 scenario_bmps.append(bmp_rec)
 
                 # Summary metrics are calculated from accumulated masses rather
-                # than from parcel yield-rate denominators or averaged efficiencies.
+                # than from parcel areal-load-rate denominators or averaged efficiencies.
                 collector.add_bmp_record(bmp_rec)
 
                 # Delivered reductions for plots
                 oids = ctx._get_parcel_out_oids(parcel_idx)
                 for pol_idx, pol in enumerate(ctx.pollutants):
-                    removed = float(bmp_outputs[OUTPUT_REMOVED][pol_idx])
+                    removed_mass_rate_kg_per_yr = float(bmp_mass_rate_outputs[OUTPUT_REMOVED][pol_idx])
                     for oid in oids:
                         dr = ctx._delivery_coeffs(pid, oid)
                         deliver = (
-                            removed * dr[COL_SDR_F_TO_S] * dr[COL_SDR_S_TO_O]
+                            removed_mass_rate_kg_per_yr * dr[COL_SDR_F_TO_S] * dr[COL_SDR_S_TO_O]
                             if pol == "TSS"
-                            else removed * dr[COL_NDR_F_TO_S] * dr[COL_NDR_S_TO_O]
+                            else removed_mass_rate_kg_per_yr * dr[COL_NDR_F_TO_S] * dr[COL_NDR_S_TO_O]
                         )
                         cumul[pol][oid] += deliver
 
@@ -851,8 +888,12 @@ def _run_one_scenario(
         for parcel_idx, pid_i in enumerate(ctx.parcel_ids):
             row = dict(scenario=sid, pid=str(pid_i))
             for pol_idx, pol in enumerate(ctx.pollutants):
-                row[f"baseline_{pol}"] = float(baseline[parcel_idx, pol_idx])
-                row[f"final_{pol}"] = float(yields[parcel_idx, pol_idx])
+                # Legacy annual yield-style columns are retained for compatibility.
+                row[f"baseline_{pol}"] = float(baseline_load_rates[parcel_idx, pol_idx])
+                row[f"final_{pol}"] = float(load_rates[parcel_idx, pol_idx])
+                # Explicit rate columns are preferred for dynamic-ready workflows.
+                row[f"baseline_load_rate_{pol}_kg_ha_yr"] = float(baseline_load_rates[parcel_idx, pol_idx])
+                row[f"final_load_rate_{pol}_kg_ha_yr"] = float(load_rates[parcel_idx, pol_idx])
             scenario_parcels.append(row)
 
         # Realized stochastic PLET/RUSLE inputs and derived diagnostics.
@@ -880,21 +921,27 @@ def _run_one_scenario(
                     label = str(pol).lower()
                     for path_idx, path in enumerate(ctx.pathway_names):
                         path_label = str(path).lower().replace(" ", "_")
-                        row[f"initial_{path_label}_{label}_kg_ha"] = float(
-                            load_state.baseline_pathway_yields[parcel_idx, pol_idx, path_idx]
+                        initial_pathway_load_rate = float(
+                            load_state.baseline_pathway_load_rates[parcel_idx, pol_idx, path_idx]
                         )
-                        row[f"final_{path_label}_{label}_kg_ha"] = float(
-                            load_state.pathway_yields[parcel_idx, pol_idx, path_idx]
+                        final_pathway_load_rate = float(
+                            load_state.pathway_load_rates[parcel_idx, pol_idx, path_idx]
                         )
+                        # Legacy columns retained for backward compatibility.
+                        row[f"initial_{path_label}_{label}_kg_ha"] = initial_pathway_load_rate
+                        row[f"final_{path_label}_{label}_kg_ha"] = final_pathway_load_rate
+                        # Preferred explicit annual areal-load-rate columns.
+                        row[f"initial_{path_label}_{label}_load_rate_kg_ha_yr"] = initial_pathway_load_rate
+                        row[f"final_{path_label}_{label}_load_rate_kg_ha_yr"] = final_pathway_load_rate
                     # Backward-compatible diagnostic aliases. In plet_rusle, the
                     # actual modeled pathways are surface and subsurface only. These
                     # legacy columns do not create additional modeled pathways.
                     if ctx.pathway_names == ["surface", "subsurface"]:
                         initial_subsurface = float(
-                            load_state.baseline_pathway_yields[parcel_idx, pol_idx, 1]
+                            load_state.baseline_pathway_load_rates[parcel_idx, pol_idx, 1]
                         )
                         final_subsurface = float(
-                            load_state.pathway_yields[parcel_idx, pol_idx, 1]
+                            load_state.pathway_load_rates[parcel_idx, pol_idx, 1]
                         )
                         row[f"initial_shallow_{label}_kg_ha"] = 0.0
                         row[f"initial_deep_{label}_kg_ha"] = 0.0
