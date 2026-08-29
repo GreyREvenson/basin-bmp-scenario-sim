@@ -14,7 +14,6 @@ def test_example_config_runs_end_to_end(tmp_path, monkeypatch) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     example_cfg = repo_root / "examples" / "east_fork" / "inputs" / "default" / "east_fork.yaml"
     cfg = yaml.safe_load(example_cfg.read_text(encoding="utf-8"))
-
     cfg["outputs"] = str(tmp_path / "outputs")
     cfg["n_scenarios"] = 1
     cfg["bmp_limit_n"] = 5
@@ -28,7 +27,6 @@ def test_example_config_runs_end_to_end(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("sys.argv", ["run_model.py", str(smoke_cfg)])
 
     run_model.main()
-
     outputs = tmp_path / "outputs"
     assert (outputs / "log.txt").exists()
     assert (outputs / "logs" / "s1.txt").exists()
@@ -48,7 +46,6 @@ def test_plet_groundwater_is_rain_corrected_and_unchanged_by_bmps(tmp_path, monk
     cfg["bmp_limit_n"] = 5
     cfg["parallel"] = {"n_jobs": 1}
     cfg["verbose"] = True
-
     smoke_cfg = tmp_path / "plet_smoke.yaml"
     smoke_cfg.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
 
@@ -56,9 +53,7 @@ def test_plet_groundwater_is_rain_corrected_and_unchanged_by_bmps(tmp_path, monk
     monkeypatch.setattr("sys.argv", ["run_model.py", str(smoke_cfg)])
 
     run_model.main()
-
     outputs = tmp_path / "outputs"
-    log_text = (outputs / "log.txt").read_text(encoding="utf-8")
     load_parameters = pd.read_parquet(outputs / "load_parameters" / "s1.parquet")
     parcels = pd.read_parquet(outputs / "parcels" / "s1.parquet")
     merged = load_parameters.merge(parcels, on=["scenario", "pid"], validate="one_to_one")
@@ -71,22 +66,33 @@ def test_plet_groundwater_is_rain_corrected_and_unchanged_by_bmps(tmp_path, monk
     assert np.allclose(load_parameters["initial_cn"], 78.0)
     assert set(load_parameters["initial_land_cover"]) == {"cropland"}
     assert set(load_parameters["initial_hsg"]) == {"B"}
+
+    # In PLET/RUSLE mode, infiltration-derived nutrient load is the canonical
+    # subsurface pathway. The example's subsurface BMP efficiencies are zero,
+    # so that pathway must remain unchanged by BMP application.
     for pollutant in ("tn", "tp"):
-        initial_groundwater = load_parameters[f"initial_untreated_groundwater_{pollutant}_kg_ha"]
-        final_groundwater = load_parameters[f"final_untreated_groundwater_{pollutant}_kg_ha"]
-        assert np.allclose(initial_groundwater, final_groundwater)
+        initial_subsurface_load_rate = load_parameters[
+            f"initial_subsurface_{pollutant}_load_rate_kg_ha_yr"
+        ]
+        final_subsurface_load_rate = load_parameters[
+            f"final_subsurface_{pollutant}_load_rate_kg_ha_yr"
+        ]
+        assert np.allclose(initial_subsurface_load_rate, final_subsurface_load_rate)
 
         initial_components = (
-            merged[f"initial_surface_{pollutant}_kg_ha"]
-            + merged[f"initial_shallow_{pollutant}_kg_ha"]
-            + merged[f"initial_deep_{pollutant}_kg_ha"]
-            + merged[f"initial_untreated_groundwater_{pollutant}_kg_ha"]
+            merged[f"initial_surface_{pollutant}_load_rate_kg_ha_yr"]
+            + merged[f"initial_subsurface_{pollutant}_load_rate_kg_ha_yr"]
         )
         final_components = (
-            merged[f"final_surface_{pollutant}_kg_ha"]
-            + merged[f"final_shallow_{pollutant}_kg_ha"]
-            + merged[f"final_deep_{pollutant}_kg_ha"]
-            + merged[f"final_untreated_groundwater_{pollutant}_kg_ha"]
+            merged[f"final_surface_{pollutant}_load_rate_kg_ha_yr"]
+            + merged[f"final_subsurface_{pollutant}_load_rate_kg_ha_yr"]
         )
-        assert np.allclose(merged[f"baseline_{pollutant.upper()}"], initial_components)
-        assert np.allclose(merged[f"final_{pollutant.upper()}"], final_components)
+        pollutant_upper = pollutant.upper()
+        assert np.allclose(
+            merged[f"baseline_load_rate_{pollutant_upper}_kg_ha_yr"],
+            initial_components,
+        )
+        assert np.allclose(
+            merged[f"final_load_rate_{pollutant_upper}_kg_ha_yr"],
+            final_components,
+        )

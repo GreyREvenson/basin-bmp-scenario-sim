@@ -20,8 +20,6 @@ from .constants import (
     OUTPUT_BUFFER_AREA,
     OUTPUT_CATCHMENT_RATIO,
     OUTPUT_LINEAR_LENGTH,
-    OUTPUT_REMOVED_PREFIX,
-    OUTPUT_TREATED_PREFIX,
     OUTPUT_WETLAND_AREA,
     OUTPUT_COST_USD,
     OUTPUT_TOTAL_COST_USD,
@@ -131,17 +129,6 @@ def _add_pollutant_mass_summary(
                     summary[f"{column}_{stat_name}"] = stat_val
                 summary[f"{column}_total"] = float(np.sum(values))
 
-        # Preserve the established treated_/removed_ descriptive-stat columns as
-        # backward-compatible aliases. Their values are masses for the current
-        # one-year timestep; new code should prefer the explicit *_mass_* names.
-        legacy_treated = _finite_record_values(records, f"{OUTPUT_TREATED_PREFIX}{pol}")
-        legacy_removed = _finite_record_values(records, f"{OUTPUT_REMOVED_PREFIX}{pol}")
-        if legacy_treated:
-            for stat_name, stat_val in _compute_statistics(np.asarray(legacy_treated, dtype=float)).items():
-                summary[f"treated_{pol}_{stat_name}"] = stat_val
-        if legacy_removed:
-            for stat_name, stat_val in _compute_statistics(np.asarray(legacy_removed, dtype=float)).items():
-                summary[f"removed_{pol}_{stat_name}"] = stat_val
 
         baseline_total = float(np.sum(baseline_vals)) if baseline_vals else 0.0
         treated_total = float(np.sum(treated_vals)) if treated_vals else 0.0
@@ -169,17 +156,12 @@ class BMPSummaryCollector:
     def add_bmp_record(
         self,
         bmp_record: Dict[str, Any],
-        pid_baseline_load_rates: Optional[Dict[str, float]] = None,
-        *,
-        pid_baseline_yields: Optional[Dict[str, float]] = None,
     ) -> None:
         """Add one BMP record.
 
-        ``pid_baseline_load_rates`` is the preferred compatibility parameter;
-        ``pid_baseline_yields`` remains accepted as a deprecated keyword. Mass-based performance metrics are read directly from the BMP
-        record, so a areal-load-rate denominator is never used to calculate efficiency.
+        Mass-based performance metrics are read directly from the BMP record,
+        so an areal-load-rate denominator is never used to calculate efficiency.
         """
-        del pid_baseline_load_rates, pid_baseline_yields
         cps = int(bmp_record["cps"])
         group = self.bmp_by_cps[cps]
         group["records"].append(bmp_record)

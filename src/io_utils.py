@@ -32,11 +32,11 @@ from .constants import (
     CFG_PARCEL_P,
     CFG_PARCEL_UP,
     CFG_PARCELS,
-    CFG_POLLUTANT_YIELD,
+    CFG_POLLUTANT_LOAD_RATE,
     CFG_POLLUTANTS,
-    CFG_POLLUTANT_YIELD_FRAC_SURFACE,
-    CFG_POLLUTANT_YIELD_FRAC_SHALLOW,
-    CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS,
+    CFG_POLLUTANT_LOAD_RATE_FRAC_SURFACE,
+    CFG_POLLUTANT_LOAD_RATE_FRAC_SHALLOW,
+    CFG_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS,
     CFG_RANDOM_SEED,
     CFG_LOAD_GENERATION,
     CFG_INPUT_DISTRIBUTIONS,
@@ -69,8 +69,8 @@ from .constants import (
     PATHWAY_VALUES,
     PLET_PATHWAY_VALUES,
     DATA_PATHWAYS,
-    DATA_POLLUTANT_YIELD_PATHWAY_FRACTIONS,
-    DATA_POLLUTANT_YIELD_IS_AGGREGATE,
+    DATA_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS,
+    DATA_POLLUTANT_LOAD_RATE_IS_AGGREGATE,
 )
 from .utils import ci_get, normalize_columns, normalize_pollutant_label
 from .logging_utils import log_scope
@@ -309,7 +309,7 @@ def _normalize_pathway_column(df: pd.DataFrame, label: str, logger: Any) -> pd.D
     """Normalize pathway labels without restricting user-defined pathways.
 
     Statistical mode may use any non-empty pathway labels shared by the parcel
-    yield and BMP efficiency inputs. PLET/RUSLE-specific pathway restrictions
+    load-rate and BMP efficiency inputs. PLET/RUSLE-specific pathway restrictions
     are applied later, after the load-generation mode is known.
     """
     del logger
@@ -701,11 +701,11 @@ def _build_parcel_up_map(
     """Build a validated mapping of parcels to upstream parcel IDs.
 
     Each ``pid_up`` cell may contain one ID, a comma-separated list of IDs, or
-    no value. A single ``pid='*'`` row is also permitted when ``pid_up`` is
-    blank; it explicitly declares that parcels have no upstream parcels by
-    default, while exact parcel rows define the exceptions. IDs are stripped
-    of surrounding whitespace, deduplicated while preserving their input
-    order, and checked against the loaded parcel set.
+    no value. A single ``pid='*'`` row with a blank ``pid_up`` may be used to
+    declare the watershed-wide default of no upstream parcels; explicit parcel
+    rows then provide exceptions. IDs are stripped of surrounding whitespace,
+    deduplicated while preserving their input order, and checked against the
+    loaded parcel set.
 
     Parameters
     ----------
@@ -724,13 +724,15 @@ def _build_parcel_up_map(
     ------
     ValueError
         If a receiving or upstream parcel ID is missing from the loaded parcel
-        set, or if a graph row has a blank receiving parcel ID.
+        set, a graph row has a blank receiving parcel ID, or a wildcard row is
+        malformed.
     """
     ordered_pids = [str(pid).strip() for pid in parcel_ids]
     valid_pids = set(ordered_pids)
     parcel_up_map: Dict[str, List[str]] = {pid: [] for pid in ordered_pids}
     seen_by_pid = {pid: set() for pid in ordered_pids}
     unknown_pids = set()
+    wildcard_default_seen = False
 
     def resolve_pid(value: Any) -> str:
         """Match numeric CSV values such as ``4.0`` to parcel ID ``4``."""
@@ -742,8 +744,6 @@ def _build_parcel_up_map(
             if integer_pid in valid_pids:
                 return integer_pid
         return pid
-
-    wildcard_default_seen = False
 
     for row_idx, row in upstream_rows.iterrows():
         raw_pid = row[COL_PID]
@@ -828,13 +828,12 @@ def _expand_pid_defaults(
 
     Rows whose exact parcel IDs are not present in the clipped parcel layer are
     removed with a warning. If no wildcard row is present, the function simply
-    returns the valid exact rows, preserving the existing subset behavior.
+    returns the valid exact rows, preserving subset behavior.
     """
     out = df.copy()
     out[COL_PID] = out[COL_PID].astype(str).str.strip()
     ordered_pids = [str(pid).strip() for pid in parcel_ids]
     valid_pids = set(ordered_pids)
-
     valid_mask = out[COL_PID].isin(valid_pids | {"*"})
     removed = out.loc[~valid_mask]
     if not removed.empty:
@@ -851,8 +850,6 @@ def _expand_pid_defaults(
     exact = out[out[COL_PID] != "*"].copy()
 
     # Validate exact/default row uniqueness even when no wildcard row exists.
-    # Before wildcard support, parcel_p rejected duplicate exact parcel rows;
-    # an early return here would silently weaken that validation.
     if key_columns is not None:
         keys = list(key_columns)
         if keys:
@@ -877,11 +874,7 @@ def _expand_pid_defaults(
         return exact.reset_index(drop=True)
 
     expanded: List[pd.Series] = []
-
     if key_columns is None:
-        # Parcel-level group override: any explicit row(s) replace the whole
-        # wildcard group for that parcel. This preserves multi-row parcel_out
-        # mappings while still allowing one compact watershed-wide default.
         for pid in ordered_pids:
             pid_rows = exact[exact[COL_PID] == pid]
             source = pid_rows if not pid_rows.empty else defaults
@@ -910,7 +903,6 @@ def _expand_pid_defaults(
     if not expanded:
         return out.iloc[0:0].copy().reset_index(drop=True)
     return pd.DataFrame(expanded, columns=out.columns).reset_index(drop=True)
-
 
 def _load_parcel_outlets(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
     """Load parcel-to-outlet relationships.
@@ -1302,7 +1294,7 @@ def _validate_statistical_efficiency_coverage(
     expected = set(pathways)
     if supplied != expected:
         raise ValueError(
-            "statistical mode requires pollutant_yield and bmp_efficiency to use the same pathways; "
+            "statistical mode requires pollutant_load_rate and bmp_efficiency to use the same pathways; "
             f"expected {sorted(expected)}, found {sorted(supplied)} in bmp_efficiency"
         )
     _validate_unique_rows(out, [COL_CPS, COL_POLLUTANT, COL_PATHWAY], CFG_BMP_EFFICIENCY)
@@ -1383,12 +1375,12 @@ def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any, distributio
     return df
 
 
-def _expand_pollutant_yield_defaults(
+def _expand_pollutant_load_rate_defaults(
     df: pd.DataFrame,
     parcel_ids: Sequence[str],
     pollutants: Sequence[str],
 ) -> pd.DataFrame:
-    """Expand ``pid='*'`` yield defaults while preserving exact overrides.
+    """Expand ``pid='*'`` load-rate defaults while preserving exact overrides.
 
     This lets large statistical-mode applications define one distribution for
     many or all parcels and add only the parcel-specific exceptions. Exact
@@ -1406,7 +1398,7 @@ def _expand_pollutant_yield_defaults(
 
     explicit = COL_PATHWAY in out.columns
     keys = [COL_PID, COL_POLLUTANT] + ([COL_PATHWAY] if explicit else [])
-    _validate_unique_rows(out, keys, CFG_POLLUTANT_YIELD)
+    _validate_unique_rows(out, keys, CFG_POLLUTANT_LOAD_RATE)
     pathways: List[Optional[str]] = (
         list(dict.fromkeys(out[COL_PATHWAY].astype(str).tolist()))
         if explicit else [None]
@@ -1440,8 +1432,8 @@ def _expand_pollutant_yield_defaults(
     return pd.DataFrame(expanded).reset_index(drop=True)
 
 
-def _load_pollutant_yield(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants: List[str], logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-    """Load parcel pollutant yields for non-PLET mode.
+def _load_pollutant_load_rate(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants: List[str], logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Load parcel pollutant load rates for non-PLET mode.
 
     Parameters
     ----------
@@ -1457,35 +1449,35 @@ def _load_pollutant_yield(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants
     Returns
     -------
     pandas.DataFrame
-        Parcel pollutant yield table filtered to valid parcels and pollutants.
+        Parcel pollutant load rate table filtered to valid parcels and pollutants.
     """
-    df = _merge_csvs(ci_get(cfg, CFG_POLLUTANT_YIELD), [COL_PID, COL_POLLUTANT], CFG_POLLUTANT_YIELD, logger)
-    df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_POLLUTANT_YIELD, logger)
-    df = _normalize_pathway_column(df, CFG_POLLUTANT_YIELD, logger)
-    df = resolve_distribution_references(df, distribution_catalog, CFG_POLLUTANT_YIELD)
-    _validate_stats_table(df, CFG_POLLUTANT_YIELD)
+    df = _merge_csvs(ci_get(cfg, CFG_POLLUTANT_LOAD_RATE), [COL_PID, COL_POLLUTANT], CFG_POLLUTANT_LOAD_RATE, logger)
+    df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_POLLUTANT_LOAD_RATE, logger)
+    df = _normalize_pathway_column(df, CFG_POLLUTANT_LOAD_RATE, logger)
+    df = resolve_distribution_references(df, distribution_catalog, CFG_POLLUTANT_LOAD_RATE)
+    _validate_stats_table(df, CFG_POLLUTANT_LOAD_RATE)
     df[COL_PID] = df[COL_PID].astype(str)
-    df = _expand_pollutant_yield_defaults(
+    df = _expand_pollutant_load_rate_defaults(
         df, parcels[COL_PID].astype(str).tolist(), pollutants
     )
     if df.empty:
-        raise ValueError("pollutant_yield has no records for specified parcels+pollutants")
-    _validate_stats_rows(df, CFG_POLLUTANT_YIELD)
+        raise ValueError("pollutant_load_rate has no records for specified parcels+pollutants")
+    _validate_stats_rows(df, CFG_POLLUTANT_LOAD_RATE)
     return df
 
 
 
-def _validate_statistical_yields(
+def _validate_statistical_load_rates(
     df: pd.DataFrame,
     parcels: pd.DataFrame,
     pollutants: Sequence[str],
 ) -> Tuple[List[str], bool]:
-    """Validate statistical parcel-yield coverage and return pathways/mode."""
+    """Validate statistical parcel-load-rate coverage and return pathways/mode."""
     parcel_ids = parcels[COL_PID].astype(str).tolist()
     explicit = COL_PATHWAY in df.columns
     pathways = list(dict.fromkeys(df[COL_PATHWAY].astype(str).tolist())) if explicit else []
     keys = [COL_PID, COL_POLLUTANT] + ([COL_PATHWAY] if explicit else [])
-    _validate_unique_rows(df, keys, CFG_POLLUTANT_YIELD)
+    _validate_unique_rows(df, keys, CFG_POLLUTANT_LOAD_RATE)
     missing = []
     if explicit:
         for pid in parcel_ids:
@@ -1505,30 +1497,30 @@ def _validate_statistical_yields(
             f"pid={pid}, pollutant={pol}" + (f", pathway={path}" if path else "")
             for pid, pol, path in missing[:20]
         )
-        raise ValueError(f"pollutant_yield is missing required statistical-mode coverage: {preview}")
+        raise ValueError(f"pollutant_load_rate is missing required statistical-mode coverage: {preview}")
     return pathways, not explicit
 
 
 def _resolve_aggregate_pathway_fractions(
     cfg: Dict[str, Any], load_generation: Dict[str, Any], pathways: Sequence[str]
 ) -> Dict[str, float]:
-    """Resolve fractions used to split one sampled aggregate parcel yield."""
+    """Resolve fractions used to split one sampled aggregate parcel load rate."""
     pathways = list(pathways)
     if len(pathways) == 1:
         return {pathways[0]: 1.0}
-    raw = ci_get(cfg, CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS)
+    raw = ci_get(cfg, CFG_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS)
     if raw is None:
-        raw = load_generation.get(CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS)
+        raw = load_generation.get(CFG_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS)
     fractions: Dict[str, float] = {}
     if raw is not None:
         if not isinstance(raw, dict):
-            raise ValueError(f"{CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS} must be a mapping")
+            raise ValueError(f"{CFG_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS} must be a mapping")
         fractions = {_normalize_pathway_label(k): float(v) for k, v in raw.items()}
     else:
-        # Backward-compatible shorthand. A shallow fraction alone means the
-        # remaining aggregate yield is surface load.
-        surf_raw = ci_get(cfg, CFG_POLLUTANT_YIELD_FRAC_SURFACE)
-        shallow_raw = ci_get(cfg, CFG_POLLUTANT_YIELD_FRAC_SHALLOW)
+        # Shorthand pathway fractions. A shallow fraction alone means the
+        # remaining aggregate load rate is surface load.
+        surf_raw = ci_get(cfg, CFG_POLLUTANT_LOAD_RATE_FRAC_SURFACE)
+        shallow_raw = ci_get(cfg, CFG_POLLUTANT_LOAD_RATE_FRAC_SHALLOW)
         if surf_raw is not None:
             fractions["surface"] = float(surf_raw)
         if shallow_raw is not None:
@@ -1544,17 +1536,17 @@ def _resolve_aggregate_pathway_fractions(
         )
     if not fractions:
         raise ValueError(
-            "Statistical mode uses one aggregate pollutant_yield per parcel but multiple BMP pathways. "
-            f"Define {CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS}, e.g. {{'shallow subsurface': 0.2, 'surface': 0.8}}."
+            "Statistical mode uses one aggregate pollutant_load_rate per parcel but multiple BMP pathways. "
+            f"Define {CFG_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS}, e.g. {{'shallow subsurface': 0.2, 'surface': 0.8}}."
         )
     for path in pathways:
         fractions.setdefault(path, 0.0)
     vals = np.asarray(list(fractions.values()), dtype=float)
     if (vals < 0.0).any() or (vals > 1.0).any():
-        raise ValueError("pollutant yield pathway fractions must each be in [0,1]")
+        raise ValueError("pollutant load rate pathway fractions must each be in [0,1]")
     total = float(vals.sum())
     if abs(total - 1.0) > 1.0e-9:
-        raise ValueError(f"pollutant yield pathway fractions must sum to 1.0; got {total:.12g}")
+        raise ValueError(f"pollutant load rate pathway fractions must sum to 1.0; got {total:.12g}")
     return {path: float(fractions[path]) for path in pathways}
 
 
@@ -1672,7 +1664,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         if load_mode == LOAD_MODE_PLET_RUSLE:
             plet_inputs = _load_plet_parameter_table(
                 load_generation.get(LOAD_PLET_INPUTS),
-                parcels[COL_PID].astype(str).tolist(),
+                sel[COL_PID].astype(str).tolist(),
                 logger,
                 distribution_catalog,
             )
@@ -1708,29 +1700,29 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 raise ValueError(
                     "load_generation.groundwater_concentrations is required for non-TSS pollutants in plet_rusle mode"
                 )
-            pollutant_yield = None
+            pollutant_load_rate = None
             pathways = list(PLET_PATHWAY_VALUES)
-            pollutant_yield_is_aggregate = False
-            pollutant_yield_pathway_fractions: Dict[str, float] = {}
+            pollutant_load_rate_is_aggregate = False
+            pollutant_load_rate_pathway_fractions: Dict[str, float] = {}
             bmp_eff = _complete_plet_bmp_efficiency_coverage(bmp_eff, cps, pollutants, logger)
         else:
-            pollutant_yield = _load_pollutant_yield(
+            pollutant_load_rate = _load_pollutant_load_rate(
                 cfg, parcels, pollutants, logger, distribution_catalog
             )
-            yield_pathways, pollutant_yield_is_aggregate = _validate_statistical_yields(
-                pollutant_yield, parcels, pollutants
+            load_rate_pathways, pollutant_load_rate_is_aggregate = _validate_statistical_load_rates(
+                pollutant_load_rate, parcels, pollutants
             )
-            if pollutant_yield_is_aggregate:
+            if pollutant_load_rate_is_aggregate:
                 if COL_PATHWAY in bmp_eff.columns:
                     pathways = list(dict.fromkeys(bmp_eff[COL_PATHWAY].astype(str).tolist()))
                 else:
                     pathways = ["surface"]
-                pollutant_yield_pathway_fractions = _resolve_aggregate_pathway_fractions(
+                pollutant_load_rate_pathway_fractions = _resolve_aggregate_pathway_fractions(
                     cfg, load_generation, pathways
                 )
             else:
-                pathways = yield_pathways
-                pollutant_yield_pathway_fractions = {}
+                pathways = load_rate_pathways
+                pollutant_load_rate_pathway_fractions = {}
             bmp_eff = _validate_statistical_efficiency_coverage(
                 bmp_eff, cps, pollutants, pathways
             )
@@ -1763,7 +1755,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         outlet_mean=outlet_mean,
         bmp_eff=bmp_eff,
         bmp_cost=bmp_cost,
-        pollutant_yield=pollutant_yield,
+        pollutant_load_rate=pollutant_load_rate,
         delivery_ratios=delivery_ratios,
         load_generation=load_generation,
         plet_inputs=plet_inputs,
@@ -1771,8 +1763,8 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         pollutant_concentrations=pollutant_concentrations,
         groundwater_concentrations=groundwater_concentrations,
         pathways=pathways,
-        pollutant_yield_pathway_fractions=pollutant_yield_pathway_fractions,
-        pollutant_yield_is_aggregate=pollutant_yield_is_aggregate,
+        pollutant_load_rate_pathway_fractions=pollutant_load_rate_pathway_fractions,
+        pollutant_load_rate_is_aggregate=pollutant_load_rate_is_aggregate,
         bmp_limit_n=ci_get(cfg, CFG_BMP_LIMIT_N),
         bmp_limit_usd=ci_get(cfg, CFG_BMP_LIMIT_USD),
         n_scenarios=int(ci_get(cfg, CFG_N_SCENARIOS) or 1),

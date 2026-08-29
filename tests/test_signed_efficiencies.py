@@ -35,24 +35,20 @@ class _Sampler:
 )
 def test_efficiency_sampler_preserves_negative_values(stats: dict[str, float]) -> None:
     sampled = _sample_from_stats(_Sampler(), stats, kind="efficiency")
-
     assert sampled < 0.0
 
 
 def test_efficiency_sampler_retains_upper_bound() -> None:
     sampled = _sample_from_stats(_Sampler(), {"value": 1.25}, kind="efficiency")
-
     assert sampled == pytest.approx(1.0)
 
 
 def test_cross_zero_efficiency_distribution_retains_adverse_outcomes() -> None:
     sampler = _Sampler()
     stats = {"min": -0.30, "mean": -0.05, "max": 0.15}
-
     sampled = np.array(
         [_sample_from_stats(sampler, stats, kind="efficiency") for _ in range(250)]
     )
-
     assert np.all(sampled >= stats["min"])
     assert np.all(sampled <= stats["max"])
     assert np.any(sampled < 0.0)
@@ -61,10 +57,10 @@ def test_cross_zero_efficiency_distribution_retains_adverse_outcomes() -> None:
 
 def test_negative_efficiency_increases_pathway_load() -> None:
     model = SimpleNamespace(
-        current_pathway_yields=np.array([[[10.0, 20.0, 30.0]]], dtype=float)
+        current_pathway_load_rates=np.array([[[10.0, 20.0, 30.0]]], dtype=float)
     )
 
-    load_change = _apply_pathway_reduction(
+    removed_load_rate = _apply_pathway_reduction(
         model,
         parcel_idx=0,
         pol_idx=0,
@@ -77,7 +73,7 @@ def test_negative_efficiency_increases_pathway_load() -> None:
     )
 
     np.testing.assert_allclose(
-        model.current_pathway_yields[0, 0, :],
+        model.current_pathway_load_rates[0, 0, :],
         np.array([12.0, 20.0, 30.0]),
     )
-    assert load_change == pytest.approx(-2.0)
+    assert removed_load_rate == pytest.approx(-2.0)

@@ -38,9 +38,6 @@ def _sample_load_rate(self: "Model", parcel_idx: int, pol_idx: int) -> float:
     return self._sample_from_stats(stats, kind="load_rate")
 
 
-# Backward-compatible helper alias. New internal code should use
-# ``_sample_load_rate``; ``pollutant_yield`` remains the public input name.
-_sample_yield = _sample_load_rate
 
 
 def _sample_parcel_index(self: "Model") -> int:

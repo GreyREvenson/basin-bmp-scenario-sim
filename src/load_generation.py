@@ -25,10 +25,9 @@ from .input_distributions import (
 INCH_OVER_HA_TO_LITERS = 254_000.0
 TON_PER_ACRE_TO_KG_PER_HA = 907.18474 / 0.40468564224
 ACRES_PER_SQUARE_MILE = 640.0
-# Legacy public helper pathway order retained for backward compatibility.
-# Production plet_rusle scenarios do NOT use this three-path tuple.
-LEGACY_PATHWAY_NAMES = ("surface", "shallow subsurface", "deep subsurface")
-PATHWAY_NAMES = LEGACY_PATHWAY_NAMES
+# Standard three-path order used by deterministic helper calculations.
+# Production plet_rusle scenarios use PLET_PATHWAY_NAMES instead.
+PATHWAY_NAMES = ("surface", "shallow subsurface", "deep subsurface")
 PLET_PATHWAY_NAMES = ("surface", "subsurface")
 PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
 PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
@@ -176,24 +175,6 @@ class LoadState:
     baseline_groundwater_concentrations: List[Dict[str, float]] = field(default_factory=list)
     baseline_pathway_load_rates: Optional[np.ndarray] = None
     baseline_untreated_groundwater_load_rates: Optional[np.ndarray] = None
-
-    # Deprecated compatibility properties. New code uses explicit load-rate
-    # terminology; these aliases can be removed in a future breaking release.
-    @property
-    def pathway_yields(self) -> np.ndarray:
-        return self.pathway_load_rates
-
-    @property
-    def untreated_groundwater_yields(self) -> np.ndarray:
-        return self.untreated_groundwater_load_rates
-
-    @property
-    def baseline_pathway_yields(self) -> Optional[np.ndarray]:
-        return self.baseline_pathway_load_rates
-
-    @property
-    def baseline_untreated_groundwater_yields(self) -> Optional[np.ndarray]:
-        return self.baseline_untreated_groundwater_load_rates
 
     @property
     def index_by_pid(self) -> Dict[str, int]:
@@ -495,8 +476,6 @@ def rusle_sediment_load_rate_kg_ha_yr(parameters: Mapping[str, Any]) -> float:
     return gross_ton_ac * sdr * TON_PER_ACRE_TO_KG_PER_HA * sediment_multiplier * delivery_multiplier
 
 
-# Backward-compatible function name. New code uses explicit load-rate units.
-rusle_sediment_yield_kg_ha = rusle_sediment_load_rate_kg_ha_yr
 
 
 def plet_annual_surface_runoff_in(
@@ -558,9 +537,6 @@ def plet_annual_infiltration_in(parameters: Mapping[str, Any]) -> float:
     return float(max(0.0, infiltration))
 
 
-def _stats_from_row(row: Mapping[str, Any], exclude: Iterable[str]) -> Dict[str, float]:
-    """Backward-compatible wrapper around the shared statistics extractor."""
-    return stats_from_row(row, exclude)
 
 
 def _sample_stats(ctx: Any, stats: Mapping[str, float], *, nonnegative: bool = False) -> float:
@@ -771,7 +747,7 @@ def _sample_parameter_table(
                     else:
                         cache[cache_key] = normalize_plet_hsg(raw_value)
                 else:
-                    stats = _stats_from_row(
+                    stats = stats_from_row(
                         row, {"pid", "parameter", "sample_group", "distribution_id", "units"}
                     )
                     if not stats:
@@ -825,7 +801,7 @@ def _sample_concentrations(ctx: Any, table: Optional[pd.DataFrame], parcel_ids: 
             )
             key = (variable_key, group_key)
             if key not in cache:
-                stats = _stats_from_row(
+                stats = stats_from_row(
                     row, {"pid", "pollutant", "sample_group", "distribution_id", "units"}
                 )
                 if not stats:
@@ -937,7 +913,6 @@ def calculate_load_diagnostics(parameters: Mapping[str, Any]) -> Dict[str, float
         "annual_storm_runoff_in": float(annual_storm_runoff),
         "annual_runoff_in": float(annual_runoff),
         "annual_infiltration_in": float(plet_annual_infiltration_in(parameters)),
-        "sediment_kg_ha": float(sediment_load_rate_kg_ha_yr),  # legacy alias
         "sediment_load_rate_kg_ha_yr": float(sediment_load_rate_kg_ha_yr),
     }
 
@@ -1117,10 +1092,6 @@ def calculate_plet_pathway_load_rates(
     return pathway_load_rates
 
 
-# Backward-compatible function aliases. Public input naming remains
-# ``pollutant_yield`` but computational state is expressed as load rates.
-calculate_load_components = calculate_load_rate_components
-calculate_plet_pathway_yields = calculate_plet_pathway_load_rates
 
 def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
     """Create the initial parcel load state for a scenario.

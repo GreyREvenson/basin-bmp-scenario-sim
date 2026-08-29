@@ -161,8 +161,7 @@ def _sample_from_stats(
     kind : str or None, optional
         Optional semantic hint. Use ``"efficiency"`` for a signed BMP effect
         capped at ``1`` or ``"load_rate"`` to clamp the result at zero.
-        The legacy semantic hint ``"yield"`` remains accepted as an alias. Negative
-        efficiencies are preserved because they represent load increases.
+        Negative efficiencies are preserved because they represent load increases.
         Default is ``None``.
     Returns
     -------
@@ -184,7 +183,7 @@ def _sample_from_stats(
     low, high = None, None
     if kind == "efficiency":
         high = 1.0
-    elif kind in {"load_rate", "yield"}:
+    elif kind == "load_rate":
         low = 0.0
     if "value" in cols:
         s = float(cols["value"])

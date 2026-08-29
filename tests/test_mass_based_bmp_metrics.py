@@ -78,8 +78,6 @@ def test_summary_ratios_are_mass_weighted_not_mean_of_per_bmp_efficiencies() -> 
             "baseline_mass_TN_kg": 10.0,
             "treated_baseline_mass_TN_kg": 5.0,
             "removed_mass_TN_kg": 4.0,  # 80% realized efficiency
-            "treated_TN": 5.0,
-            "removed_TN": 4.0,
             "cost_usd": 1.0,
         },
         {
@@ -89,8 +87,6 @@ def test_summary_ratios_are_mass_weighted_not_mean_of_per_bmp_efficiencies() -> 
             "baseline_mass_TN_kg": 100.0,
             "treated_baseline_mass_TN_kg": 100.0,
             "removed_mass_TN_kg": 20.0,  # 20% realized efficiency
-            "treated_TN": 100.0,
-            "removed_TN": 20.0,
             "cost_usd": 1.0,
         },
     ]
@@ -125,8 +121,6 @@ def test_rollup_uses_sum_then_ratio_across_bmp_types() -> None:
                 "baseline_mass_TN_kg": baseline,
                 "treated_baseline_mass_TN_kg": treated,
                 "removed_mass_TN_kg": removed,
-                "treated_TN": treated,
-                "removed_TN": removed,
             }
         )
 

@@ -43,7 +43,7 @@ FT_TO_M = 0.3048  # meters per foot
 
 
 def _active_pathways(self: "Model") -> List[str]:
-    """Return the model's active pathways, with legacy three-path fallback."""
+    """Return the model's active pathways, using the configured pathways or the standard three-path default."""
     configured = getattr(self, "pathway_names", None)
     return list(configured) if configured else list(PATHWAY_VALUES)
 
@@ -52,15 +52,13 @@ def _get_pathway_load_rates(self: "Model", parcel_idx: int, pol_idx: int, total_
     """Return current parcel areal load rate contributions by active pathway."""
     pathways = _active_pathways(self)
     pathway_load_rates = getattr(self, "current_pathway_load_rates", None)
-    if pathway_load_rates is None:
-        pathway_load_rates = getattr(self, "current_pathway_yields", None)  # deprecated state alias
     if pathway_load_rates is not None:
         values = pathway_load_rates[parcel_idx, pol_idx, :]
         return {pathways[i]: float(values[i]) for i in range(len(pathways))}
 
     fractions = dict(
         getattr(self, "pollutant_load_rate_pathway_fractions", None)
-        or getattr(self, "pollutant_yield_pathway_fractions", {})
+        or getattr(self, "pollutant_load_rate_pathway_fractions", {})
         or {}
     )
     if not fractions:
@@ -74,18 +72,12 @@ def _get_current_total_load_rate(
 ) -> float:
     """Return the current total across tracked pathways.
 
-    The deprecated protected-groundwater state is included when present for
-    compatibility with pre-revision scenario objects, but PLET/RUSLE now keeps
-    all modeled nutrient load in surface/subsurface pathway state.
+    Protected groundwater load rate is included when present in the active scenario state.
     """
     pathway_load_rates = getattr(self, "current_pathway_load_rates", None)
     if pathway_load_rates is None:
-        pathway_load_rates = getattr(self, "current_pathway_yields", None)  # deprecated state alias
-    if pathway_load_rates is None:
         return float(fallback_load_rate)
     protected = getattr(self, "current_untreated_groundwater_load_rates", None)
-    if protected is None:
-        protected = getattr(self, "current_untreated_groundwater_yields", None)  # deprecated state alias
     protected_value = 0.0 if protected is None else float(protected[parcel_idx, pol_idx])
     return float(np.sum(pathway_load_rates[parcel_idx, pol_idx, :]) + protected_value)
 
@@ -124,8 +116,6 @@ def _apply_pathway_reduction(
     """
     pathway_load_rates = getattr(self, "current_pathway_load_rates", None)
     if pathway_load_rates is None:
-        pathway_load_rates = getattr(self, "current_pathway_yields", None)  # deprecated state alias
-    if pathway_load_rates is None:
         return 0.0
 
     removed_load_rate = 0.0
@@ -138,10 +128,6 @@ def _apply_pathway_reduction(
     return float(removed_load_rate)
 
 
-# Backward-compatible helper aliases for external callers/tests. Internal code
-# uses load-rate terminology so these names do not define model state.
-_get_pathway_yields = _get_pathway_load_rates
-_get_current_total_yield = _get_current_total_load_rate
 
 def _select_bmp_type(self: "Model") -> int:
     """Randomly choose the next BMP CPS code.
@@ -178,33 +164,6 @@ def _get_bmp_name(self: "Model", cps: Union[int, str]) -> str:
     """
     key = int(cps)
     return BMP_CPS_NAME_MAP.get(key, f"CPS {key}")
-
-
-def _sample_efficiency(self: "Model", cps: Union[int, str], pol_idx: int) -> float:
-    """Sample a single legacy BMP effectiveness value.
-
-    This helper supports older data structures where BMP effectiveness is
-    represented as one scalar distribution per pollutant rather than as
-    pathway-specific values.
-
-    Parameters
-    ----------
-    self : Model
-        Active simulation model instance.
-    cps : int or str
-        BMP CPS identifier.
-    pol_idx : int
-        Index of the pollutant within ``self.pollutants``.
-
-    Returns
-    -------
-    float
-        Sampled effectiveness value in the ``[0, 1]`` range.
-    """
-    stats = self.bmp_efficiency_stats[int(cps)][pol_idx]
-    eff = self._sample_from_stats(stats, kind="efficiency")
-    self.logger.verbose(f"selected efficiency value {eff:.2f} for pollutant={self.pollutants[pol_idx]}")
-    return eff
 
 
 def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) -> Dict[str, float]:

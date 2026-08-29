@@ -13,7 +13,7 @@ from src.input_distributions import (
     validate_numeric_distribution_rows,
 )
 from src.io_utils import (
-    _expand_pollutant_yield_defaults,
+    _expand_pollutant_load_rate_defaults,
     _load_plet_hydrology_lookup,
     _load_plet_parameter_table,
 )
@@ -115,12 +115,12 @@ def test_sample_group_explicitly_shares_parameter_draw():
     assert values[0]["annual_precip_in"] == values[1]["annual_precip_in"]
 
 
-def test_pollutant_yield_wildcard_defaults_expand_with_exact_override():
+def test_pollutant_load_rate_wildcard_defaults_expand_with_exact_override():
     table = pd.DataFrame([
         {"pid": "*", "pollutant": "TN", "pathway": "surface", "value": 10.0},
         {"pid": "P2", "pollutant": "TN", "pathway": "surface", "value": 20.0},
     ])
-    out = _expand_pollutant_yield_defaults(table, ["P1", "P2"], ["TN"])
+    out = _expand_pollutant_load_rate_defaults(table, ["P1", "P2"], ["TN"])
     got = dict(zip(out.pid, out.value))
     assert got == {"P1": 10.0, "P2": 20.0}
 
@@ -159,7 +159,7 @@ def test_plet_initializer_uses_configured_hydrology_table():
     _, state = initialize_plet_rusle_state(ctx)
     assert state.parameters[0]["cn"] == 61.0
     assert state.parameters[0]["infiltration_fraction"] == 0.41
-    assert state.pathway_yields.shape == (1, 1, 2)
+    assert state.pathway_load_rates.shape == (1, 1, 2)
 
 
 def test_distribution_catalog_rejects_blank_id(tmp_path):

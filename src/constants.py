@@ -27,7 +27,7 @@ CFG_PARCEL_UP = "parcel_up"
 CFG_PARCEL_P = "parcel_p"
 CFG_POLLUTANTS = "pollutants"
 CFG_CPS = "cps"
-CFG_POLLUTANT_YIELD = "pollutant_yield"
+CFG_POLLUTANT_LOAD_RATE = "pollutant_load_rate"
 CFG_BMP_EFFICIENCY = "bmp_efficiency"
 CFG_BMP_COST = "bmp_cost"
 CFG_DELIVERY_RATIOS = "delivery_ratios"
@@ -66,10 +66,10 @@ LOAD_TREAT_GROUNDWATER_WITH_BMPS = "treat_groundwater_with_bmps"
 CFG_BMP_FAIL_RATE = "bmp_fail_rate"            # probability [0,1] a BMP fails
 CFG_BMP_FAIL_REDUCTION = "bmp_fail_reduction"  # efficiency scale [0,1] on failure
 
-# New: fractions to split parcel yields by pathway
-CFG_POLLUTANT_YIELD_FRAC_SURFACE = "pollutant_yield_frac_surface"
-CFG_POLLUTANT_YIELD_FRAC_SHALLOW = "pollutant_yield_frac_shallow"
-CFG_POLLUTANT_YIELD_PATHWAY_FRACTIONS = "pollutant_yield_pathway_fractions"
+# Fractions to split parcel load rates by pathway
+CFG_POLLUTANT_LOAD_RATE_FRAC_SURFACE = "pollutant_load_rate_frac_surface"
+CFG_POLLUTANT_LOAD_RATE_FRAC_SHALLOW = "pollutant_load_rate_frac_shallow"
+CFG_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS = "pollutant_load_rate_pathway_fractions"
 
 # Data payload keys (used in the validated data dict passed to Model)
 DATA_PARCELS = "parcels"
@@ -83,7 +83,7 @@ DATA_OUTLET_TARGET = "outlet_target"
 DATA_OUTLET_MEAN = "outlet_mean"
 DATA_BMP_EFFICIENCY = "bmp_eff"
 DATA_BMP_COST = "bmp_cost"
-DATA_POLLUTANT_YIELD = "pollutant_yield"
+DATA_POLLUTANT_LOAD_RATE = "pollutant_load_rate"
 DATA_DELIVERY_RATIOS = "delivery_ratios"
 DATA_BMP_LIMIT_N = "bmp_limit_n"
 DATA_BMP_LIMIT_USD = "bmp_limit_usd"
@@ -97,8 +97,8 @@ DATA_RUSLE_INPUTS = "rusle_inputs"
 DATA_POLLUTANT_CONCENTRATIONS = "pollutant_concentrations"
 DATA_GROUNDWATER_CONCENTRATIONS = "groundwater_concentrations"
 DATA_PATHWAYS = "pathways"
-DATA_POLLUTANT_YIELD_PATHWAY_FRACTIONS = "pollutant_yield_pathway_fractions"
-DATA_POLLUTANT_YIELD_IS_AGGREGATE = "pollutant_yield_is_aggregate"
+DATA_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS = "pollutant_load_rate_pathway_fractions"
+DATA_POLLUTANT_LOAD_RATE_IS_AGGREGATE = "pollutant_load_rate_is_aggregate"
 
 # Common column names
 COL_PID = "pid"
@@ -139,8 +139,6 @@ YAXIS_MEAN = "mean"
 DEFAULT_BUFFER_DEPTH_FT = 35.0
 DEFAULT_BMP_FAIL_REDUCTION = 0.25  # used when a failure occurs but reduction not provided
 
-OUTPUT_TREATED_PREFIX = "treated_"
-OUTPUT_REMOVED_PREFIX = "removed_"
 OUTPUT_BASELINE_PREFIX = "baseline_"
 OUTPUT_FINAL_PREFIX = "final_"
 
