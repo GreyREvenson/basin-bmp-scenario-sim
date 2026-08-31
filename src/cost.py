@@ -22,6 +22,7 @@ from .constants import (
     COL_UNIT,
     CFG_BUFFER_DEPTH_FT,
     DEFAULT_BUFFER_DEPTH_FT,
+    FT_TO_M,
 )
 from .logging_utils import log_scope
 
@@ -29,7 +30,6 @@ from .logging_utils import log_scope
 PROB_EST_WETLAND_MAX_AREA_HA: float = 0.8
 PROB_EST_BUFFER_PERIM_FRACTION: float = 0.2
 
-FT_TO_M = 0.3048  # meters per foot
 
 
 def _finite_numeric_row_values(row: pd.Series) -> Dict[str, float]:

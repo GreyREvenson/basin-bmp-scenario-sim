@@ -133,15 +133,6 @@ def _nonblank(value: Any) -> bool:
 
 
 
-
-
-
-
-
-
-
-
-
 def sample_group_key(row: Mapping[str, Any], *, pid: str, variable: str) -> Tuple[str, str]:
     """Return a cache key for optional shared draws.
 

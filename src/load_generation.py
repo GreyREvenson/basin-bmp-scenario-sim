@@ -14,6 +14,12 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+from .constants import (
+    INCH_OVER_HA_TO_LITERS,
+    TON_PER_ACRE_TO_KG_PER_HA,
+    ACRES_PER_SQUARE_MILE,
+)
+
 from .input_distributions import (
     sample_group_key,
     sample_stats_bounded,
@@ -27,9 +33,6 @@ from .input_config import (
 from .input_validation import validate_plet_input_table
 
 
-INCH_OVER_HA_TO_LITERS = 254_000.0
-TON_PER_ACRE_TO_KG_PER_HA = 907.18474 / 0.40468564224
-ACRES_PER_SQUARE_MILE = 640.0
 # Standard three-path order used by deterministic helper calculations.
 # Production plet_rusle scenarios use PLET_PATHWAY_NAMES instead.
 PATHWAY_NAMES = ("surface", "shallow subsurface", "deep subsurface")

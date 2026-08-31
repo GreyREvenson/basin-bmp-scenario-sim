@@ -32,14 +32,13 @@ from .constants import (
     DATA_BMP_COST,
     DATA_CPS,
     PATHWAY_VALUES,
+    FT_TO_M,
 )
 from .logging_utils import log_scope
 from .input_config import load_bmp_selection_probabilities
 
 ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
 ParcelUpListFn = Callable[[Union[int, str]], List[str]]
-
-FT_TO_M = 0.3048  # meters per foot
 
 
 def _active_pathways(self: "Model") -> List[str]:
