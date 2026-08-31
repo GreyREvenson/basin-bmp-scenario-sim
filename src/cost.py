@@ -35,10 +35,21 @@ FT_TO_M = 0.3048  # meters per foot
 def _finite_numeric_row_values(row: pd.Series) -> Dict[str, float]:
     """Return finite numeric row values keyed by normalized column name.
 
-    Blank cells in standardized input tables are commonly represented as NaN.
-    Those cells must behave as absent statistics rather than overriding other
-    valid distribution parameters (for example, a blank ``value`` alongside
-    valid ``min``/``max`` bounds).
+        Blank cells in standardized input tables are commonly represented as NaN.
+        Those cells must behave as absent statistics rather than overriding other
+        valid distribution parameters (for example, a blank ``value`` alongside
+        valid ``min``/``max`` bounds).
+
+        Parameters
+        ----------
+        row : pd.Series
+            Input table row.
+
+        Returns
+        -------
+        Dict[str, float]
+            Finite numeric row values keyed by normalized column name.
+        
     """
     values: Dict[str, float] = {}
     for key, raw_value in row.items():

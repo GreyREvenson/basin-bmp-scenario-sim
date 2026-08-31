@@ -31,7 +31,25 @@ from .utils import ci_get
 
 
 def require_columns(df: pd.DataFrame, required: Sequence[str], label: str, logger: Any = None) -> None:
-    """Require a normalized input table to contain the requested columns."""
+    """Require a normalized input table to contain the requested columns.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input table to process.
+        required : Sequence[str]
+            Required column names.
+        label : str
+            Context label used in diagnostics and validation errors.
+        logger : Any
+            Logger used for diagnostic and progress messages.
+
+        Raises
+        ------
+        ValueError
+            If one or more required columns are absent.
+        
+    """
     del logger
     missing = [column for column in required if column not in df.columns]
     if missing:
@@ -39,17 +57,55 @@ def require_columns(df: pd.DataFrame, required: Sequence[str], label: str, logge
 
 
 def _nonblank(value: Any) -> bool:
-    """Return whether an input cell contains a nonblank value."""
+    """Return whether an input cell contains a nonblank value.
+
+        Parameters
+        ----------
+        value : Any
+            Input value to normalize or evaluate.
+
+        Returns
+        -------
+        bool
+            ``True`` when the value is nonblank; otherwise ``False``.
+        
+    """
     return value is not None and not pd.isna(value) and str(value).strip() != ""
 
 
 def _row_stats_raw(row: Mapping[str, Any]) -> Dict[str, float]:
-    """Return normalized numeric statistics from an input row."""
+    """Return normalized numeric statistics from an input row.
+
+        Parameters
+        ----------
+        row : Mapping[str, Any]
+            Input table row.
+
+        Returns
+        -------
+        Dict[str, float]
+            Normalized numeric statistics extracted from the row.
+        
+    """
     return stats_from_row(row)
 
 
 def validate_numeric_distribution_rows(df: pd.DataFrame, label: str) -> None:
-    """Validate the standardized numeric value/distribution contract row-by-row."""
+    """Validate the standardized numeric value/distribution contract row-by-row.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input table to process.
+        label : str
+            Context label used in diagnostics and validation errors.
+
+        Raises
+        ------
+        ValueError
+            If a row contains incomplete, conflicting, non-finite, or non-monotonic distribution statistics.
+        
+    """
     if df is None or df.empty:
         return
     for index, row in df.iterrows():
@@ -112,7 +168,25 @@ def validate_distribution_bounds(
     parameter_col: str,
     bounds: Mapping[str, Tuple[Optional[float], Optional[float]]],
 ) -> None:
-    """Validate fixed/support statistics against parameter-specific bounds."""
+    """Validate fixed/support statistics against parameter-specific bounds.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input table to process.
+        label : str
+            Context label used in diagnostics and validation errors.
+        parameter_col : str
+            Column containing canonical parameter names.
+        bounds : Mapping[str, Tuple[Optional[float], Optional[float]]]
+            Allowed lower and upper bounds keyed by parameter name.
+
+        Raises
+        ------
+        ValueError
+            If a fixed value, mean, endpoint, or percentile lies outside the allowed parameter bounds.
+        
+    """
     if df is None or df.empty:
         return
     for index, row in df.iterrows():
@@ -132,17 +206,47 @@ def validate_distribution_bounds(
 
 
 def validate_stats_table(df: pd.DataFrame, label: str) -> None:
-    """Validate a table using the shared numeric input-distribution schema."""
+    """Validate a table using the shared numeric input-distribution schema.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input table to process.
+        label : str
+            Context label used in diagnostics and validation errors.
+        
+    """
     validate_numeric_distribution_rows(df, label)
 
 
 def validate_stats_rows(df: pd.DataFrame, label: str) -> None:
-    """Validate every row using the shared numeric input-distribution schema."""
+    """Validate every row using the shared numeric input-distribution schema.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input table to process.
+        label : str
+            Context label used in diagnostics and validation errors.
+        
+    """
     validate_numeric_distribution_rows(df, label)
 
 
 def validate_distribution_catalog(catalog: pd.DataFrame) -> None:
-    """Validate reusable distribution identifiers and numeric definitions."""
+    """Validate reusable distribution identifiers and numeric definitions.
+
+        Parameters
+        ----------
+        catalog : pd.DataFrame
+            Reusable distribution catalog, if configured.
+
+        Raises
+        ------
+        ValueError
+            If ``distribution_id`` values are blank or duplicated.
+        
+    """
     require_columns(catalog, [DISTRIBUTION_ID], "input_distributions")
     raw_ids = catalog[DISTRIBUTION_ID]
     blank_ids = raw_ids.isna() | raw_ids.astype(str).str.strip().eq("")
@@ -158,7 +262,21 @@ def validate_distribution_catalog(catalog: pd.DataFrame) -> None:
 
 
 def validate_bmp_selection_table(df: pd.DataFrame, cps: Sequence[int]) -> None:
-    """Validate a normalized explicit BMP-selection probability table."""
+    """Validate a normalized explicit BMP-selection probability table.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input table to process.
+        cps : Sequence[int]
+            Conservation Practice Standard (CPS) code or codes.
+
+        Raises
+        ------
+        ValueError
+            If CPS identifiers or probabilities are invalid, duplicated, missing, or do not define a positive probability mass.
+        
+    """
     required = {COL_CPS, COL_PROBABILITY}
     if not required.issubset(df.columns):
         raise ValueError(
@@ -198,7 +316,19 @@ def validate_bmp_selection_table(df: pd.DataFrame, cps: Sequence[int]) -> None:
 
 
 def validate_trajectory_table(df: pd.DataFrame) -> None:
-    """Validate the canonical outlet-trajectory table schema and required values."""
+    """Validate the canonical outlet-trajectory table schema and required values.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input table to process.
+
+        Raises
+        ------
+        ValueError
+            If required trajectory columns are missing, blank, or contain non-finite numeric values.
+        
+    """
     required = {
         "scenario", "pollutant", "oid", "x_axis", "y_axis", "step", "x_value", "y_value"
     }
@@ -223,7 +353,21 @@ def validate_trajectory_table(df: pd.DataFrame) -> None:
 
 
 def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
-    """Resolve wildcard parameter rows plus parcel-specific overrides."""
+    """Resolve wildcard parameter rows plus parcel-specific overrides.
+
+        Parameters
+        ----------
+        table : Optional[pd.DataFrame]
+            Input table containing model data.
+        pid : str
+            Parcel identifier.
+
+        Returns
+        -------
+        List[pd.Series]
+            Rows applicable to the specified parcel.
+        
+    """
     if table is None or table.empty:
         return []
     from .load_generation import canonical_parameter_name
@@ -239,7 +383,26 @@ def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
 
 
 def validate_plet_input_table(table: pd.DataFrame, parcel_ids: Sequence[str]) -> pd.DataFrame:
-    """Validate and normalize required PLET classifications for every parcel."""
+    """Validate and normalize required PLET classifications for every parcel.
+
+        Parameters
+        ----------
+        table : pd.DataFrame
+            Input table containing model data.
+        parcel_ids : Sequence[str]
+            Parcel identifiers in model order.
+
+        Returns
+        -------
+        pd.DataFrame
+            Validated and normalized PLET input table.
+
+        Raises
+        ------
+        ValueError
+            If PLET classifications or parameter rows violate the PLET input contract.
+        
+    """
     from .load_generation import (
         PLET_CLASSIFICATION_PARAMETERS,
         _PLET_DERIVED_PARAMETERS,
@@ -292,15 +455,69 @@ def validate_plet_runtime_inputs(
     parcel_ids: Sequence[str],
     pollutants: Sequence[str],
 ) -> None:
-    """Validate all PLET/RUSLE coverage before the simulation worker starts."""
+    """Validate all PLET/RUSLE coverage before the simulation worker starts.
+
+        Parameters
+        ----------
+        plet_inputs : pd.DataFrame
+            PLET parameter input table.
+        rusle_inputs : Optional[pd.DataFrame]
+            RUSLE parameter input table, if configured.
+        pollutant_concentrations : Optional[pd.DataFrame]
+            Pollutant concentration input table, if configured.
+        groundwater_concentrations : Optional[pd.DataFrame]
+            Groundwater pollutant concentrations or concentration table, if configured.
+        parcel_ids : Sequence[str]
+            Parcel identifiers in model order.
+        pollutants : Sequence[str]
+            Pollutant names in model order.
+
+        Raises
+        ------
+        ValueError
+            If any parcel lacks required PLET/RUSLE parameters or pollutant concentrations for runtime load generation.
+        
+    """
     from .load_generation import _REQUIRED_PLET_INPUTS, _REQUIRED_RUSLE, canonical_parameter_name
 
     def effective_parameters(table: Optional[pd.DataFrame], pid: str) -> Dict[str, pd.Series]:
+        """Return the effective parameter rows for a parcel.
+
+                Parameters
+                ----------
+                table : Optional[pd.DataFrame]
+                    Input table containing model data.
+                pid : str
+                    Parcel identifier.
+
+                Returns
+                -------
+                Dict[str, pd.Series]
+                    Effective parameter rows keyed by canonical parameter name.
+                
+        """
         if table is None:
             return {}
         return {canonical_parameter_name(row["parameter"]): row for row in _rows_for_pid(table, pid)}
 
     def has_concentration(table: Optional[pd.DataFrame], pid: str, pollutant: str) -> bool:
+        """Return whether a parcel has a pollutant concentration input.
+
+                Parameters
+                ----------
+                table : Optional[pd.DataFrame]
+                    Input table containing model data.
+                pid : str
+                    Parcel identifier.
+                pollutant : str
+                    Pollutant name.
+
+                Returns
+                -------
+                bool
+                    ``True`` when a matching concentration input exists; otherwise ``False``.
+                
+        """
         if table is None or table.empty:
             return False
         pids = table[COL_PID].astype(str)
@@ -332,7 +549,19 @@ def validate_plet_runtime_inputs(
 
 
 def validate_config(cfg: Dict[str, Any]) -> None:
-    """Validate configuration values after defaults and normalization are applied."""
+    """Validate configuration values after defaults and normalization are applied.
+
+        Parameters
+        ----------
+        cfg : Dict[str, Any]
+            Normalized model configuration mapping.
+
+        Raises
+        ------
+        ValueError
+            If a normalized configuration value is outside its allowed range or has an invalid structure.
+        
+    """
     if int(ci_get(cfg, CFG_N_SCENARIOS)) < 1:
         raise ValueError(f"{CFG_N_SCENARIOS} must be >= 1")
     if float(ci_get(cfg, CFG_BUFFER_DEPTH_FT)) <= 0.0:
@@ -353,7 +582,23 @@ def validate_config(cfg: Dict[str, Any]) -> None:
 
 
 def validate_unique_rows(df: pd.DataFrame, keys: Sequence[str], label: str) -> None:
-    """Reject duplicate rows for a logical table key."""
+    """Reject duplicate rows for a logical table key.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input table to process.
+        keys : Sequence[str]
+            Logical key columns used to identify duplicate rows.
+        label : str
+            Context label used in diagnostics and validation errors.
+
+        Raises
+        ------
+        ValueError
+            If duplicate rows exist for the requested logical key.
+        
+    """
     duplicate = df.duplicated(list(keys), keep=False)
     if duplicate.any():
         preview = df.loc[duplicate, list(keys)].head(10).to_dict(orient="records")
@@ -363,7 +608,30 @@ def validate_unique_rows(df: pd.DataFrame, keys: Sequence[str], label: str) -> N
 def validate_statistical_efficiency_coverage(
     df: pd.DataFrame, cps: Sequence[int], pollutants: Sequence[str], pathways: Sequence[str]
 ) -> pd.DataFrame:
-    """Require complete CPS x pollutant x pathway coverage in statistical mode."""
+    """Require complete CPS x pollutant x pathway coverage in statistical mode.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input table to process.
+        cps : Sequence[int]
+            Conservation Practice Standard (CPS) code or codes.
+        pollutants : Sequence[str]
+            Pollutant names in model order.
+        pathways : Sequence[str]
+            Pollutant transport pathway names.
+
+        Returns
+        -------
+        pd.DataFrame
+            Validated BMP-efficiency table with complete pathway coverage.
+
+        Raises
+        ------
+        ValueError
+            If statistical-mode BMP efficiencies do not provide complete CPS/pollutant/pathway coverage.
+        
+    """
     out = df.copy()
     if COL_PATHWAY not in out.columns:
         if list(pathways) != ["surface"]:
@@ -405,7 +673,28 @@ def validate_statistical_load_rates(
     parcels: pd.DataFrame,
     pollutants: Sequence[str],
 ) -> Tuple[List[str], bool]:
-    """Validate statistical parcel-load-rate coverage and return pathways/mode."""
+    """Validate statistical parcel-load-rate coverage and return pathways/mode.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input table to process.
+        parcels : pd.DataFrame
+            Parcel table or geospatial parcel dataset.
+        pollutants : Sequence[str]
+            Pollutant names in model order.
+
+        Returns
+        -------
+        Tuple[List[str], bool]
+            Detected pathway names and whether load rates are supplied in aggregate form.
+
+        Raises
+        ------
+        ValueError
+            If statistical pollutant load rates do not provide complete parcel/pollutant/pathway coverage.
+        
+    """
     parcel_ids = parcels[COL_PID].astype(str).tolist()
     explicit = COL_PATHWAY in df.columns
     pathways = list(dict.fromkeys(df[COL_PATHWAY].astype(str).tolist())) if explicit else []

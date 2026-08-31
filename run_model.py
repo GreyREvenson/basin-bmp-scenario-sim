@@ -16,7 +16,14 @@ from src.plotting import make_summary_plots
 
 
 def parse_args() -> argparse.Namespace:
-    """Read command-line options for this script."""
+    """Read command-line options for this script.
+
+        Returns
+        -------
+        argparse.Namespace
+            Parsed command-line arguments.
+        
+    """
     parser = argparse.ArgumentParser(
         description="Run the BMP scenario model using a YAML configuration file."
     )

@@ -43,13 +43,41 @@ FT_TO_M = 0.3048  # meters per foot
 
 
 def _active_pathways(self: "Model") -> List[str]:
-    """Return the model's active pathways, using the configured pathways or the standard three-path default."""
+    """Return the model's active pathways, using the configured pathways or the standard three-path default.
+
+        Returns
+        -------
+        List[str]
+            Active pathway names in model order.
+        
+    """
     configured = getattr(self, "pathway_names", None)
     return list(configured) if configured else list(PATHWAY_VALUES)
 
 
 def _get_pathway_load_rates(self: "Model", parcel_idx: int, pol_idx: int, total_load_rate: float) -> Dict[str, float]:
-    """Return current parcel areal load rate contributions by active pathway."""
+    """Return current parcel areal load rate contributions by active pathway.
+
+        Parameters
+        ----------
+        parcel_idx : int
+            Zero-based index of the parcel.
+        pol_idx : int
+            Zero-based index of the pollutant.
+        total_load_rate : float
+            Current total pollutant load rate for the parcel.
+
+        Returns
+        -------
+        Dict[str, float]
+            Current load rate for each active pathway.
+
+        Raises
+        ------
+        ValueError
+            If multiple pathways are active but neither pathway-resolved state nor pathway fractions are available.
+        
+    """
     pathways = _active_pathways(self)
     pathway_load_rates = getattr(self, "current_pathway_load_rates", None)
     if pathway_load_rates is not None:
@@ -72,7 +100,22 @@ def _get_current_total_load_rate(
 ) -> float:
     """Return the current total across tracked pathways.
 
-    Protected groundwater load rate is included when present in the active scenario state.
+        Protected groundwater load rate is included when present in the active scenario state.
+
+        Parameters
+        ----------
+        parcel_idx : int
+            Zero-based index of the parcel.
+        pol_idx : int
+            Zero-based index of the pollutant.
+        fallback_load_rate : float
+            Load rate to use when pathway-resolved state is unavailable.
+
+        Returns
+        -------
+        float
+            Current total pollutant load rate across tracked pathways.
+        
     """
     pathway_load_rates = getattr(self, "current_pathway_load_rates", None)
     if pathway_load_rates is None:
@@ -169,11 +212,29 @@ def _get_bmp_name(self: "Model", cps: Union[int, str]) -> str:
 def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) -> Dict[str, float]:
     """Sample one BMP efficiency for every active pathway.
 
-    Input validation guarantees complete coverage. In PLET/RUSLE mode this
-    means surface is explicitly required and subsurface is either explicitly
-    supplied or has already been inserted as a fixed zero distribution.
-    Statistical mode requires explicit coverage for every active user-defined
-    pathway.
+        Input validation guarantees complete coverage. In PLET/RUSLE mode this
+        means surface is explicitly required and subsurface is either explicitly
+        supplied or has already been inserted as a fixed zero distribution.
+        Statistical mode requires explicit coverage for every active user-defined
+        pathway.
+
+        Parameters
+        ----------
+        cps : Union[int, str]
+            Conservation Practice Standard (CPS) code or codes.
+        pol_idx : int
+            Zero-based index of the pollutant.
+
+        Returns
+        -------
+        Dict[str, float]
+            Sampled BMP efficiencies keyed by active pathway.
+
+        Raises
+        ------
+        ValueError
+            If BMP efficiency coverage is incomplete for the requested CPS, pollutant, or active pathway.
+        
     """
     entry = self.bmp_efficiency_stats[int(cps)][pol_idx]
     pathways = _active_pathways(self)

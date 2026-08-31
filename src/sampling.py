@@ -14,7 +14,21 @@ if TYPE_CHECKING:
     from .model import Model
 
 def _first_present(mapping: Dict[str, float], names: Tuple[str, ...]) -> float:
-    """Return the first present alias from a validated statistics mapping."""
+    """Return the first present alias from a validated statistics mapping.
+
+        Parameters
+        ----------
+        mapping : Dict[str, float]
+            Input mapping.
+        names : Tuple[str, ...]
+            Candidate aliases in precedence order.
+
+        Returns
+        -------
+        float
+            Value associated with the first matching alias.
+        
+    """
     return next(mapping[name] for name in names if name in mapping)
 
 

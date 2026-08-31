@@ -35,6 +35,19 @@ _CANONICAL_NAMED_STATS = ("value", "mean", "sd", "min", "max")
 
 
 def _percentile_number(name: Any) -> Optional[int]:
+    """Parse a percentile-style label into its numeric percentile.
+
+        Parameters
+        ----------
+        name : Any
+            Input name or label.
+
+        Returns
+        -------
+        Optional[int]
+            Percentile as an integer from 0 through 100, or ``None`` when unrecognized.
+        
+    """
     label = str(name).strip().lower()
     if label.startswith("p") and label[1:].isdigit():
         value = int(label[1:])
@@ -44,7 +57,19 @@ def _percentile_number(name: Any) -> Optional[int]:
 
 
 def statistic_columns(columns: Iterable[Any]) -> list[str]:
-    """Return recognized value/distribution columns in stable input order."""
+    """Return recognized value/distribution columns in stable input order.
+
+        Parameters
+        ----------
+        columns : Iterable[Any]
+            Input column labels.
+
+        Returns
+        -------
+        list[str]
+            Recognized statistic column names in stable input order.
+        
+    """
     result: list[str] = []
     for column in columns:
         label = str(column).strip().lower()
@@ -58,8 +83,21 @@ def statistic_columns(columns: Iterable[Any]) -> list[str]:
 def stats_from_row(row: Mapping[str, Any], exclude: Iterable[str] = ()) -> Dict[str, float]:
     """Extract normalized numeric sampling statistics from a row.
 
-    Metadata such as units, distribution IDs, and sample groups are ignored.
-    Aliases are normalized to ``mean``, ``sd``, ``min`` and ``max``.
+        Metadata such as units, distribution IDs, and sample groups are ignored.
+        Aliases are normalized to ``mean``, ``sd``, ``min`` and ``max``.
+
+        Parameters
+        ----------
+        row : Mapping[str, Any]
+            Input table row.
+        exclude : Iterable[str]
+            Column names to exclude from statistic extraction.
+
+        Returns
+        -------
+        Dict[str, float]
+            Normalized numeric statistics extracted from the input row.
+        
     """
     excluded = {str(value).strip().lower() for value in exclude}
     excluded.update({DISTRIBUTION_ID, SAMPLE_GROUP, "units", "unit", "notes"})
@@ -78,6 +116,19 @@ def stats_from_row(row: Mapping[str, Any], exclude: Iterable[str] = ()) -> Dict[
 
 
 def _nonblank(value: Any) -> bool:
+    """Return whether a value contains nonblank input.
+
+        Parameters
+        ----------
+        value : Any
+            Input value to normalize or evaluate.
+
+        Returns
+        -------
+        bool
+            ``True`` when the value is nonblank; otherwise ``False``.
+        
+    """
     return value is not None and not pd.isna(value) and str(value).strip() != ""
 
 
@@ -94,9 +145,24 @@ def _nonblank(value: Any) -> bool:
 def sample_group_key(row: Mapping[str, Any], *, pid: str, variable: str) -> Tuple[str, str]:
     """Return a cache key for optional shared draws.
 
-    Without an explicit ``sample_group``, wildcard defaults are sampled
-    independently for each parcel. Reusing a ``distribution_id`` never creates
-    correlation by itself.
+        Without an explicit ``sample_group``, wildcard defaults are sampled
+        independently for each parcel. Reusing a ``distribution_id`` never creates
+        correlation by itself.
+
+        Parameters
+        ----------
+        row : Mapping[str, Any]
+            Input table row.
+        pid : str
+            Parcel identifier.
+        variable : str
+            Variable name used to distinguish sampled values.
+
+        Returns
+        -------
+        Tuple[str, str]
+            Cache key identifying the random-draw group.
+        
     """
     raw = row.get(SAMPLE_GROUP)
     if _nonblank(raw):
@@ -113,9 +179,31 @@ def sample_stats_bounded(
 ) -> float:
     """Sample one numeric value using model sampling semantics and hard bounds.
 
-    Unlike the generic sampler, this helper lets an input parameter impose
-    physical bounds (for example CN in ``(0, 100]`` and infiltration fraction
-    in ``[0, 1]``) even when the row is defined only by ``mean`` and ``sd``.
+        Unlike the generic sampler, this helper lets an input parameter impose
+        physical bounds (for example CN in ``(0, 100]`` and infiltration fraction
+        in ``[0, 1]``) even when the row is defined only by ``mean`` and ``sd``.
+
+        Parameters
+        ----------
+        ctx : Any
+            Active scenario or model context.
+        stats : Mapping[str, float]
+            Numeric sampling statistics for one value or distribution.
+        low : Optional[float]
+            Optional lower bound for sampled values.
+        high : Optional[float]
+            Optional upper bound for sampled values.
+
+        Returns
+        -------
+        float
+            Sampled numeric value satisfying the requested bounds.
+
+        Raises
+        ------
+        ValueError
+            If distribution statistics are insufficient, bounds do not overlap, or the sampled value violates a requested bound.
+        
     """
     cols = {str(k).lower(): float(v) for k, v in stats.items()}
     has_min = "min" in cols

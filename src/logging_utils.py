@@ -1,7 +1,10 @@
-"""Logging helpers for readable run output.
+"""
+Logging helpers for driver and worker processes.
 
-This module adds a custom VERBOSE level, indentation-aware formatting, and
-logger factory helpers for the main process and worker scenarios.
+- Adds a custom VERBOSE level (between INFO and DEBUG) for detailed progress logs.
+- Adds a stack-based indented formatter for all log messages.
+- Driver logger writes to outputs/log.txt (or outputs/logs/s{scenario_id}.txt when scenario_id is provided) and optionally to console (INFO-only).
+- Worker loggers write a dedicated file per scenario under outputs/logs/.
 """
 
 from __future__ import annotations
@@ -18,22 +21,17 @@ logging.addLevelName(VERBOSE_LEVEL_NUM, "VERBOSE")
 
 
 def _verbose(self: logging.Logger, msg: str, *args, **kwargs) -> None:
-    """Log a message at the custom VERBOSE level.
+    """Logger.verbose(msg, ...) -> log at VERBOSE level.
 
-    Parameters
-    ----------
-    self : logging.Logger
-        Logger instance.
-    msg : str
-        Log message.
-    *args
-        Positional formatting arguments.
-    **kwargs
-        Keyword formatting arguments.
-
-    Returns
-    -------
-    None
+        Parameters
+        ----------
+        msg : str
+            Log message format string.
+        *args : Any
+            Positional arguments passed to the logging call.
+        **kwargs : Any
+            Keyword arguments passed to the logging call.
+        
     """
     if self.isEnabledFor(VERBOSE_LEVEL_NUM):
         self.log(VERBOSE_LEVEL_NUM, msg, *args, **kwargs)
@@ -49,12 +47,13 @@ _TL.depth = 0
 
 
 def _get_depth() -> int:
-    """Return the current indentation depth for the active thread.
+    """Return the current logging indentation depth.
 
-    Returns
-    -------
-    int
-        Current indentation depth, clamped to a valid integer.
+        Returns
+        -------
+        int
+            Current indentation depth.
+        
     """
     d = getattr(_TL, "depth", 0)
     try:
@@ -64,52 +63,47 @@ def _get_depth() -> int:
 
 
 def push_indent(n: int = 1) -> None:
-    """Increase thread-local log indentation.
+    """Increase the current indentation depth by n (default 1).
 
-    Parameters
-    ----------
-    n : int, optional
-        Number of indentation levels to add. Default is ``1``.
-
-    Returns
-    -------
-    None
+        Parameters
+        ----------
+        n : int
+            Number of indentation levels to add or remove.
+        
     """
     setattr(_TL, "depth", max(0, _get_depth() + int(n)))
 
 
 def pop_indent(n: int = 1) -> None:
-    """Decrease thread-local log indentation.
+    """Decrease the current indentation depth by n (default 1).
 
-    Parameters
-    ----------
-    n : int, optional
-        Number of indentation levels to remove. Default is ``1``.
-
-    Returns
-    -------
-    None
+        Parameters
+        ----------
+        n : int
+            Number of indentation levels to add or remove.
+        
     """
     setattr(_TL, "depth", max(0, _get_depth() - int(n)))
 
 
 @contextmanager
 def log_scope(label: Optional[str] = None, logger: Optional[logging.Logger] = None, level: int = VERBOSE_LEVEL_NUM):
-    """Create an indentation scope for a block of logs.
+    """Context manager that indents logs within the scope and optionally logs BEGIN/END.
 
-    Parameters
-    ----------
-    label : str or None, optional
-        Optional label written as BEGIN/END messages. Default is ``None``.
-    logger : logging.Logger or None, optional
-        Logger used for BEGIN/END messages. Default is ``None``.
-    level : int, optional
-        Log level used for scope messages. Default is ``VERBOSE_LEVEL_NUM``.
+        Parameters
+        ----------
+        label : Optional[str]
+            If provided with logger, logs 'BEGIN {label}' and 'END {label}'.
+        logger : Optional[logging.Logger]
+            Logger to emit BEGIN/END lines to.
+        level : int
+            Logging level for BEGIN/END; defaults to VERBOSE.
 
-    Yields
-    ------
-    None
-        Control to the wrapped block.
+        Yields
+        ------
+        None
+            Control is yielded to the body of the logging scope.
+        
     """
     if label and logger is not None:
         logger.log(level, f"BEGIN {label}")
@@ -123,38 +117,32 @@ def log_scope(label: Optional[str] = None, logger: Optional[logging.Logger] = No
 
 
 class StackIndentFilter(logging.Filter):
-    """Attach indentation text to log records.
-
-    The filter reads the current thread-local indentation depth and stores a
-    precomputed ``indent`` field on each record.
-    """
+    """Injects an 'indent' attribute based on the current thread-local depth."""
     def __init__(self, indent_unit: str = "  "):
-        """Initialize the filter.
+        """Initialize the indentation filter.
 
-        Parameters
-        ----------
-        indent_unit : str, optional
-            Text used for one indentation level. Default is two spaces.
-
-        Returns
-        -------
-        None
+                Parameters
+                ----------
+                indent_unit : str
+                    String used for one indentation level.
+                
         """
         super().__init__()
         self.indent_unit = indent_unit
 
     def filter(self, record: logging.LogRecord) -> bool:
-        """Attach indentation text before formatting.
+        """Add indentation metadata to a log record.
 
-        Parameters
-        ----------
-        record : logging.LogRecord
-            Log record to update.
+                Parameters
+                ----------
+                record : logging.LogRecord
+                    Log record to annotate with indentation metadata.
 
-        Returns
-        -------
-        bool
-            Always ``True`` so the record continues through the pipeline.
+                Returns
+                -------
+                bool
+                    Always ``True`` so the record remains eligible for emission.
+                
         """
         depth = _get_depth()
         # Precompute indent string for the formatter
@@ -163,19 +151,23 @@ class StackIndentFilter(logging.Filter):
 
 
 class StackIndentFormatter(logging.Formatter):
-    """Format log records while preserving indentation text."""
+    """Formatter that respects an 'indent' attribute inserted by StackIndentFilter.
+
+    If 'indent' is missing, it defaults to empty string.
+    """
     def format(self, record: logging.LogRecord) -> str:
-        """Format one log line safely.
+        """Format a log record with indentation.
 
-        Parameters
-        ----------
-        record : logging.LogRecord
-            Log record to format.
+                Parameters
+                ----------
+                record : logging.LogRecord
+                    Log record to format.
 
-        Returns
-        -------
-        str
-            Formatted log line.
+                Returns
+                -------
+                str
+                    Formatted log-message string.
+                
         """
         if not hasattr(record, "indent"):
             record.indent = ""
@@ -183,17 +175,20 @@ class StackIndentFormatter(logging.Formatter):
 
 
 def _make_console_handler(verbose: bool) -> logging.Handler:
-    """Create the console log handler.
+    """Create a console handler.
 
-    Parameters
-    ----------
-    verbose : bool
-        Retained for interface consistency.
+        Note: Always INFO-only on console (never VERBOSE), regardless of 'verbose' flag.
 
-    Returns
-    -------
-    logging.Handler
-        Configured console handler.
+        Parameters
+        ----------
+        verbose : bool
+            Retained for API compatibility; console output remains INFO-only.
+
+        Returns
+        -------
+        logging.Handler
+            Configured console logging handler.
+        
     """
     ch = logging.StreamHandler()
     ch.addFilter(StackIndentFilter(indent_unit="  "))
@@ -203,19 +198,20 @@ def _make_console_handler(verbose: bool) -> logging.Handler:
 
 
 def _make_file_handler(path: Path, verbose: bool) -> logging.Handler:
-    """Create the file log handler.
+    """Create a file logging handler.
 
-    Parameters
-    ----------
-    path : pathlib.Path
-        File path for the log output.
-    verbose : bool
-        Whether the handler should emit VERBOSE-level messages.
+        Parameters
+        ----------
+        path : Path
+            Path to the log file.
+        verbose : bool
+            Whether verbose logging is enabled.
 
-    Returns
-    -------
-    logging.Handler
-        Configured file handler.
+        Returns
+        -------
+        logging.Handler
+            Configured file logging handler.
+        
     """
     fh = logging.FileHandler(path, mode="w", encoding="utf-8")
     fh.addFilter(StackIndentFilter(indent_unit="  "))
@@ -225,16 +221,13 @@ def _make_file_handler(path: Path, verbose: bool) -> logging.Handler:
 
 
 def _reset_logger(logger: logging.Logger) -> None:
-    """Remove handlers and filters from a logger.
+    """Remove and close existing handlers/filters before reconfiguration.
 
-    Parameters
-    ----------
-    logger : logging.Logger
-        Logger to reset.
-
-    Returns
-    -------
-    None
+        Parameters
+        ----------
+        logger : logging.Logger
+            Logger used for diagnostic and progress messages.
+        
     """
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
@@ -252,23 +245,23 @@ def make_logger(
     scenario_id: Optional[int] = None,
     console: bool = True,
 ) -> Tuple[logging.Logger, Optional[Path]]:
-    """Create the main application logger.
+    """Create a driver logger.
 
     Parameters
     ----------
-    outputs_dir : pathlib.Path
-        Root output directory.
-    verbose : bool, optional
-        Whether to enable VERBOSE-level logging. Default is ``True``.
-    scenario_id : int or None, optional
-        Optional scenario identifier used to name the log file.
-    console : bool, optional
-        Whether to attach a console handler. Default is ``True``.
+    outputs_dir : Path
+        Root outputs directory.
+    verbose : bool, default True
+        If True, include VERBOSE messages in log files (driver/workers).
+    scenario_id : Optional[int]
+        If provided, writes to outputs/logs/s{scenario_id}.txt; otherwise writes to outputs/log.txt.
+    console : bool, default True
+        If True, also log to console (INFO-only).
 
     Returns
     -------
-    tuple[logging.Logger, pathlib.Path or None]
-        Configured logger and the path to the file log.
+    (logging.Logger, Optional[Path])
+        The logger and the log file path.
     """
     outputs_dir = Path(outputs_dir)
     logs_dir = outputs_dir / "logs"
@@ -300,21 +293,26 @@ def make_logger(
 
 
 def make_worker_logger(outputs_dir: Path, scenario_id: int, verbose: bool = False) -> logging.Logger:
-    """Create a logger for one scenario worker.
+    """Create a per-scenario logger writing into outputs/logs/s{scenario_id}.txt.
 
-    Parameters
-    ----------
-    outputs_dir : pathlib.Path
-        Root output directory.
-    scenario_id : int
-        Scenario identifier used to name the log file.
-    verbose : bool, optional
-        Whether to enable VERBOSE-level logging. Default is ``False``.
+        Parameters
+        ----------
+        outputs_dir : Path
+            Directory where model outputs are written.
+        scenario_id : int
+            Scenario identifier.
+        verbose : bool
+            Whether verbose logging is enabled.
 
-    Returns
-    -------
-    logging.Logger
-        Configured worker logger.
+        Returns
+        -------
+        logging.Logger
+            Logger configured for one scenario worker.
+
+        Notes
+        -----
+        Workers do not log to console to avoid interleaving stdout with the driver.
+        
     """
     outputs_dir = Path(outputs_dir)
     logs_dir = outputs_dir / "logs"

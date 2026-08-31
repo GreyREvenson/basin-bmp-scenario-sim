@@ -39,7 +39,19 @@ from .constants import DIR_OUTLET_TRAJECTORIES, FILE_ALL_SCENARIOS_PARQUET
 def _build_denominator_maps(
     data: Dict[str, Any],
 ) -> Tuple[Dict[Tuple[str, str], float], Dict[Tuple[str, str], float]]:
-    """Build denominator lookup maps for outlet plots."""
+    """Build denominator lookup maps for outlet plots.
+
+        Parameters
+        ----------
+        data : Dict[str, Any]
+            Loaded model data mapping.
+
+        Returns
+        -------
+        Tuple[Dict[Tuple[str, str], float], Dict[Tuple[str, str], float]]
+            Denominator lookup mappings used for outlet plots.
+        
+    """
     target_map: Dict[Tuple[str, str], float] = {}
     mean_map: Dict[Tuple[str, str], float] = {}
     tgt_df = data.get(DATA_OUTLET_TARGET)
@@ -72,9 +84,33 @@ def _build_line_segments(
 ) -> List[List[Tuple[float, float]]]:
     """Build plot line segments while preserving simulation record order.
 
-    Non-finite trajectory coordinates are treated as invalid model output and
-    raise an actionable error instead of silently producing an empty or
-    malformed plot.
+        Non-finite trajectory coordinates are treated as invalid model output and
+        raise an actionable error instead of silently producing an empty or
+        malformed plot.
+
+        Parameters
+        ----------
+        by_scenario : Dict[int, List[Tuple[float, float]]]
+            Plot coordinates grouped by scenario identifier.
+        pollutant : str
+            Pollutant name.
+        oid : str
+            Outlet identifier.
+        x_axis : str
+            Name of the x-axis metric.
+        y_axis : str
+            Name of the y-axis metric.
+
+        Returns
+        -------
+        List[List[Tuple[float, float]]]
+            Ordered line segments for plotting scenario trajectories.
+
+        Raises
+        ------
+        ValueError
+            If any trajectory coordinate is non-finite.
+        
     """
     lines: List[List[Tuple[float, float]]] = []
     for sid, points in sorted(by_scenario.items()):
@@ -106,7 +142,22 @@ def make_summary_plots(
     outputs_dir: Path,
     logger,
 ) -> None:
-    """Write one plot image per pollutant/outlet/axis combination."""
+    """Write one plot image per pollutant/outlet/axis combination.
+
+        Parameters
+        ----------
+        cfg : Dict[str, Any]
+            Normalized model configuration mapping.
+        data : Dict[str, Any]
+            Loaded model data mapping.
+        scenario_records : Optional[Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]]
+            Scenario trajectory records, if already available in memory.
+        outputs_dir : Path
+            Directory where model outputs are written.
+        logger : Any
+            Logger used for diagnostic and progress messages.
+        
+    """
     scenario_records = scenario_records or {}
     canonical_traj = Path(outputs_dir) / DIR_OUTLET_TRAJECTORIES / FILE_ALL_SCENARIOS_PARQUET
     # Prefer in-memory records produced by the current run; loading/parsing the

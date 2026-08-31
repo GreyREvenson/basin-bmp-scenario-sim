@@ -123,7 +123,21 @@ _CURRENT_TIMESTEP_YEARS = 1.0
 
 
 def _safe_mass_ratio(numerator: float, denominator: float) -> Optional[float]:
-    """Return a dimensionless mass ratio, or ``None`` when undefined."""
+    """Return a dimensionless mass ratio, or ``None`` when undefined.
+
+        Parameters
+        ----------
+        numerator : float
+            Numerator of the dimensionless ratio.
+        denominator : float
+            Denominator of the dimensionless ratio.
+
+        Returns
+        -------
+        Optional[float]
+            Dimensionless ratio, or ``None`` when the denominator is not positive or finite.
+        
+    """
     numerator = float(numerator)
     denominator = float(denominator)
     if not np.isfinite(numerator) or not np.isfinite(denominator) or denominator <= 0.0:
@@ -134,10 +148,25 @@ def _safe_mass_ratio(numerator: float, denominator: float) -> Optional[float]:
 def _bmp_impacted_parcel_indices(ctx: Any, parcel_idx: int, bmp_rec: Dict[str, Any]) -> List[int]:
     """Return full-hydrologic-universe parcel indices represented by one BMP.
 
-    For wetlands, ``impacted_pids`` may include upstream parcels in addition to
-    the placement parcel. Other BMP types operate on the placement parcel only.
-    The placement parcel is always included defensively even when the wetland
-    output contains an empty or partial impacted-PID string.
+        For wetlands, ``impacted_pids`` may include upstream parcels in addition to
+        the placement parcel. Other BMP types operate on the placement parcel only.
+        The placement parcel is always included defensively even when the wetland
+        output contains an empty or partial impacted-PID string.
+
+        Parameters
+        ----------
+        ctx : Any
+            Active scenario or model context.
+        parcel_idx : int
+            Zero-based index of the parcel.
+        bmp_rec : Dict[str, Any]
+            Mutable record for the current BMP placement.
+
+        Returns
+        -------
+        List[int]
+            Indices of parcels represented by the BMP placement.
+        
     """
     pids: List[str] = [str(ctx.parcel_ids[parcel_idx])]
     raw = str(bmp_rec.get(OUTPUT_IMPACTED_PIDS) or "")
@@ -159,10 +188,27 @@ def _baseline_mass_before_bmp_kg(
 ) -> np.ndarray:
     """Calculate pre-BMP pollutant mass for the parcels represented by a BMP.
 
-    ``pre_bmp_load_rates`` contains the current load rate immediately before this
-    BMP is applied. For the present annual model, rate × area × 1 year gives kg.
-    Wetland denominators include all hydrologically impacted parcels identified
-    by the wetland routine, including parcels that are not BMP-selectable.
+        ``pre_bmp_load_rates`` contains the current load rate immediately before this
+        BMP is applied. For the present annual model, rate × area × 1 year gives kg.
+        Wetland denominators include all hydrologically impacted parcels identified
+        by the wetland routine, including parcels that are not BMP-selectable.
+
+        Parameters
+        ----------
+        ctx : Any
+            Active scenario or model context.
+        pre_bmp_load_rates : np.ndarray
+            Parcel pollutant load rates immediately before BMP application.
+        parcel_idx : int
+            Zero-based index of the parcel.
+        bmp_rec : Dict[str, Any]
+            Mutable record for the current BMP placement.
+
+        Returns
+        -------
+        np.ndarray
+            Pre-BMP pollutant masses for the represented parcels, in kilograms.
+        
     """
     n_pol = int(pre_bmp_load_rates.shape[1])
     mass = np.zeros(n_pol, dtype=float)
@@ -179,7 +225,22 @@ def _add_mass_metrics_to_bmp_record(
     treated_mass_kg: np.ndarray,
     removed_mass_kg: np.ndarray,
 ) -> None:
-    """Write explicit mass accounting and dimensionless BMP metrics to a record."""
+    """Write explicit mass accounting and dimensionless BMP metrics to a record.
+
+        Parameters
+        ----------
+        bmp_rec : Dict[str, Any]
+            Mutable record for the current BMP placement.
+        pollutants : List[str]
+            Pollutant names in model order.
+        baseline_mass_kg : np.ndarray
+            Baseline pollutant masses, in kilograms.
+        treated_mass_kg : np.ndarray
+            Pollutant masses subjected to BMP treatment, in kilograms.
+        removed_mass_kg : np.ndarray
+            Pollutant masses removed by the BMP, in kilograms.
+        
+    """
     bmp_rec["mass_timestep_years"] = float(_CURRENT_TIMESTEP_YEARS)
     for pol_idx, pol in enumerate(pollutants):
         baseline_mass = float(baseline_mass_kg[pol_idx])

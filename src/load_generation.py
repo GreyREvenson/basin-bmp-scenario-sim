@@ -286,10 +286,25 @@ def plet_hydrology_from_classifications(
 ) -> Dict[str, Any]:
     """Resolve fixed hydrology values from a lookup table.
 
-    This helper remains for compatibility and deterministic validation. The
-    actual PLET/RUSLE scenario path samples the required hydrology input table,
-    allowing each CN and infiltration fraction to be a fixed value or a
-    distribution.
+        This helper remains for compatibility and deterministic validation. The
+        actual PLET/RUSLE scenario path samples the required hydrology input table,
+        allowing each CN and infiltration fraction to be a fixed value or a
+        distribution.
+
+        Parameters
+        ----------
+        land_cover : Any
+            PLET land-cover classification.
+        hsg : Any
+            Hydrologic soil group classification.
+        lookup_path : Optional[Path]
+            Optional path to the PLET hydrology lookup table.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Resolved PLET hydrology values for the land-cover/HSG combination.
+        
     """
     canonical_land_cover = normalize_plet_land_cover(land_cover)
     canonical_hsg = normalize_plet_hsg(hsg)
@@ -618,11 +633,35 @@ def _sample_plet_hydrology(
 ) -> Dict[str, Any]:
     """Sample CN and infiltration fraction for one parcel's PLET class pair.
 
-    Production ``plet_rusle`` runs require a user-supplied long-form hydrology
-    table stored in ``load_generation.hydrology_lookup``.  Each land-cover/HSG
-    pairing has one ``cn`` row and one ``infiltration_fraction`` row, and each
-    row may be a fixed value or a distribution.  Rows are sampled independently
-    for each parcel unless an explicit ``sample_group`` requests a shared draw.
+        Production ``plet_rusle`` runs require a user-supplied long-form hydrology
+        table stored in ``load_generation.hydrology_lookup``.  Each land-cover/HSG
+        pairing has one ``cn`` row and one ``infiltration_fraction`` row, and each
+        row may be a fixed value or a distribution.  Rows are sampled independently
+        for each parcel unless an explicit ``sample_group`` requests a shared draw.
+
+        Parameters
+        ----------
+        ctx : Any
+            Active scenario or model context.
+        land_cover : Any
+            PLET land-cover classification.
+        hsg : Any
+            Hydrologic soil group classification.
+        pid : str
+            Parcel identifier.
+        cache : Dict[Tuple[str, str], float]
+            Cache of previously sampled values.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Sampled PLET hydrology parameters for the parcel.
+
+        Raises
+        ------
+        ValueError
+            If the validated hydrology lookup is unavailable, ambiguous, or lacks statistics for the requested class pair.
+        
     """
     load_generation = getattr(ctx, "load_generation", {}) or {}
     table = load_generation.get("_hydrology_lookup_table")
@@ -844,11 +883,33 @@ def calculate_plet_pathway_load_rates(
 ) -> np.ndarray:
     """Calculate the two PLET/RUSLE pathways: surface and subsurface.
 
-    Surface nutrient load is runoff-derived load plus any RUSLE sediment-bound
-    nutrient contribution. Subsurface nutrient load is groundwater concentration
-    multiplied by PLET annual infiltration volume. The infiltration fraction in
-    ``parameters`` is resolved from the PLET land-cover/HSG lookup table before
-    this function is called. TSS has no subsurface component.
+        Surface nutrient load is runoff-derived load plus any RUSLE sediment-bound
+        nutrient contribution. Subsurface nutrient load is groundwater concentration
+        multiplied by PLET annual infiltration volume. The infiltration fraction in
+        ``parameters`` is resolved from the PLET land-cover/HSG lookup table before
+        this function is called. TSS has no subsurface component.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Model parameter values keyed by canonical parameter name.
+        concentrations : Mapping[str, float]
+            Pollutant concentrations keyed by pollutant.
+        groundwater_concentrations : Optional[Mapping[str, float]]
+            Groundwater pollutant concentrations or concentration table, if configured.
+        pollutants : Sequence[str]
+            Pollutant names in model order.
+
+        Returns
+        -------
+        np.ndarray
+            Areal pollutant load rates for the surface and subsurface pathways.
+
+        Raises
+        ------
+        ValueError
+            If required resolved PLET parameters are missing.
+        
     """
     parameters = apply_plet_parameter_defaults(parameters, pollutants)
     missing = [name for name in _REQUIRED_RESOLVED_PLET if name not in parameters]

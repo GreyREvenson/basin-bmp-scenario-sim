@@ -37,7 +37,19 @@ OVERALL_REDUCTION_PREFIX = "overall_reduction_fraction_"
 
 
 def _compute_statistics(values: np.ndarray) -> Dict[str, float]:
-    """Compute common descriptive statistics for finite numeric values."""
+    """Compute common descriptive statistics for finite numeric values.
+
+        Parameters
+        ----------
+        values : np.ndarray
+            Numeric values to summarize.
+
+        Returns
+        -------
+        Dict[str, float]
+            Descriptive statistics for finite input values.
+        
+    """
     if values.size == 0:
         return {
             "count": 0,
@@ -76,9 +88,22 @@ def _compute_statistics(values: np.ndarray) -> Dict[str, float]:
 def _safe_mass_ratio(numerator: float, denominator: float) -> Optional[float]:
     """Return a dimensionless mass ratio, or ``None`` if undefined.
 
-    Ratios are intentionally not clipped. Signed BMP effectiveness is supported,
-    so removed mass and the resulting realized/overall reduction ratios may be
-    negative when a BMP increases load.
+        Ratios are intentionally not clipped. Signed BMP effectiveness is supported,
+        so removed mass and the resulting realized/overall reduction ratios may be
+        negative when a BMP increases load.
+
+        Parameters
+        ----------
+        numerator : float
+            Numerator of the dimensionless ratio.
+        denominator : float
+            Denominator of the dimensionless ratio.
+
+        Returns
+        -------
+        Optional[float]
+            Dimensionless ratio, or ``None`` when the denominator is not positive or finite.
+        
     """
     numerator = float(numerator)
     denominator = float(denominator)
@@ -88,10 +113,40 @@ def _safe_mass_ratio(numerator: float, denominator: float) -> Optional[float]:
 
 
 def _mass_col(prefix: str, pollutant: str) -> str:
+    """Return the mass-summary column name for a pollutant.
+
+        Parameters
+        ----------
+        prefix : str
+            Metric-name prefix.
+        pollutant : str
+            Pollutant name.
+
+        Returns
+        -------
+        str
+            Mass-summary column name.
+        
+    """
     return f"{prefix}{pollutant}{MASS_SUFFIX}"
 
 
 def _finite_record_values(records: Sequence[Dict[str, Any]], column: str) -> List[float]:
+    """Return finite numeric values for a record field.
+
+        Parameters
+        ----------
+        records : Sequence[Dict[str, Any]]
+            Model records to summarize.
+        column : str
+            Name of the record or table field to process.
+
+        Returns
+        -------
+        List[float]
+            Finite numeric values found in the requested record field.
+        
+    """
     values: List[float] = []
     for rec in records:
         raw = rec.get(column)
@@ -108,7 +163,18 @@ def _add_pollutant_mass_summary(
     records: Sequence[Dict[str, Any]],
     pollutants: Sequence[str],
 ) -> None:
-    """Add mass statistics and mass-weighted performance ratios to ``summary``."""
+    """Add mass statistics and mass-weighted performance ratios to ``summary``.
+
+        Parameters
+        ----------
+        summary : Dict[str, Any]
+            Mutable summary mapping to update.
+        records : Sequence[Dict[str, Any]]
+            Model records to summarize.
+        pollutants : Sequence[str]
+            Pollutant names in model order.
+        
+    """
     for pol in pollutants:
         baseline_col = _mass_col(BASELINE_MASS_PREFIX, pol)
         treated_col = _mass_col(TREATED_BASELINE_MASS_PREFIX, pol)
@@ -147,6 +213,16 @@ class BMPSummaryCollector:
     """Collect BMP records and build per-CPS and all-CPS summary tables."""
 
     def __init__(self, pollutants: List[str], scenario_id: int) -> None:
+        """Initialize the BMP summary collector.
+
+                Parameters
+                ----------
+                pollutants : List[str]
+                    Pollutant names in model order.
+                scenario_id : int
+                    Scenario identifier.
+                
+        """
         self.pollutants = pollutants
         self.scenario_id = scenario_id
         self.bmp_by_cps: Dict[int, Dict[str, Any]] = defaultdict(
@@ -159,8 +235,14 @@ class BMPSummaryCollector:
     ) -> None:
         """Add one BMP record.
 
-        Mass-based performance metrics are read directly from the BMP record,
-        so an areal-load-rate denominator is never used to calculate efficiency.
+                Mass-based performance metrics are read directly from the BMP record,
+                so an areal-load-rate denominator is never used to calculate efficiency.
+
+                Parameters
+                ----------
+                bmp_record : Dict[str, Any]
+                    BMP record to append to the scenario summary.
+                
         """
         cps = int(bmp_record["cps"])
         group = self.bmp_by_cps[cps]
@@ -187,6 +269,16 @@ class BMPSummaryCollector:
 
     @staticmethod
     def _add_type_attributes(summary: Dict[str, Any], attrs: Dict[str, List[float]]) -> None:
+        """Add BMP-type attributes to a summary mapping.
+
+                Parameters
+                ----------
+                summary : Dict[str, Any]
+                    Mutable summary mapping to update.
+                attrs : Dict[str, List[float]]
+                    BMP attributes to aggregate into the summary.
+                
+        """
         for attr_name in ("wetland_area_ha", "catchment_ratio", "buffer_area_ha", "linear_length_m"):
             values = attrs[attr_name] if attr_name in attrs else []
             if values:
@@ -196,6 +288,16 @@ class BMPSummaryCollector:
 
     @staticmethod
     def _add_cost_summary(summary: Dict[str, Any], records: Sequence[Dict[str, Any]]) -> None:
+        """Add BMP cost statistics to a summary mapping.
+
+                Parameters
+                ----------
+                summary : Dict[str, Any]
+                    Mutable summary mapping to update.
+                records : Sequence[Dict[str, Any]]
+                    Model records to summarize.
+                
+        """
         costs = _finite_record_values(records, OUTPUT_COST_USD)
         if not costs:
             return
@@ -205,7 +307,14 @@ class BMPSummaryCollector:
         summary[OUTPUT_TOTAL_COST_USD] = float(np.sum(costs))
 
     def generate_summary_dataframe(self) -> pd.DataFrame:
-        """Generate one summary row per BMP type used in the scenario."""
+        """Generate one summary row per BMP type used in the scenario.
+
+                Returns
+                -------
+                pd.DataFrame
+                    One summary row per BMP type used in the scenario.
+                
+        """
         summaries: List[Dict[str, Any]] = []
         for cps in sorted(self.bmp_by_cps.keys()):
             group = self.bmp_by_cps[cps]
@@ -227,7 +336,14 @@ class BMPSummaryCollector:
         return pd.DataFrame(summaries)
 
     def generate_rollup_summary(self) -> Dict[str, Any]:
-        """Generate one combined summary row across all BMP types."""
+        """Generate one combined summary row across all BMP types.
+
+                Returns
+                -------
+                Dict[str, Any]
+                    Combined summary metrics across all BMP types.
+                
+        """
         all_records: List[Dict[str, Any]] = []
         all_attrs: Dict[str, List[float]] = defaultdict(list)
         for cps in sorted(self.bmp_by_cps.keys()):
