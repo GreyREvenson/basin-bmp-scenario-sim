@@ -1,8 +1,11 @@
-"""Shared utility helpers.
+"""
+Utility helpers (stateless).
 
-This module contains small reusable helpers for case-insensitive dictionary
-lookups, column normalization, pollutant label normalization, and parsing
-percentile-style column names.
+Contains small utilities used across the codebase:
+- Case-insensitive config lookup
+- DataFrame column normalization
+- Pollutant label normalization to canonical names
+- Percentile key parsing
 """
 
 from __future__ import annotations
@@ -10,59 +13,64 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, Mapping
 
 
-def ci_get(d: Mapping[str, Any], key: str, default: Any = None) -> Any:
-    """Look up a mapping key case-insensitively.
+def ci_get(d: Mapping[str, Any], key: str) -> Any:
+    """Return a value from a mapping using a case-insensitive key lookup.
 
     Parameters
     ----------
     d : Mapping[str, Any]
-        Mapping to search.
+        Source dictionary-like object.
     key : str
-        Key to look up.
+        Key to look up, case-insensitively.
     default : Any, optional
-        Value returned when no matching key is found. Default is ``None``.
+        Default value when key is not found.
 
     Returns
     -------
     Any
-        Matching value if found, otherwise ``default``.
+        Value if found; otherwise default.
     """
     key_l = str(key).lower()
     for k, v in d.items():
         if str(k).lower() == key_l:
             return v
-    return default
+    return None
 
 
 def normalize_columns(df: Any) -> Any:
-    """Normalize dataframe column names to lowercase text.
+    """Normalize DataFrame column labels to lowercase strings (in place).
 
     Parameters
     ----------
-    df : Any
-        Table-like object with a ``columns`` attribute.
+    df : pandas.DataFrame
+        Input frame; its columns are mutated.
 
     Returns
     -------
-    Any
-        The same object, returned for convenience.
+    pandas.DataFrame
+        The same frame for chaining.
+
+    Notes
+    -----
+    Used during CSV ingestion to ensure consistent, case-insensitive matching
+    of required columns.
     """
     df.columns = [str(c).strip().lower() for c in df.columns]
     return df
 
 
 def normalize_pollutant_label(label: str) -> str:
-    """Normalize a pollutant label to the canonical model code.
+    """Normalize a pollutant label to a canonical form.
 
     Parameters
     ----------
     label : str
-        Raw pollutant label.
+        Arbitrary label (e.g., 'tp', 'TP', 'phosphorus').
 
     Returns
     -------
     str
-        Canonical pollutant code.
+        Canonical label recognized by the model ('TN', 'TP', 'TSS').
 
     Raises
     ------
@@ -78,17 +86,17 @@ def normalize_pollutant_label(label: str) -> str:
 
 
 def parse_percent_keys(cols: Iterable[Any]) -> Dict[int, Any]:
-    """Extract percentile-style column labels.
+    """Parse percentile-style column labels (e.g., 'p5', 'p50', 'p95').
 
     Parameters
     ----------
     cols : Iterable[Any]
-        Column labels to inspect for percentile names.
+        Column labels to inspect.
 
     Returns
     -------
-    dict[int, Any]
-        Mapping from percentile number to the original column label.
+    Dict[int, Any]
+        Mapping from percentile integer (5, 50, 95, 100, ...) to the original label.
     """
     import re
 

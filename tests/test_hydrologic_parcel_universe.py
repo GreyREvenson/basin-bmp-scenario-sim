@@ -5,7 +5,13 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from src.constants import OUTPUT_IMPACTED_PIDS, OUTPUT_REMOVED, OUTPUT_TREATED
+from src.constants import (
+    DATA_AVG_AREA_HA,
+    DATA_AVG_PERIM_M,
+    OUTPUT_IMPACTED_PIDS,
+    OUTPUT_REMOVED,
+    OUTPUT_TREATED,
+)
 from src.load_generation import initialize_plet_rusle_state
 from src.model import Model, _ScenarioContext
 
@@ -14,7 +20,7 @@ def _model_with_nonselectable_upstream_parcels() -> Model:
     """Build a minimal Model whose hydrologic universe is larger than parcel_p."""
     model = Model.__new__(Model)
     model.cfg = {}
-    model.data = {}
+    model.data = {DATA_AVG_AREA_HA: 1.0, DATA_AVG_PERIM_M: 100.0}
 
     model.parcel_ids = ["A", "B", "C"]
     model.pid_to_index = {"A": 0, "B": 1, "C": 2}
@@ -71,8 +77,6 @@ def test_wetland_treats_nonselectable_upstream_parcels() -> None:
     model = _model_with_nonselectable_upstream_parcels()
     shared = model._shared_payload()
     logger = logging.getLogger("test_element18_wetland")
-    if not hasattr(logger, "verbose"):
-        logger.verbose = logger.debug  # type: ignore[attr-defined]
     ctx = _ScenarioContext({}, shared, logger, seed=1)
 
     # Force a 1-ha wetland with a 2:1 catchment ratio, requiring all three
@@ -83,7 +87,7 @@ def test_wetland_treats_nonselectable_upstream_parcels() -> None:
     load_rates = np.full((3, 1), 10.0, dtype=float)
     ctx.current_pathway_load_rates = np.full((3, 1, 1), 10.0, dtype=float)
     bmp_rec = {}
-    bmp_mass_rate_outputs = {
+    bmp_outputs = {
         OUTPUT_TREATED: np.zeros(1, dtype=float),
         OUTPUT_REMOVED: np.zeros(1, dtype=float),
     }
@@ -93,13 +97,13 @@ def test_wetland_treats_nonselectable_upstream_parcels() -> None:
         [{"surface": 0.5}],
         load_rates,
         bmp_rec,
-        bmp_mass_rate_outputs,
+        bmp_outputs,
     )
 
     assert bmp_rec[OUTPUT_IMPACTED_PIDS] == "C,A,B"
     assert np.allclose(load_rates[:, 0], [5.0, 5.0, 5.0])
-    assert bmp_mass_rate_outputs[OUTPUT_TREATED][0] == 30.0
-    assert bmp_mass_rate_outputs[OUTPUT_REMOVED][0] == 15.0
+    assert bmp_outputs[OUTPUT_TREATED][0] == 30.0
+    assert bmp_outputs[OUTPUT_REMOVED][0] == 15.0
 
 
 def test_plet_initialization_uses_full_hydrologic_parcel_universe(monkeypatch) -> None:
@@ -153,9 +157,9 @@ def test_plet_initialization_uses_full_hydrologic_parcel_universe(monkeypatch) -
         lambda *_args, **_kwargs: np.asarray([[1.0, 0.0]], dtype=float),
     )
 
-    baseline_load_rates, state = initialize_plet_rusle_state(ctx)
+    baseline, state = initialize_plet_rusle_state(ctx)
 
     assert seen_parameter_calls[0] == ("plet", ["A", "B", "C"])
     assert state.parcel_ids == ["A", "B", "C"]
-    assert baseline_load_rates.shape == (3, 1)
-    assert np.allclose(baseline_load_rates[:, 0], 1.0)
+    assert baseline.shape == (3, 1)
+    assert np.allclose(baseline[:, 0], 1.0)

@@ -5,12 +5,12 @@ import logging
 import pandas as pd
 import pytest
 
-from src.io_utils import _load_plet_hydrology_lookup, _load_plet_parameter_table
+from src.input_config import _load_plet_hydrology_lookup, _load_plet_parameter_table
 from src.load_generation import (
     PLET_HYDROLOGY_LOOKUP_PATH,
     plet_hydrology_from_classifications,
-    validate_plet_input_table,
 )
+from src.input_validation import validate_plet_input_table
 
 PLET_REFERENCE_VALUES = {
     ("urban", "A"): (83.0, 0.360),

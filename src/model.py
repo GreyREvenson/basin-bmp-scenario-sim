@@ -48,15 +48,6 @@ from src.parcel import (
 from src.sampling import _piecewise_quantile_sample, _sample_from_stats, _trunc_normal
 from src.summaries import BMPSummaryCollector
 from src.constants import (
-    BASELINE_MASS_PREFIX,
-    COL_MASS_TIMESTEP_YEARS,
-    CURRENT_TIMESTEP_YEARS as _CURRENT_TIMESTEP_YEARS,
-    MASS_SUFFIX,
-    OVERALL_REDUCTION_PREFIX,
-    REALIZED_EFFICIENCY_PREFIX,
-    REMOVED_MASS_PREFIX,
-    TREATED_BASELINE_MASS_PREFIX,
-    TREATMENT_EXPOSURE_PREFIX,
     CFG_BMP_COST,
     CFG_BMP_SEL,
     CFG_OUTPUTS,
@@ -84,6 +75,7 @@ from src.constants import (
     DATA_CPS,
     DATA_DELIVERY_RATIOS,
     DATA_N_SCENARIOS,
+    DATA_RANDOM_SEED,
     DATA_OUTLET_LOC,
     DATA_OUTLET_MEAN,
     DATA_OUTLET_TARGET,
@@ -123,6 +115,13 @@ from src.constants import (
 )
 
 
+# Current production runs use an annual timestep. Multiplying annual load rates
+# (kg/yr) by one year converts them to mass (kg) without changing the numeric
+# value. Future dynamic implementations should replace this constant with the
+# actual timestep duration in years before aggregating mass.
+_CURRENT_TIMESTEP_YEARS = 1.0
+
+
 def _safe_mass_ratio(numerator: float, denominator: float) -> Optional[float]:
     """Return a dimensionless mass ratio, or ``None`` when undefined."""
     numerator = float(numerator)
@@ -141,7 +140,7 @@ def _bmp_impacted_parcel_indices(ctx: Any, parcel_idx: int, bmp_rec: Dict[str, A
     output contains an empty or partial impacted-PID string.
     """
     pids: List[str] = [str(ctx.parcel_ids[parcel_idx])]
-    raw = str(bmp_rec.get(OUTPUT_IMPACTED_PIDS, "") or "")
+    raw = str(bmp_rec.get(OUTPUT_IMPACTED_PIDS) or "")
     for token in raw.split(","):
         pid = token.strip()
         if pid and pid not in pids:
@@ -181,22 +180,22 @@ def _add_mass_metrics_to_bmp_record(
     removed_mass_kg: np.ndarray,
 ) -> None:
     """Write explicit mass accounting and dimensionless BMP metrics to a record."""
-    bmp_rec[COL_MASS_TIMESTEP_YEARS] = float(_CURRENT_TIMESTEP_YEARS)
+    bmp_rec["mass_timestep_years"] = float(_CURRENT_TIMESTEP_YEARS)
     for pol_idx, pol in enumerate(pollutants):
         baseline_mass = float(baseline_mass_kg[pol_idx])
         treated_mass = float(treated_mass_kg[pol_idx])
         removed_mass = float(removed_mass_kg[pol_idx])
 
-        bmp_rec[f"{BASELINE_MASS_PREFIX}{pol}{MASS_SUFFIX}"] = baseline_mass
-        bmp_rec[f"{TREATED_BASELINE_MASS_PREFIX}{pol}{MASS_SUFFIX}"] = treated_mass
-        bmp_rec[f"{REMOVED_MASS_PREFIX}{pol}{MASS_SUFFIX}"] = removed_mass
+        bmp_rec[f"baseline_mass_{pol}_kg"] = baseline_mass
+        bmp_rec[f"treated_baseline_mass_{pol}_kg"] = treated_mass
+        bmp_rec[f"removed_mass_{pol}_kg"] = removed_mass
 
         exposure = _safe_mass_ratio(treated_mass, baseline_mass)
         realized = _safe_mass_ratio(removed_mass, treated_mass)
         overall = _safe_mass_ratio(removed_mass, baseline_mass)
-        bmp_rec[f"{TREATMENT_EXPOSURE_PREFIX}{pol}"] = exposure
-        bmp_rec[f"{REALIZED_EFFICIENCY_PREFIX}{pol}"] = realized
-        bmp_rec[f"{OVERALL_REDUCTION_PREFIX}{pol}"] = overall
+        bmp_rec[f"treatment_exposure_fraction_{pol}"] = exposure
+        bmp_rec[f"realized_efficiency_{pol}"] = realized
+        bmp_rec[f"overall_reduction_fraction_{pol}"] = overall
 
 
 
@@ -232,7 +231,7 @@ class Model:
         self.cfg = cfg
         self.data = data
         self.logger = logger
-        seed = data.get("random_seed", None)
+        seed = data[DATA_RANDOM_SEED]
         self.rng = np.random.default_rng(seed)
         self.outputs_dir: Optional[Path] = None
 
@@ -264,7 +263,7 @@ class Model:
         self._select_cost_rate_median = types.MethodType(_select_cost_rate_median, self)
 
         # Pathway definitions and aggregate-load-rate fractions are validated in
-        # io_utils because statistical mode may use arbitrary pathway names.
+        # input_config because statistical mode may use arbitrary pathway names.
 
         self._prepare_lookup_tables()
 
@@ -299,9 +298,9 @@ class Model:
 
             # Parcel outlet and up-gradient mappings
             po_map = self.data[DATA_PARCEL_OUT_MAP]
-            self.parcel_out_oids = [[str(x) for x in po_map.get(pid, [])] for pid in self.parcel_ids]
+            self.parcel_out_oids = [[str(x) for x in po_map[pid]] for pid in self.parcel_ids]
             pu_map = self.data[DATA_PARCEL_UP_MAP]
-            self.parcel_up_idxs = [[self.pid_to_index[u] for u in pu_map.get(pid, []) if u in self.pid_to_index] for pid in self.parcel_ids]
+            self.parcel_up_idxs = [[self.pid_to_index[u] for u in pu_map[pid] if u in self.pid_to_index] for pid in self.parcel_ids]
 
             # Parcel selection probabilities
             sel = self.data[DATA_PARCEL_P]
@@ -341,7 +340,7 @@ class Model:
                 self.data.get(DATA_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS) or {}
             )
             self.pollutant_load_rate_is_aggregate = bool(
-                self.data.get(DATA_POLLUTANT_LOAD_RATE_IS_AGGREGATE, False)
+                self.data[DATA_POLLUTANT_LOAD_RATE_IS_AGGREGATE]
             )
 
             # Efficiency stats by CPS x pollutant x active pathway.
@@ -366,7 +365,7 @@ class Model:
             # Load-generation mode and optional PLET/RUSLE inputs
             self.load_generation = dict(self.data.get(DATA_LOAD_GENERATION) or {})
             self.load_generation_mode = str(
-                self.load_generation.get("mode", LOAD_MODE_STATISTICAL)
+                self.load_generation["mode"]
             ).strip().lower()
             self.plet_inputs = self.data.get(DATA_PLET_INPUTS)
             self.rusle_inputs = self.data.get(DATA_RUSLE_INPUTS)
@@ -461,8 +460,8 @@ class Model:
             groundwater_loads=self.groundwater_loads,
             bmp_cps=self.bmp_cps,
             bmp_selection_probs=self.bmp_selection_probs,
-            avg_area_ha=self.data.get(DATA_AVG_AREA_HA, 0.0),
-            avg_perim_m=self.data.get(DATA_AVG_PERIM_M, 0.0),
+            avg_area_ha=self.data[DATA_AVG_AREA_HA],
+            avg_perim_m=self.data[DATA_AVG_PERIM_M],
             random_seed=self.data.get("random_seed"),
         )
 
@@ -478,13 +477,13 @@ class Model:
         dict[tuple[str, str, str, str], list[tuple[int, float, float]]]
             Plot records keyed by pollutant, outlet, x-axis, and y-axis.
         """
-        outputs_dir = Path(self.cfg.get(CFG_OUTPUTS, "./outputs"))
+        outputs_dir = Path(self.cfg[CFG_OUTPUTS])
         outputs_dir.mkdir(parents=True, exist_ok=True)
         self.outputs_dir = outputs_dir
 
         n_scenarios = int(self.data[DATA_N_SCENARIOS])
         parallel = dict(self.cfg.get(CFG_PARALLEL) or {})
-        n_jobs = int(parallel.get("n_jobs", 1))
+        n_jobs = int(parallel["n_jobs"])
 
         shared = self._shared_payload()
         base_seed = self.data.get("random_seed")
@@ -605,7 +604,7 @@ def _run_one_scenario(
     logger = make_worker_logger(
         outputs_dir,
         scenario_id=sid,
-        verbose=bool(cfg.get(CFG_VERBOSE, False)),
+        verbose=bool(cfg[CFG_VERBOSE]),
     )
     ctx = _ScenarioContext(cfg, shared, logger, seed)
 
@@ -728,13 +727,13 @@ def _run_one_scenario(
 
                 # Optional BMP failure draw scales the sampled efficiency effects.
                 failed_flag = False
-                fr_cfg = ctx.cfg.get(CFG_BMP_FAIL_RATE, 0.0)
+                fr_cfg = ctx.cfg[CFG_BMP_FAIL_RATE]
                 fail_rate = float(fr_cfg if fr_cfg is not None else 0.0)
                 if fail_rate > 0.0:
                     fail_rate = max(0.0, min(1.0, fail_rate))
                     failed = int(ctx.rng.choice([0, 1], p=[1.0 - fail_rate, fail_rate]))
                     if failed == 1:
-                        red_cfg = ctx.cfg.get(CFG_BMP_FAIL_REDUCTION, DEFAULT_BMP_FAIL_REDUCTION)
+                        red_cfg = ctx.cfg[CFG_BMP_FAIL_REDUCTION]
                         reduction = float(red_cfg if red_cfg is not None else DEFAULT_BMP_FAIL_REDUCTION)
                         reduction = max(0.0, min(1.0, reduction))
                         eff_maps = [{k: float(v) * reduction for k, v in emap.items()} for emap in eff_maps]
@@ -828,11 +827,11 @@ def _run_one_scenario(
                                 if yax == YAXIS_TOTAL:
                                     yval = cumul[pol][oid]
                                 elif yax == YAXIS_TARGET:
-                                    tgt = ctx.outlet_target_map.get((str(oid), pol), 0.0)
-                                    yval = (cumul[pol][oid] / tgt * 100.0) if tgt > 0 else 0.0
+                                    tgt = ctx.outlet_target_map.get((str(oid), pol))
+                                    yval = (cumul[pol][oid] / tgt * 100.0) if tgt is not None and tgt > 0 else 0.0
                                 elif yax == YAXIS_MEAN:
-                                    mu = ctx.outlet_mean_map.get((str(oid), pol), 0.0)
-                                    yval = (cumul[pol][oid] / mu * 100.0) if mu > 0 else 0.0
+                                    mu = ctx.outlet_mean_map.get((str(oid), pol))
+                                    yval = (cumul[pol][oid] / mu * 100.0) if mu is not None and mu > 0 else 0.0
                                 else:
                                     yval = 0.0
                                 records[(pol, oid, xax, yax)].append((sid, xval, yval))

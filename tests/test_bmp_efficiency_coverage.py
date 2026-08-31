@@ -7,7 +7,7 @@ import pytest
 
 from src.bmp import _sample_efficiency_map
 from src.constants import CFG_BMP_EFFICIENCY, PATHWAY_VALUES
-from src.io_utils import _load_bmp_efficiency
+from src.input_config import _load_bmp_efficiency
 
 
 class RecordingLogger:

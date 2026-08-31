@@ -61,7 +61,7 @@ def _get_parcel_metadata(self: "Model", pid: Union[int, str]) -> pd.Series:
 
 def _get_parcel_up_list(self: "Model", pid: Union[int, str]) -> List[str]:
     """Return upstream parcel IDs for one parcel."""
-    return list(self.data[DATA_PARCEL_UP_MAP].get(str(pid), []))
+    return list(self.data[DATA_PARCEL_UP_MAP][str(pid)])
 
 
 def _get_parcel_out_oids(self: "Model", parcel_idx: int) -> List[str]:
@@ -71,7 +71,4 @@ def _get_parcel_out_oids(self: "Model", parcel_idx: int) -> List[str]:
 
 def _get_delivery_coeffs(self: "Model", pid: Union[int, str], oid: Union[int, str]) -> Dict[str, float]:
     """Return delivery coefficients for a parcel-to-outlet path."""
-    return self.delivery_coeffs.get(
-        (str(pid), str(oid)),
-        dict(sdr_f_to_s=1.0, sdr_s_to_o=1.0, ndr_f_to_s=1.0, ndr_s_to_o=1.0),
-    )
+    return self.delivery_coeffs[(str(pid), str(oid))]

@@ -17,10 +17,8 @@ if TYPE_CHECKING:
     from .model import Model
 
 from .constants import (
-    BMP_CPS_NAME_MAP,
-    CFG_BMP_SEL_PROB_VIA_COSTS,
     CFG_BUFFER_DEPTH_FT,
-    CPS_CONSTRUCTED_WETLAND,
+    BMP_CPS_NAME_MAP,
     COL_CPS,
     COL_PROBABILITY,
     OUTPUT_BUFFER_AREA,
@@ -33,19 +31,15 @@ from .constants import (
     OUTPUT_WETLAND_AREA,
     DATA_BMP_COST,
     DATA_CPS,
-    DEFAULT_BUFFER_DEPTH_FT,
-    FT_TO_M,
-    GRASSED_WATERWAY_PERIMETER_FRACTION_STATS,
-    GRASSED_WATERWAY_TREATED_FRACTION_STATS,
-    M2_PER_HA,
     PATHWAY_VALUES,
-    WETLAND_AREA_HA_STATS,
-    WETLAND_CATCHMENT_RATIO_STATS,
 )
 from .logging_utils import log_scope
+from .input_config import load_bmp_selection_probabilities
 
 ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
 ParcelUpListFn = Callable[[Union[int, str]], List[str]]
+
+FT_TO_M = 0.3048  # meters per foot
 
 
 def _active_pathways(self: "Model") -> List[str]:
@@ -71,7 +65,7 @@ def _get_pathway_load_rates(self: "Model", parcel_idx: int, pol_idx: int, total_
         if len(pathways) != 1:
             raise ValueError("Multiple active pathways require tracked pathway load_rates or pathway fractions")
         fractions = {pathways[0]: 1.0}
-    return {path: float(total_load_rate) * float(fractions.get(path, 0.0)) for path in pathways}
+    return {path: float(total_load_rate) * float(fractions[path]) for path in pathways}
 
 def _get_current_total_load_rate(
     self: "Model", parcel_idx: int, pol_idx: int, fallback_load_rate: float
@@ -127,7 +121,7 @@ def _apply_pathway_reduction(
     removed_load_rate = 0.0
     for path_idx, path in enumerate(_active_pathways(self)):
         current_load_rate = float(pathway_load_rates[parcel_idx, pol_idx, path_idx])
-        eff = float(eff_map.get(path, 0.0))
+        eff = float(eff_map[path])
         new_value = max(0.0, current_load_rate * (1.0 - treatment_fraction * eff))
         removed_load_rate += current_load_rate - new_value
         pathway_load_rates[parcel_idx, pol_idx, path_idx] = new_value
@@ -169,7 +163,7 @@ def _get_bmp_name(self: "Model", cps: Union[int, str]) -> str:
         Known BMP name when available, otherwise ``"CPS {code}"``.
     """
     key = int(cps)
-    return BMP_CPS_NAME_MAP.get(key, f"CPS {key}")
+    return BMP_CPS_NAME_MAP[key] if key in BMP_CPS_NAME_MAP else f"CPS {key}"
 
 
 def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) -> Dict[str, float]:
@@ -206,7 +200,7 @@ def _simulate_wetland(
     load_rates: np.ndarray,
     bmp_rec: Dict[str, Any],
     bmp_mass_rate_outputs: Dict[str, np.ndarray],
-    cps: Union[int, str] = CPS_CONSTRUCTED_WETLAND,
+    cps: Union[int, str] = 656,
 ) -> None:
     """Apply a wetland BMP and update parcel loads.
 
@@ -241,7 +235,7 @@ def _simulate_wetland(
 
         # wetland area (ha), clipped by field area
         area_field_ha = float(self.parcel_area_ha[parcel_idx])
-        wet_area_stats = WETLAND_AREA_HA_STATS  # heuristic
+        wet_area_stats = {"min": 0.1, "p25": 0.4, "p50": 0.81, "p75": 2.0, "max": 4.0}  # heuristic
         wet_area = self._sample_from_stats(stats=wet_area_stats, kind=None)
         wet_area = min(wet_area, area_field_ha)
         # Restored from legacy: detailed diagnostics
@@ -250,7 +244,7 @@ def _simulate_wetland(
         )
 
         # catchment area ratio (dimensionless)
-        ratio_stats = WETLAND_CATCHMENT_RATIO_STATS  # heuristic
+        ratio_stats = {"min": 1.0, "p25": 2.0, "p50": 5.0, "p75": 10.0, "max": 100.0}  # heuristic
         cat_ratio = self._sample_from_stats(stats=ratio_stats, kind=None)
         cat_ratio = max(0.0, float(cat_ratio))
 
@@ -308,7 +302,7 @@ def _simulate_wetland(
 
                 treated_baseline_mass_rate_kg_per_yr = sum(pathway_load_rates_by_name.values()) * (parcel_area_ha * treated_area_fraction)
                 removed_mass_rate_kg_per_yr = (parcel_area_ha * treated_area_fraction) * sum(
-                    pathway_load_rates_by_name.get(path, 0.0) * efficiency_by_pathway.get(path, 0.0)
+                    pathway_load_rates_by_name[path] * efficiency_by_pathway[path]
                     for path in _active_pathways(self)
                 )
                 self._apply_pathway_reduction(p_idx, pol_idx, treated_area_fraction, efficiency_by_pathway)
@@ -371,9 +365,9 @@ def _simulate_grassed(
         )
 
         # Depth and area (length * depth -> m^2 -> ha)
-        depth_ft = float(self.cfg.get(CFG_BUFFER_DEPTH_FT, DEFAULT_BUFFER_DEPTH_FT))
+        depth_ft = float(self.cfg[CFG_BUFFER_DEPTH_FT])
         depth_m = depth_ft * FT_TO_M
-        area_ha = (length_m * depth_m) / M2_PER_HA
+        area_ha = (length_m * depth_m) / 10000.0
         self.logger.verbose(
             f"grassed buffer depth={depth_ft:.2f} ft ({depth_m:.2f} m), area={area_ha:.4f} ha"
         )
@@ -395,7 +389,7 @@ def _simulate_grassed(
 
             treated_baseline_mass_rate_kg_per_yr = sum(pathway_load_rates_by_name.values()) * (parcel_area_ha * treated_area_fraction)
             removed_mass_rate_kg_per_yr = (parcel_area_ha * treated_area_fraction) * sum(
-                pathway_load_rates_by_name.get(path, 0.0) * efficiency_by_pathway.get(path, 0.0)
+                pathway_load_rates_by_name[path] * efficiency_by_pathway[path]
                 for path in _active_pathways(self)
             )
             self._apply_pathway_reduction(parcel_idx, pol_idx, treated_area_fraction, efficiency_by_pathway)
@@ -451,7 +445,7 @@ def _simulate_infield(
 
             treated_baseline_mass_rate_kg_per_yr = sum(pathway_load_rates_by_name.values()) * parcel_area_ha
             removed_mass_rate_kg_per_yr = parcel_area_ha * sum(
-                pathway_load_rates_by_name.get(path, 0.0) * efficiency_by_pathway.get(path, 0.0)
+                pathway_load_rates_by_name[path] * efficiency_by_pathway[path]
                 for path in _active_pathways(self)
             )
             self._apply_pathway_reduction(parcel_idx, pol_idx, 1.0, efficiency_by_pathway)
@@ -489,43 +483,13 @@ def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.D
         probability values.
     """
     if bmp_sel_path:
-        df = pd.read_csv(bmp_sel_path)
-        df.columns = [c.lower() for c in df.columns]
-        df = df[df[COL_CPS].astype(int).isin(self.data[DATA_CPS])].copy()
-        if COL_PROBABILITY not in df.columns and "pr" in df.columns:
-            df[COL_PROBABILITY] = df["pr"]
-        elif COL_PROBABILITY not in df.columns and "p" in df.columns:
-            df[COL_PROBABILITY] = df["p"]
-        required = {COL_CPS, COL_PROBABILITY}
-        if not required.issubset(df.columns):
-            raise ValueError(
-                f"bmp selection file must contain {sorted(required)} or an accepted probability alias"
-            )
-        probs = pd.to_numeric(df[COL_PROBABILITY], errors="coerce")
-        invalid = (~np.isfinite(probs)) | (probs < 0.0)
-        if invalid.any():
-            bad_rows = df.loc[invalid, [COL_CPS, COL_PROBABILITY]].head(5).to_dict(orient="records")
-            raise ValueError(
-                "bmp selection probabilities must be finite and nonnegative; "
-                f"example bad rows: {bad_rows}"
-            )
-        df[COL_PROBABILITY] = probs.astype(float)
-        expected_cps = {int(c) for c in self.data[DATA_CPS]}
-        found_cps = set(df[COL_CPS].astype(int).tolist())
-        missing = sorted(expected_cps - found_cps)
-        if missing:
-            raise ValueError(f"bmp selection file is missing probability rows for cps values: {missing}")
-        s = df[COL_PROBABILITY].sum()
-        if s <= 0:
-            raise ValueError("bmp_sel probabilities sum to zero or negative")
-        df[COL_PROBABILITY] = df[COL_PROBABILITY] / s
-        self.logger.verbose(
-            f"Loaded explicit BMP selection probabilities from {bmp_sel_path}: "
-            f"{df[[COL_CPS, COL_PROBABILITY]].to_dict(orient='records')}"
+        return load_bmp_selection_probabilities(
+            bmp_sel_path,
+            self.data[DATA_CPS],
+            self.logger,
         )
-        return df[[COL_CPS, COL_PROBABILITY]]
     else:
-        est_via_costs = self.cfg.get(CFG_BMP_SEL_PROB_VIA_COSTS, False)
+        est_via_costs = self.cfg["bmp_sel_prob_via_costs"]
         if est_via_costs and self.data[DATA_BMP_COST] is not None:
             self.logger.info("estimating BMP selection probabilities via cost heuristics")
             df = self._estimate_costs_for_probabilities()

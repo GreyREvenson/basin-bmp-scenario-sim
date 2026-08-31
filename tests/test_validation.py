@@ -7,7 +7,7 @@ import pytest
 
 from src.bmp import _get_bmp_selection_probs
 from src.constants import CFG_PARCEL_P, DATA_CPS, DATA_PARCELS
-from src.io_utils import _build_parcel_up_map, _load_parcel_selection
+from src.input_config import _build_parcel_up_map, _load_parcel_selection
 from src.model import Model
 
 

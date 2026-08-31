@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import numpy as np
-import pandas as pd
 from .constants import (
     CFG_BMP_COST,
     CFG_OUTLET_MEAN,
@@ -33,6 +32,7 @@ from .constants import (
     YAXIS_TOTAL,
 )
 from .logging_utils import log_scope
+from .input_config import load_trajectory_records
 from .constants import DIR_OUTLET_TRAJECTORIES, FILE_ALL_SCENARIOS_PARQUET
 
 
@@ -60,26 +60,6 @@ def _build_denominator_maps(
                 continue
 
     return target_map, mean_map
-
-
-def _load_records_from_trajectory_table(
-    path: Path,
-) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
-    """Load canonical trajectory rows into the plotting record shape."""
-    df = pd.read_parquet(path)
-    needed = {"scenario", "pollutant", "oid", "x_axis", "y_axis", "step", "x_value", "y_value"}
-    if not needed.issubset(set(df.columns)):
-        missing = sorted(needed - set(df.columns))
-        raise ValueError(f"Canonical trajectory table is missing required columns: {missing}")
-    out: Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]] = defaultdict(list)
-    # Canonical trajectory rows explicitly carry simulation step. Preserve that
-    # ordering so plots follow BMP application order rather than sorting by the
-    # numeric x value after the fact.
-    df = df.sort_values(["scenario", "pollutant", "oid", "x_axis", "y_axis", "step"])
-    for _, row in df.iterrows():
-        key = (str(row["pollutant"]), str(row["oid"]), str(row["x_axis"]), str(row["y_axis"]))
-        out[key].append((int(row["scenario"]), float(row["x_value"]), float(row["y_value"])))
-    return out
 
 
 def _build_line_segments(
@@ -133,7 +113,7 @@ def make_summary_plots(
     # canonical parquet can be very expensive for large runs.
     if not scenario_records and canonical_traj.exists():
         try:
-            scenario_records = _load_records_from_trajectory_table(canonical_traj)
+            scenario_records = load_trajectory_records(canonical_traj)
             logger.verbose(f"Loaded canonical trajectory table for plotting: {canonical_traj}")
         except Exception as ex:  # pylint: disable=broad-except
             logger.warning(
@@ -165,8 +145,8 @@ def make_summary_plots(
                     for yax in y_axes:
                         with log_scope(label=f"plot pol={pol} oid={oid} x={xax} y={yax}", logger=logger):
                             if yax == YAXIS_TARGET and cfg.get(CFG_OUTLET_TARGET):
-                                tgt = target_map.get((str(oid), str(pol)), 0.0)
-                                if not np.isfinite(tgt) or tgt <= 0.0:
+                                tgt = target_map.get((str(oid), str(pol)))
+                                if tgt is None or not np.isfinite(tgt) or tgt <= 0.0:
                                     key = (str(oid), str(pol), YAXIS_TARGET)
                                     if key not in warned_missing_denominator:
                                         logger.warning(
@@ -176,8 +156,8 @@ def make_summary_plots(
                                         warned_missing_denominator.add(key)
                                     continue
                             if yax == YAXIS_MEAN and cfg.get(CFG_OUTLET_MEAN):
-                                mu = mean_map.get((str(oid), str(pol)), 0.0)
-                                if not np.isfinite(mu) or mu <= 0.0:
+                                mu = mean_map.get((str(oid), str(pol)))
+                                if mu is None or not np.isfinite(mu) or mu <= 0.0:
                                     key = (str(oid), str(pol), YAXIS_MEAN)
                                     if key not in warned_missing_denominator:
                                         logger.warning(

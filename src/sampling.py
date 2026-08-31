@@ -8,10 +8,15 @@ respecting optional bounds for loads and preserving signed BMP effects.
 from __future__ import annotations
 
 import numpy as np
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .model import Model
+
+def _first_present(mapping: Dict[str, float], names: Tuple[str, ...]) -> float:
+    """Return the first present alias from a validated statistics mapping."""
+    return next(mapping[name] for name in names if name in mapping)
+
 
 def _trunc_normal(
     self: "Model",
@@ -107,7 +112,7 @@ def _piecewise_quantile_sample(
 
     pts = []
     if any(k in cols for k in ("min", "minimum", "p0")):
-        qmin = float(cols.get("min", cols.get("minimum", cols.get("p0"))))
+        qmin = float(_first_present(cols, ("min", "minimum", "p0")))
         pts.append((0.0, qmin))
     else:
         raise ValueError("Piecewise sampler requires min")
@@ -120,7 +125,7 @@ def _piecewise_quantile_sample(
             pts.append((p / 100.0, percs[p]))
 
     if any(k in cols for k in ("max", "maximum", "p100")):
-        qmax = float(cols.get("max", cols.get("maximum", cols.get("p100"))))
+        qmax = float(_first_present(cols, ("max", "maximum", "p100")))
         pts.append((1.0, qmax))
     else:
         raise ValueError("Piecewise sampler requires max")
@@ -190,25 +195,25 @@ def _sample_from_stats(
     elif has_min and has_max and has_percentiles:
         s = float(self._piecewise_quantile_sample(cols, size=1)[0])
     elif has_min and has_max and has_mean and not has_sd:
-        mn = float(cols.get("mean", cols.get("average", cols.get("avg"))))
-        lo = float(cols.get("min", cols.get("minimum", cols.get("p0"))))
-        hi = float(cols.get("max", cols.get("maximum", cols.get("p100"))))
+        mn = float(_first_present(cols, ("mean", "average", "avg")))
+        lo = float(_first_present(cols, ("min", "minimum", "p0")))
+        hi = float(_first_present(cols, ("max", "maximum", "p100")))
         sd = max((hi - lo) / 4.0, 1e-12)
         s = float(self._trunc_normal(mn, sd, low=lo if low is None else max(low, lo), high=hi if high is None else min(high, hi), size=1)[0])
     elif has_min and has_max and not has_mean and not has_sd and not has_percentiles:
-        lo = float(cols.get("min", cols.get("minimum", cols.get("p0"))))
-        hi = float(cols.get("max", cols.get("maximum", cols.get("p100"))))
+        lo = float(_first_present(cols, ("min", "minimum", "p0")))
+        hi = float(_first_present(cols, ("max", "maximum", "p100")))
         lo = max(lo, low) if low is not None else lo
         hi = min(hi, high) if high is not None else hi
         s = float(self.rng.uniform(lo, hi))
     elif has_mean and has_sd:
-        mn = float(cols.get("mean", cols.get("average", cols.get("avg"))))
-        sd = float(cols.get("sd", cols.get("std")))
+        mn = float(_first_present(cols, ("mean", "average", "avg")))
+        sd = float(_first_present(cols, ("sd", "std")))
         if has_min:
-            row_low = float(cols.get("min", cols.get("minimum", cols.get("p0"))))
+            row_low = float(_first_present(cols, ("min", "minimum", "p0")))
             low = row_low if low is None else max(low, row_low)
         if has_max:
-            row_high = float(cols.get("max", cols.get("maximum", cols.get("p100"))))
+            row_high = float(_first_present(cols, ("max", "maximum", "p100")))
             high = row_high if high is None else min(high, row_high)
         s = float(self._trunc_normal(mn, sd, low=low, high=high, size=1)[0])
     else:

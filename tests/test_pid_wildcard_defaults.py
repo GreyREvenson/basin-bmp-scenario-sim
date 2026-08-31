@@ -12,7 +12,7 @@ from src.constants import (
     COL_PID,
     COL_PROBABILITY,
 )
-from src.io_utils import _expand_pid_defaults, _load_parcel_selection
+from src.input_config import _expand_pid_defaults, _load_parcel_selection
 
 
 class RecordingLogger:
@@ -171,7 +171,7 @@ def test_multiple_parcel_p_wildcard_rows_are_rejected() -> None:
         )
 
 from src.constants import COL_PID_UP
-from src.io_utils import _build_parcel_up_map
+from src.input_config import _build_parcel_up_map
 
 
 def test_parcel_up_blank_wildcard_defaults_to_no_upstream_with_exact_exceptions() -> None:

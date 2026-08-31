@@ -8,35 +8,121 @@ used by the scenario simulator.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
-from .constants import (
-    ACRES_PER_SQUARE_MILE,
-    INCH_OVER_HA_TO_LITERS,
-    PATHWAY_VALUES as PATHWAY_NAMES,
-    PLET_CLASSIFICATION_PARAMETERS,
-    PLET_DERIVED_PARAMETERS as _PLET_DERIVED_PARAMETERS,
-    PLET_HSG_VALUES,
-    PLET_HYDROLOGY_LOOKUP_PATH,
-    PLET_LAND_COVER_ALIASES as _PLET_LAND_COVER_ALIASES,
-    PLET_LAND_COVERS,
-    PLET_PARAMETER_ALIASES as _PARAMETER_ALIASES,
-    PLET_PATHWAY_VALUES as PLET_PATHWAY_NAMES,
-    PLET_REQUIRED_INPUTS as _REQUIRED_PLET_INPUTS,
-    PLET_REQUIRED_RESOLVED_INPUTS as _REQUIRED_RESOLVED_PLET,
-    RUSLE_REQUIRED_INPUTS as _REQUIRED_RUSLE,
-    TON_PER_ACRE_TO_KG_PER_HA,
-)
 from .input_distributions import (
     sample_group_key,
     sample_stats_bounded,
     stats_from_row,
 )
+from .input_config import (
+    _load_plet_hydrology_records,
+    _rows_for_pid,
+    apply_plet_parameter_defaults,
+)
+from .input_validation import validate_plet_input_table
+
+
+INCH_OVER_HA_TO_LITERS = 254_000.0
+TON_PER_ACRE_TO_KG_PER_HA = 907.18474 / 0.40468564224
+ACRES_PER_SQUARE_MILE = 640.0
+# Standard three-path order used by deterministic helper calculations.
+# Production plet_rusle scenarios use PLET_PATHWAY_NAMES instead.
+PATHWAY_NAMES = ("surface", "shallow subsurface", "deep subsurface")
+PLET_PATHWAY_NAMES = ("surface", "subsurface")
+PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
+PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
+PLET_HSG_VALUES = ("A", "B", "C", "D")
+# Default example path retained only for the public deterministic helper.
+# Production plet_rusle runs require load_generation.hydrology_lookup explicitly.
+PLET_HYDROLOGY_LOOKUP_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "examples" / "east_fork" / "inputs" / "plet" / "plet_hydrology_lookup.csv"
+)
+
+_PLET_DERIVED_PARAMETERS = ("cn", "infiltration_fraction")
+_PLET_LAND_COVER_ALIASES: Dict[str, str] = {
+    "urban": "urban",
+    "developed": "urban",
+    "cropland": "cropland",
+    "crop": "cropland",
+    "row_crop": "cropland",
+    "row_crops": "cropland",
+    "pasture": "pastureland",
+    "pastureland": "pastureland",
+    "forest": "forest",
+    "forested": "forest",
+    "woodland": "forest",
+    "woods": "forest",
+    "user_defined": "user_defined",
+    "userdefined": "user_defined",
+}
+
+# Canonical parameter names used internally.  Aliases make user-authored files
+# less brittle without introducing ambiguous units.
+_PARAMETER_ALIASES: Dict[str, str] = {
+    "annual_rainfall_in": "annual_precip_in",
+    "annual_precipitation_in": "annual_precip_in",
+    "ar": "annual_precip_in",
+    "rdays": "rain_days",
+    "rainfall_correction": "rain_correction_fraction",
+    "rcor": "rain_correction_fraction",
+    "rain_day_correction": "runoff_day_fraction",
+    "rdcor": "runoff_day_fraction",
+    "curve_number": "cn",
+    "land_use": "land_cover",
+    "landuse": "land_cover",
+    "land_cover_class": "land_cover",
+    "land_cover_classification": "land_cover",
+    "hydrologic_soil_group": "hsg",
+    "soil_hydrologic_group": "hsg",
+    "soil_group": "hsg",
+    "hsg_classification": "hsg",
+    "shg": "hsg",
+    "initial_abstraction_ratio": "ia_ratio",
+    "alpha": "ia_ratio",
+    "rusle_r": "r",
+    "rusle_k": "k",
+    "rusle_ls": "ls",
+    "rusle_c": "c",
+    "rusle_p": "p",
+    "delivery_ratio": "sdr",
+    "sediment_delivery_ratio": "sdr",
+    "watershed_area_sqmi": "watershed_area_mi2",
+    "watershed_area_sq_mi": "watershed_area_mi2",
+    "soil_n_percent": "sediment_n_pct",
+    "soil_p_percent": "sediment_p_pct",
+    "enrichment": "enrichment_ratio",
+    "infiltration_frac": "infiltration_fraction",
+    "infiltration_factor": "infiltration_fraction",
+    "gw_infiltration_fraction": "infiltration_fraction",
+    "groundwater_infiltration_fraction": "infiltration_fraction",
+    "shallow_subsurface_fraction": "fraction_subsurface_shallow",
+    "fraction_shallow_subsurface": "fraction_subsurface_shallow",
+    "subsurface_shallow_fraction": "fraction_subsurface_shallow",
+}
+
+_REQUIRED_PLET_INPUTS = (
+    "annual_precip_in",
+    "rain_days",
+    "rain_correction_fraction",
+    "runoff_day_fraction",
+    "land_cover",
+    "hsg",
+)
+_REQUIRED_RESOLVED_PLET = (
+    "annual_precip_in",
+    "rain_days",
+    "rain_correction_fraction",
+    "runoff_day_fraction",
+    "cn",
+    "infiltration_fraction",
+)
+_REQUIRED_RUSLE = ("r", "k", "ls", "c", "p")
 
 
 @dataclass
@@ -128,7 +214,7 @@ def canonical_parameter_name(value: Any) -> str:
     """
 
     label = str(value).strip().lower().replace("-", "_").replace(" ", "_")
-    return _PARAMETER_ALIASES.get(label, label)
+    return _PARAMETER_ALIASES[label] if label in _PARAMETER_ALIASES else label
 
 
 def normalize_plet_land_cover(value: Any) -> str:
@@ -190,85 +276,6 @@ def normalize_plet_hsg(value: Any) -> str:
     return label
 
 
-@lru_cache(maxsize=None)
-def _load_plet_hydrology_records(
-    lookup_path: str,
-) -> Dict[Tuple[str, str], Tuple[float, float]]:
-    """Load fixed CN/infiltration values for the deterministic public helper.
-
-    New production inputs use a long-form table with one ``parameter`` row for
-    ``cn`` and one for ``infiltration_fraction`` per land-cover/HSG pairing.
-    The legacy wide format is still accepted here for backward-compatible
-    helper/tests, but stochastic rows cannot be resolved without a model RNG.
-    """
-    path = Path(lookup_path)
-    if not path.exists():
-        raise FileNotFoundError(f"PLET hydrology lookup table not found: {path}")
-
-    table = pd.read_csv(path)
-    table.columns = [str(c).strip().lower() for c in table.columns]
-    records: Dict[Tuple[str, str], Dict[str, float]] = {}
-
-    if {"land_cover", "hsg", "parameter"} <= set(table.columns):
-        for row_index, row in table.iterrows():
-            land_cover = normalize_plet_land_cover(row["land_cover"])
-            hsg = normalize_plet_hsg(row["hsg"])
-            parameter = canonical_parameter_name(row["parameter"])
-            if parameter not in _PLET_DERIVED_PARAMETERS:
-                continue
-            stats = stats_from_row(row)
-            if set(stats) != {"value"}:
-                raise ValueError(
-                    "plet_hydrology_from_classifications is deterministic and "
-                    f"cannot resolve stochastic {parameter} row {row_index}; "
-                    "production plet_rusle runs sample this table through the scenario context"
-                )
-            records.setdefault((land_cover, hsg), {})[parameter] = float(stats["value"])
-    elif {"land_cover", "hsg", "curve_number", "infiltration_fraction"} <= set(table.columns):
-        # Legacy compatibility while users migrate existing lookup files.
-        for row_index, row in table.iterrows():
-            land_cover = normalize_plet_land_cover(row["land_cover"])
-            hsg = normalize_plet_hsg(row["hsg"])
-            records[(land_cover, hsg)] = {
-                "cn": float(row["curve_number"]),
-                "infiltration_fraction": float(row["infiltration_fraction"]),
-            }
-    else:
-        raise ValueError(
-            "PLET hydrology lookup must use long-form columns "
-            "land_cover,hsg,parameter plus value/distribution statistics"
-        )
-
-    expected_keys = {
-        (land_cover, hsg)
-        for land_cover in PLET_LAND_COVERS
-        for hsg in PLET_HSG_VALUES
-    }
-    if set(records) != expected_keys:
-        missing = sorted(expected_keys - set(records))
-        extra = sorted(set(records) - expected_keys)
-        raise ValueError(
-            "PLET hydrology lookup table must contain every supported "
-            f"land-cover/HSG combination; missing={missing}, unexpected={extra}"
-        )
-
-    resolved: Dict[Tuple[str, str], Tuple[float, float]] = {}
-    for key, values in records.items():
-        if set(values) != set(_PLET_DERIVED_PARAMETERS):
-            raise ValueError(
-                f"PLET hydrology lookup {key} must define both cn and infiltration_fraction"
-            )
-        curve_number = float(values["cn"])
-        infiltration_fraction = float(values["infiltration_fraction"])
-        if not np.isfinite(curve_number) or not 0.0 < curve_number <= 100.0:
-            raise ValueError(f"PLET hydrology lookup cn must be in (0,100]; {key} has {curve_number}")
-        if not np.isfinite(infiltration_fraction) or not 0.0 <= infiltration_fraction <= 1.0:
-            raise ValueError(
-                "PLET hydrology lookup infiltration_fraction must be in [0,1]; "
-                f"{key} has {infiltration_fraction}"
-            )
-        resolved[key] = (curve_number, infiltration_fraction)
-    return resolved
 
 
 def plet_hydrology_from_classifications(
@@ -286,8 +293,7 @@ def plet_hydrology_from_classifications(
     """
     canonical_land_cover = normalize_plet_land_cover(land_cover)
     canonical_hsg = normalize_plet_hsg(hsg)
-    path = Path(lookup_path or PLET_HYDROLOGY_LOOKUP_PATH).resolve()
-    records = _load_plet_hydrology_records(str(path))
+    records = _load_plet_hydrology_records(lookup_path)
     curve_number, infiltration_fraction = records[(canonical_land_cover, canonical_hsg)]
     return {
         "land_cover": canonical_land_cover,
@@ -378,6 +384,7 @@ def rusle_sediment_load_rate_kg_ha_yr(parameters: Mapping[str, Any]) -> float:
         If neither ``sdr`` nor ``watershed_area_mi2`` is provided.
     """
 
+    parameters = apply_plet_parameter_defaults(parameters)
     if not all(name in parameters for name in _REQUIRED_RUSLE):
         return 0.0
     gross_ton_ac = 1.0
@@ -390,8 +397,8 @@ def rusle_sediment_load_rate_kg_ha_yr(parameters: Mapping[str, Any]) -> float:
         if sdr < 0.0 or sdr > 1.0:
             raise ValueError("RUSLE input parameter value for sdr must be between 0.0 and 1.0")
 
-    sediment_multiplier = max(0.0, float(parameters.get("sediment_multiplier", 1.0)))
-    delivery_multiplier = max(0.0, float(parameters.get("sediment_delivery_multiplier", 1.0)))
+    sediment_multiplier = max(0.0, float(parameters["sediment_multiplier"]))
+    delivery_multiplier = max(0.0, float(parameters["sediment_delivery_multiplier"]))
     return gross_ton_ac * sdr * TON_PER_ACRE_TO_KG_PER_HA * sediment_multiplier * delivery_multiplier
 
 
@@ -413,15 +420,16 @@ def plet_annual_surface_runoff_in(
         Event rainfall depth, event runoff depth, annual storm runoff depth,
         and annual total runoff depth.
     """
+    parameters = apply_plet_parameter_defaults(parameters)
     event_rainfall, event_runoff, annual_storm_runoff = plet_runoff_depth_in(
         parameters["annual_precip_in"],
         parameters["rain_days"],
         parameters["rain_correction_fraction"],
         parameters["runoff_day_fraction"],
         parameters["cn"],
-        parameters.get("ia_ratio", 0.0),
+        parameters["ia_ratio"],
     )
-    runoff_multiplier = max(0.0, float(parameters.get("runoff_multiplier", 1.0)))
+    runoff_multiplier = max(0.0, float(parameters["runoff_multiplier"]))
     annual_total_runoff = annual_storm_runoff * runoff_multiplier
     return event_rainfall, event_runoff, annual_storm_runoff, annual_total_runoff
 
@@ -444,15 +452,16 @@ def plet_annual_infiltration_in(parameters: Mapping[str, Any]) -> float:
         raise ValueError(
             "Resolved PLET parameters are missing infiltration_fraction"
         )
+    parameters = apply_plet_parameter_defaults(parameters)
     infiltration_fraction = float(
         np.clip(parameters["infiltration_fraction"], 0.0, 1.0)
     )
-    annual_precip = max(0.0, float(parameters.get("annual_precip_in", 0.0)))
+    annual_precip = max(0.0, float(parameters["annual_precip_in"]))
     rain_correction_fraction = float(
-        np.clip(parameters.get("rain_correction_fraction", 1.0), 0.0, 1.0)
+        np.clip(parameters["rain_correction_fraction"], 0.0, 1.0)
     )
     infiltration = annual_precip * rain_correction_fraction * infiltration_fraction
-    infiltration *= max(0.0, float(parameters.get("groundwater_multiplier", 1.0)))
+    infiltration *= max(0.0, float(parameters["groundwater_multiplier"]))
     return float(max(0.0, infiltration))
 
 
@@ -482,140 +491,8 @@ def _sample_stats(ctx: Any, stats: Mapping[str, float], *, nonnegative: bool = F
     return max(0.0, value) if nonnegative else value
 
 
-def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
-    """Return the rows from a table that apply to one parcel.
-
-    Rows with ``pid="*"`` act as defaults. Rows for the exact parcel ID
-    override those defaults for matching parameters.
-
-    Parameters
-    ----------
-    table : pandas.DataFrame or None
-        Input table containing parcel-specific rows.
-    pid : str
-        Parcel identifier.
-
-    Returns
-    -------
-    list[pandas.Series]
-        Matching rows in evaluation order.
-    """
-    if table is None or table.empty:
-        return []
-    pids = table["pid"].astype(str)
-    defaults = table[pids == "*"]
-    exact = table[pids == str(pid)]
-    combined = pd.concat([defaults, exact], ignore_index=True)
-    if combined.empty:
-        return []
-    # A parcel-specific row overrides a wildcard row for the same parameter.
-    combined = combined.assign(
-        _canonical_parameter=combined["parameter"].map(canonical_parameter_name)
-    )
-    combined = combined.drop_duplicates(
-        subset=["_canonical_parameter"], keep="last"
-    )
-    return [row for _, row in combined.iterrows()]
 
 
-def validate_plet_input_table(
-    table: pd.DataFrame,
-    parcel_ids: Sequence[str],
-) -> pd.DataFrame:
-    """Validate required PLET classifications for every modeled parcel.
-
-    ``land_cover`` and ``hsg`` must be supplied as fixed ``value`` rows. Curve
-    number and infiltration fraction are intentionally kept out of the parcel
-    parameter table because they are supplied in the required
-    ``load_generation.hydrology_lookup`` input, where each land-cover/HSG
-    pairing can define a fixed value or a distribution.
-
-    Parameters
-    ----------
-    table : pandas.DataFrame
-        Long-form PLET parameter table.
-    parcel_ids : sequence of str
-        Parcel identifiers that will be modeled.
-
-    Returns
-    -------
-    pandas.DataFrame
-        A normalized copy of the table.
-
-    Raises
-    ------
-    ValueError
-        If classifications are missing or invalid, or if a derived hydrology
-        parameter is supplied directly.
-    """
-
-    normalized = table.copy()
-    raw_parameter_labels = normalized["parameter"].map(
-        lambda value: str(value).strip().lower().replace("-", "_").replace(" ", "_")
-    )
-    removed_parameters = sorted(
-        set(raw_parameter_labels[raw_parameter_labels.str.startswith("irrigat")])
-    )
-    if removed_parameters:
-        raise ValueError(
-            "PLET irrigation parameters are no longer supported: "
-            f"{removed_parameters}"
-        )
-
-    normalized["parameter"] = normalized["parameter"].map(
-        canonical_parameter_name
-    )
-
-    supplied_derived = sorted(
-        set(normalized.loc[
-            normalized["parameter"].isin(_PLET_DERIVED_PARAMETERS),
-            "parameter",
-        ])
-    )
-    if supplied_derived:
-        raise ValueError(
-            "PLET parcel inputs may not specify "
-            f"{supplied_derived}; define cn and infiltration_fraction in the "
-            "required load_generation.hydrology_lookup table instead"
-        )
-
-    classification_mask = normalized["parameter"].isin(
-        PLET_CLASSIFICATION_PARAMETERS
-    )
-    if classification_mask.any() and "value" not in normalized.columns:
-        raise ValueError(
-            "PLET land_cover and hsg classifications require a fixed value column"
-        )
-
-    for row_index in normalized.index[classification_mask]:
-        parameter = str(normalized.at[row_index, "parameter"])
-        value = normalized.at[row_index, "value"]
-        if pd.isna(value) or str(value).strip() == "":
-            raise ValueError(
-                f"PLET classification row {row_index} for {parameter} "
-                "requires a fixed value"
-            )
-        if parameter == "land_cover":
-            normalized.at[row_index, "value"] = normalize_plet_land_cover(value)
-        else:
-            normalized.at[row_index, "value"] = normalize_plet_hsg(value)
-
-    for pid in map(str, parcel_ids):
-        effective = {
-            canonical_parameter_name(row["parameter"]): row
-            for row in _rows_for_pid(normalized, pid)
-        }
-        missing = [
-            parameter
-            for parameter in PLET_CLASSIFICATION_PARAMETERS
-            if parameter not in effective
-        ]
-        if missing:
-            raise ValueError(
-                f"PLET inputs for pid={pid} are missing required "
-                f"classifications: {missing}"
-            )
-    return normalized
 
 
 def _sample_parameter_table(
@@ -880,6 +757,7 @@ def calculate_load_rate_components(
         groundwater loads with shape ``(n_pollutants,)``.
     """
 
+    parameters = apply_plet_parameter_defaults(parameters, pollutants)
     missing = [
         name for name in _REQUIRED_RESOLVED_PLET if name not in parameters
     ]
@@ -892,18 +770,22 @@ def calculate_load_rate_components(
 
     has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
     sediment_load_rate_kg_ha_yr = rusle_sediment_load_rate_kg_ha_yr(parameters) if has_rusle else 0.0
-    enrichment_ratio = max(0.0, float(parameters.get("enrichment_ratio", 2.0)))
+    enrichment_ratio = max(0.0, float(parameters["enrichment_ratio"]))
 
     groundwater_concentrations = groundwater_concentrations or {}
     pathway_load_rates = np.zeros((len(pollutants), len(PATHWAY_NAMES)), dtype=float)
     untreated_groundwater_load_rates = np.zeros(len(pollutants), dtype=float)
     for idx, pollutant in enumerate(pollutants):
         pol = str(pollutant).upper()
-        runoff_areal_load_rate = max(0.0, float(concentrations.get(pol, 0.0))) * runoff_l_ha / 1_000_000.0
+        runoff_areal_load_rate = 0.0
+        if pol != "TSS" or not has_rusle:
+            runoff_areal_load_rate = (
+                max(0.0, float(concentrations[pol])) * runoff_l_ha / 1_000_000.0
+            )
         groundwater_areal_load_rate = 0.0
         if groundwater_loads and pol != "TSS":
             groundwater_areal_load_rate = (
-                max(0.0, float(groundwater_concentrations.get(pol, 0.0))) * infiltration_l_ha / 1_000_000.0
+                max(0.0, float(groundwater_concentrations[pol])) * infiltration_l_ha / 1_000_000.0
             )
         # PLET resolves surface runoff and total subsurface/groundwater load,
         # but not the shallow-versus-deep subsurface split used by the BMP
@@ -926,12 +808,12 @@ def calculate_load_rate_components(
             shallow_areal_load_rate = 0.0
             deep_areal_load_rate = 0.0
         elif pol == "TN":
-            sediment_fraction = max(0.0, float(parameters.get("sediment_n_pct", 0.0))) / 100.0
+            sediment_fraction = max(0.0, float(parameters["sediment_n_pct"])) / 100.0
             surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
             shallow_areal_load_rate = groundwater_areal_load_rate * fraction_subsurface_shallow
             deep_areal_load_rate = groundwater_areal_load_rate * (1.0 - fraction_subsurface_shallow)
         elif pol == "TP":
-            sediment_fraction = max(0.0, float(parameters.get("sediment_p_pct", 0.0))) / 100.0
+            sediment_fraction = max(0.0, float(parameters["sediment_p_pct"])) / 100.0
             surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
             shallow_areal_load_rate = groundwater_areal_load_rate * fraction_subsurface_shallow
             deep_areal_load_rate = groundwater_areal_load_rate * (1.0 - fraction_subsurface_shallow)
@@ -942,7 +824,7 @@ def calculate_load_rate_components(
 
         load_multiplier = max(
             0.0,
-            float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)),
+            float(parameters[f"load_multiplier_{pol.lower()}"]),
         )
         pathway_load_rates[idx, 0] = max(0.0, surface_areal_load_rate) * load_multiplier
         if treat_groundwater_with_bmps:
@@ -968,6 +850,7 @@ def calculate_plet_pathway_load_rates(
     ``parameters`` is resolved from the PLET land-cover/HSG lookup table before
     this function is called. TSS has no subsurface component.
     """
+    parameters = apply_plet_parameter_defaults(parameters, pollutants)
     missing = [name for name in _REQUIRED_RESOLVED_PLET if name not in parameters]
     if missing:
         raise ValueError(f"PLET inputs are missing required parameters: {missing}")
@@ -977,35 +860,37 @@ def calculate_plet_pathway_load_rates(
     infiltration_l_ha = plet_annual_infiltration_in(parameters) * INCH_OVER_HA_TO_LITERS
     has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
     sediment_load_rate_kg_ha_yr = rusle_sediment_load_rate_kg_ha_yr(parameters) if has_rusle else 0.0
-    enrichment_ratio = max(0.0, float(parameters.get("enrichment_ratio", 2.0)))
+    enrichment_ratio = max(0.0, float(parameters["enrichment_ratio"]))
     groundwater_concentrations = groundwater_concentrations or {}
 
     pathway_load_rates = np.zeros((len(pollutants), len(PLET_PATHWAY_NAMES)), dtype=float)
     for idx, pollutant in enumerate(pollutants):
         pol = str(pollutant).upper()
-        runoff_areal_load_rate = (
-            max(0.0, float(concentrations.get(pol, 0.0)))
-            * runoff_l_ha / 1_000_000.0
-        )
+        runoff_areal_load_rate = 0.0
+        if pol != "TSS" or not has_rusle:
+            runoff_areal_load_rate = (
+                max(0.0, float(concentrations[pol]))
+                * runoff_l_ha / 1_000_000.0
+            )
         subsurface_areal_load_rate = 0.0
         if pol != "TSS":
             subsurface_areal_load_rate = (
-                max(0.0, float(groundwater_concentrations.get(pol, 0.0)))
+                max(0.0, float(groundwater_concentrations[pol]))
                 * infiltration_l_ha / 1_000_000.0
             )
 
         if pol == "TSS":
             surface_areal_load_rate = sediment_load_rate_kg_ha_yr if has_rusle else runoff_areal_load_rate
         elif pol == "TN":
-            sediment_fraction = max(0.0, float(parameters.get("sediment_n_pct", 0.0))) / 100.0
+            sediment_fraction = max(0.0, float(parameters["sediment_n_pct"])) / 100.0
             surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
         elif pol == "TP":
-            sediment_fraction = max(0.0, float(parameters.get("sediment_p_pct", 0.0))) / 100.0
+            sediment_fraction = max(0.0, float(parameters["sediment_p_pct"])) / 100.0
             surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
         else:
             surface_areal_load_rate = runoff_areal_load_rate
 
-        multiplier = max(0.0, float(parameters.get(f"load_multiplier_{pol.lower()}", 1.0)))
+        multiplier = max(0.0, float(parameters[f"load_multiplier_{pol.lower()}"]))
         pathway_load_rates[idx, 0] = max(0.0, surface_areal_load_rate) * multiplier
         pathway_load_rates[idx, 1] = max(0.0, subsurface_areal_load_rate) * multiplier
     return pathway_load_rates
@@ -1055,49 +940,8 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
     untreated_groundwater_load_rates = np.zeros((len(parcel_ids), len(ctx.pollutants)), dtype=float)
     hydrology_cache: Dict[Tuple[str, str], float] = {}
     for i, pid in enumerate(parcel_ids):
-        missing_plet = [
-            name for name in _REQUIRED_PLET_INPUTS if name not in plet[i]
-        ]
-        if missing_plet:
-            raise ValueError(
-                f"PLET inputs for pid={pid} are missing required parameters: {missing_plet}"
-            )
-        supplied_derived = [
-            name for name in _PLET_DERIVED_PARAMETERS if name in plet[i]
-        ]
-        if supplied_derived:
-            raise ValueError(
-                f"PLET inputs for pid={pid} may not specify {supplied_derived}; "
-                "these values must be defined in load_generation.hydrology_lookup "
-                "for the parcel's land_cover and hsg"
-            )
-
-        if rusle[i]:
-            missing_rusle = [name for name in _REQUIRED_RUSLE if name not in rusle[i]]
-            if missing_rusle:
-                raise ValueError(
-                    f"RUSLE inputs for pid={pid} are incomplete; missing: {missing_rusle}"
-                )
-            if "sdr" not in rusle[i] and "watershed_area_mi2" not in rusle[i]:
-                raise ValueError(
-                    f"RUSLE inputs for pid={pid} require 'sdr' or 'watershed_area_mi2'"
-                )
-
-        for pollutant in ctx.pollutants:
-            pol = str(pollutant).upper()
-            if pol in {"TN", "TP"} and pol not in concentrations[i]:
-                raise ValueError(
-                    f"Runoff concentration for pid={pid}, pollutant={pol} is required"
-                )
-            if pol != "TSS" and pol not in groundwater_concentrations[i]:
-                raise ValueError(
-                    f"Groundwater concentration for pid={pid}, pollutant={pol} is required in plet_rusle mode"
-                )
-            if pol == "TSS" and not rusle[i] and pol not in concentrations[i]:
-                raise ValueError(
-                    f"TSS for pid={pid} requires complete RUSLE inputs or a TSS concentration"
-                )
-
+        # Input completeness and concentration coverage are validated once in
+        # input_config before scenario workers start.
         derived_hydrology = _sample_plet_hydrology(
             ctx,
             plet[i]["land_cover"],
@@ -1108,13 +952,7 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
         combined = dict(plet[i])
         combined.update(derived_hydrology)
         combined.update(rusle[i])
-        combined.setdefault("ia_ratio", 0.0)
-        combined.setdefault("runoff_multiplier", 1.0)
-        combined.setdefault("groundwater_multiplier", 1.0)
-        combined.setdefault("sediment_multiplier", 1.0)
-        combined.setdefault("sediment_delivery_multiplier", 1.0)
-        for pol in ctx.pollutants:
-            combined.setdefault(f"load_multiplier_{str(pol).lower()}", 1.0)
+        combined = apply_plet_parameter_defaults(combined, ctx.pollutants)
         parameters.append(combined)
         has_rusle.append(all(name in combined for name in _REQUIRED_RUSLE))
         parcel_pathway_load_rates = calculate_plet_pathway_load_rates(

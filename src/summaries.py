@@ -16,24 +16,24 @@ import numpy as np
 import pandas as pd
 
 from .constants import (
-    BASELINE_MASS_PREFIX,
     BMP_CPS_NAME_MAP,
-    CPS_CONSTRUCTED_WETLAND,
-    CPS_GRASSED_WATERWAY,
-    MASS_SUFFIX,
-    OVERALL_REDUCTION_PREFIX,
-    OUTPUT_BMP_FAILED,
     OUTPUT_BUFFER_AREA,
     OUTPUT_CATCHMENT_RATIO,
-    OUTPUT_COST_USD,
     OUTPUT_LINEAR_LENGTH,
-    OUTPUT_TOTAL_COST_USD,
     OUTPUT_WETLAND_AREA,
-    REALIZED_EFFICIENCY_PREFIX,
-    REMOVED_MASS_PREFIX,
-    TREATED_BASELINE_MASS_PREFIX,
-    TREATMENT_EXPOSURE_PREFIX,
+    OUTPUT_COST_USD,
+    OUTPUT_TOTAL_COST_USD,
+    OUTPUT_BMP_FAILED,
 )
+
+
+BASELINE_MASS_PREFIX = "baseline_mass_"
+TREATED_BASELINE_MASS_PREFIX = "treated_baseline_mass_"
+REMOVED_MASS_PREFIX = "removed_mass_"
+MASS_SUFFIX = "_kg"
+TREATMENT_EXPOSURE_PREFIX = "treatment_exposure_fraction_"
+REALIZED_EFFICIENCY_PREFIX = "realized_efficiency_"
+OVERALL_REDUCTION_PREFIX = "overall_reduction_fraction_"
 
 
 def _compute_statistics(values: np.ndarray) -> Dict[str, float]:
@@ -166,14 +166,14 @@ class BMPSummaryCollector:
         group = self.bmp_by_cps[cps]
         group["records"].append(bmp_record)
 
-        if cps == CPS_CONSTRUCTED_WETLAND:  # Constructed Wetland
+        if cps == 656:  # Constructed Wetland
             wetland_area = bmp_record.get(OUTPUT_WETLAND_AREA)
             catchment_ratio = bmp_record.get(OUTPUT_CATCHMENT_RATIO)
             if wetland_area is not None:
                 group["attributes"]["wetland_area_ha"].append(float(wetland_area))
             if catchment_ratio is not None:
                 group["attributes"]["catchment_ratio"].append(float(catchment_ratio))
-        elif cps == CPS_GRASSED_WATERWAY:  # Grassed Waterway
+        elif cps == 412:  # Grassed Waterway
             buffer_area = bmp_record.get(OUTPUT_BUFFER_AREA)
             linear_length = bmp_record.get(OUTPUT_LINEAR_LENGTH)
             if buffer_area is not None:
@@ -181,14 +181,14 @@ class BMPSummaryCollector:
             if linear_length is not None:
                 group["attributes"]["linear_length_m"].append(float(linear_length))
 
-        failed_flag = bool(bmp_record.get(OUTPUT_BMP_FAILED, False))
+        failed_flag = bool(bmp_record.get(OUTPUT_BMP_FAILED))
         group["attributes"]["failed"].append(1 if failed_flag else 0)
-        group["attributes"]["pid"].append(str(bmp_record.get("pid", "")))
+        group["attributes"]["pid"].append(str(bmp_record.get("pid")))
 
     @staticmethod
     def _add_type_attributes(summary: Dict[str, Any], attrs: Dict[str, List[float]]) -> None:
         for attr_name in ("wetland_area_ha", "catchment_ratio", "buffer_area_ha", "linear_length_m"):
-            values = attrs.get(attr_name, [])
+            values = attrs[attr_name] if attr_name in attrs else []
             if values:
                 stats = _compute_statistics(np.asarray(values, dtype=float))
                 for stat_name, stat_val in stats.items():
@@ -214,9 +214,9 @@ class BMPSummaryCollector:
             summary: Dict[str, Any] = {
                 "scenario": self.scenario_id,
                 "cps": cps,
-                "cps_name": BMP_CPS_NAME_MAP.get(cps, f"CPS {cps}"),
+                "cps_name": BMP_CPS_NAME_MAP[cps] if cps in BMP_CPS_NAME_MAP else f"CPS {cps}",
                 "bmp_count": len(records),
-                "failures_count": int(np.sum(np.asarray(attrs.get("failed", []), dtype=float)))
+                "failures_count": int(np.sum(np.asarray(attrs["failed"] if "failed" in attrs else [], dtype=float)))
                 if "failed" in attrs
                 else 0,
             }
@@ -241,7 +241,7 @@ class BMPSummaryCollector:
             "cps": 0,
             "cps_name": "All CPS",
             "bmp_count": len(all_records),
-            "failures_count": int(np.sum(np.asarray(all_attrs.get("failed", []), dtype=float)))
+            "failures_count": int(np.sum(np.asarray(all_attrs["failed"], dtype=float)))
             if "failed" in all_attrs
             else 0,
         }
