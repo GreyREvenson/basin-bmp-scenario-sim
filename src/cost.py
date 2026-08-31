@@ -13,23 +13,23 @@ from typing import Dict, Optional, Union, TYPE_CHECKING
 if TYPE_CHECKING:
     from .model import Model
 from .constants import (
+    CFG_BUFFER_DEPTH_FT,
     COL_CPS,
-    DATA_AVG_PERIM_M,
-    DATA_AVG_AREA_HA,
-    DATA_BMP_COST,
-    DATA_CPS,
     COL_PROBABILITY,
     COL_UNIT,
-    CFG_BUFFER_DEPTH_FT,
+    DATA_AVG_AREA_HA,
+    DATA_AVG_PERIM_M,
+    DATA_BMP_COST,
+    DATA_CPS,
     DEFAULT_BUFFER_DEPTH_FT,
+    FT_TO_M,
+    M2_PER_HA,
+    MIN_BMP_SELECTION_COST_USD,
+    PROB_EST_BUFFER_PERIM_FRACTION,
+    PROB_EST_WETLAND_MAX_AREA_HA,
+    WETLAND_AREA_COST_CPS,
 )
 from .logging_utils import log_scope
-
-# Code-level constants used ONLY for selection-time average-cost heuristics
-PROB_EST_WETLAND_MAX_AREA_HA: float = 0.8
-PROB_EST_BUFFER_PERIM_FRACTION: float = 0.2
-
-FT_TO_M = 0.3048  # meters per foot
 
 
 def _finite_numeric_row_values(row: pd.Series) -> Dict[str, float]:
@@ -107,7 +107,7 @@ def _get_bmp_cost(
             if quantity and quantity > 0:
                 area_ha = float(quantity)
             else:
-                if int(cps) in (656, 657):
+                if int(cps) in WETLAND_AREA_COST_CPS:
                     area_ha = float(min(PROB_EST_WETLAND_MAX_AREA_HA, self.data[DATA_AVG_AREA_HA]))
                 else:
                     area_ha = float(self.data[DATA_AVG_AREA_HA])
@@ -117,7 +117,7 @@ def _get_bmp_cost(
                 # quantity represents area_ha for grassed buffers; convert to length via depth (m)
                 depth_ft = float(self.cfg.get(CFG_BUFFER_DEPTH_FT, DEFAULT_BUFFER_DEPTH_FT))
                 depth_m = depth_ft * FT_TO_M
-                area_m2 = float(quantity) * 10000.0
+                area_m2 = float(quantity) * M2_PER_HA
                 length_m = area_m2 / max(depth_m, 1e-9)
             else:
                 # Fallback to average-perimeter heuristic (selection-time heuristic reused)
@@ -226,14 +226,14 @@ def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
                 self.logger.warning(
                     f"no cost entry found for cps={cps}; assigning small placeholder cost for probability estimation"
                 )
-                rows.append({"cps": int(cps), "est_total_cost": float(0.01)})
+                rows.append({"cps": int(cps), "est_total_cost": float(MIN_BMP_SELECTION_COST_USD)})
                 continue
             row = sub.iloc[0]
             unit = str(row[COL_UNIT]).lower().strip()
             rate_value = self._select_cost_rate_median(row, cps=cps)
 
             if unit in ("usd/ha", "usd per ha", "usd_per_ha", "usd per unit area"):
-                if cps in (656, 657):
+                if cps in WETLAND_AREA_COST_CPS:
                     area_ha = float(min(PROB_EST_WETLAND_MAX_AREA_HA, self.data[DATA_AVG_AREA_HA]))
                 else:
                     area_ha = float(self.data[DATA_AVG_AREA_HA])
@@ -249,7 +249,7 @@ def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
 
             if not np.isfinite(total):
                 raise ValueError(f"Computed non-finite representative BMP cost for cps={cps}: {total}")
-            rows.append({"cps": int(cps), "est_total_cost": float(max(total, 0.01))})
+            rows.append({"cps": int(cps), "est_total_cost": float(max(total, MIN_BMP_SELECTION_COST_USD))})
         df = pd.DataFrame(rows)
         if df.empty:
             raise ValueError("Could not estimate costs for probability computation")

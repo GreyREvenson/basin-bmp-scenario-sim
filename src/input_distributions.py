@@ -19,20 +19,12 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-DISTRIBUTION_ID = "distribution_id"
-SAMPLE_GROUP = "sample_group"
-
-# Canonical names used by new files. Existing aliases remain accepted.
-_STAT_ALIASES = {
-    "average": "mean",
-    "avg": "mean",
-    "std": "sd",
-    "minimum": "min",
-    "maximum": "max",
-    "p0": "min",
-    "p100": "max",
-}
-_CANONICAL_NAMED_STATS = ("value", "mean", "sd", "min", "max")
+from .constants import (
+    COL_DISTRIBUTION_ID as DISTRIBUTION_ID,
+    COL_SAMPLE_GROUP as SAMPLE_GROUP,
+    DISTRIBUTION_NAMED_STATS as _CANONICAL_NAMED_STATS,
+    DISTRIBUTION_STAT_ALIASES as _STAT_ALIASES,
+)
 
 
 def _percentile_number(name: Any) -> Optional[int]:

@@ -15,109 +15,28 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+from .constants import (
+    ACRES_PER_SQUARE_MILE,
+    INCH_OVER_HA_TO_LITERS,
+    PATHWAY_VALUES as PATHWAY_NAMES,
+    PLET_CLASSIFICATION_PARAMETERS,
+    PLET_DERIVED_PARAMETERS as _PLET_DERIVED_PARAMETERS,
+    PLET_HSG_VALUES,
+    PLET_HYDROLOGY_LOOKUP_PATH,
+    PLET_LAND_COVER_ALIASES as _PLET_LAND_COVER_ALIASES,
+    PLET_LAND_COVERS,
+    PLET_PARAMETER_ALIASES as _PARAMETER_ALIASES,
+    PLET_PATHWAY_VALUES as PLET_PATHWAY_NAMES,
+    PLET_REQUIRED_INPUTS as _REQUIRED_PLET_INPUTS,
+    PLET_REQUIRED_RESOLVED_INPUTS as _REQUIRED_RESOLVED_PLET,
+    RUSLE_REQUIRED_INPUTS as _REQUIRED_RUSLE,
+    TON_PER_ACRE_TO_KG_PER_HA,
+)
 from .input_distributions import (
     sample_group_key,
     sample_stats_bounded,
     stats_from_row,
 )
-
-
-INCH_OVER_HA_TO_LITERS = 254_000.0
-TON_PER_ACRE_TO_KG_PER_HA = 907.18474 / 0.40468564224
-ACRES_PER_SQUARE_MILE = 640.0
-# Standard three-path order used by deterministic helper calculations.
-# Production plet_rusle scenarios use PLET_PATHWAY_NAMES instead.
-PATHWAY_NAMES = ("surface", "shallow subsurface", "deep subsurface")
-PLET_PATHWAY_NAMES = ("surface", "subsurface")
-PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
-PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
-PLET_HSG_VALUES = ("A", "B", "C", "D")
-# Default example path retained only for the public deterministic helper.
-# Production plet_rusle runs require load_generation.hydrology_lookup explicitly.
-PLET_HYDROLOGY_LOOKUP_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "examples" / "east_fork" / "inputs" / "plet" / "plet_hydrology_lookup.csv"
-)
-
-_PLET_DERIVED_PARAMETERS = ("cn", "infiltration_fraction")
-_PLET_LAND_COVER_ALIASES: Dict[str, str] = {
-    "urban": "urban",
-    "developed": "urban",
-    "cropland": "cropland",
-    "crop": "cropland",
-    "row_crop": "cropland",
-    "row_crops": "cropland",
-    "pasture": "pastureland",
-    "pastureland": "pastureland",
-    "forest": "forest",
-    "forested": "forest",
-    "woodland": "forest",
-    "woods": "forest",
-    "user_defined": "user_defined",
-    "userdefined": "user_defined",
-}
-
-# Canonical parameter names used internally.  Aliases make user-authored files
-# less brittle without introducing ambiguous units.
-_PARAMETER_ALIASES: Dict[str, str] = {
-    "annual_rainfall_in": "annual_precip_in",
-    "annual_precipitation_in": "annual_precip_in",
-    "ar": "annual_precip_in",
-    "rdays": "rain_days",
-    "rainfall_correction": "rain_correction_fraction",
-    "rcor": "rain_correction_fraction",
-    "rain_day_correction": "runoff_day_fraction",
-    "rdcor": "runoff_day_fraction",
-    "curve_number": "cn",
-    "land_use": "land_cover",
-    "landuse": "land_cover",
-    "land_cover_class": "land_cover",
-    "land_cover_classification": "land_cover",
-    "hydrologic_soil_group": "hsg",
-    "soil_hydrologic_group": "hsg",
-    "soil_group": "hsg",
-    "hsg_classification": "hsg",
-    "shg": "hsg",
-    "initial_abstraction_ratio": "ia_ratio",
-    "alpha": "ia_ratio",
-    "rusle_r": "r",
-    "rusle_k": "k",
-    "rusle_ls": "ls",
-    "rusle_c": "c",
-    "rusle_p": "p",
-    "delivery_ratio": "sdr",
-    "sediment_delivery_ratio": "sdr",
-    "watershed_area_sqmi": "watershed_area_mi2",
-    "watershed_area_sq_mi": "watershed_area_mi2",
-    "soil_n_percent": "sediment_n_pct",
-    "soil_p_percent": "sediment_p_pct",
-    "enrichment": "enrichment_ratio",
-    "infiltration_frac": "infiltration_fraction",
-    "infiltration_factor": "infiltration_fraction",
-    "gw_infiltration_fraction": "infiltration_fraction",
-    "groundwater_infiltration_fraction": "infiltration_fraction",
-    "shallow_subsurface_fraction": "fraction_subsurface_shallow",
-    "fraction_shallow_subsurface": "fraction_subsurface_shallow",
-    "subsurface_shallow_fraction": "fraction_subsurface_shallow",
-}
-
-_REQUIRED_PLET_INPUTS = (
-    "annual_precip_in",
-    "rain_days",
-    "rain_correction_fraction",
-    "runoff_day_fraction",
-    "land_cover",
-    "hsg",
-)
-_REQUIRED_RESOLVED_PLET = (
-    "annual_precip_in",
-    "rain_days",
-    "rain_correction_fraction",
-    "runoff_day_fraction",
-    "cn",
-    "infiltration_fraction",
-)
-_REQUIRED_RUSLE = ("r", "k", "ls", "c", "p")
 
 
 @dataclass

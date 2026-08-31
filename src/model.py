@@ -48,6 +48,15 @@ from src.parcel import (
 from src.sampling import _piecewise_quantile_sample, _sample_from_stats, _trunc_normal
 from src.summaries import BMPSummaryCollector
 from src.constants import (
+    BASELINE_MASS_PREFIX,
+    COL_MASS_TIMESTEP_YEARS,
+    CURRENT_TIMESTEP_YEARS as _CURRENT_TIMESTEP_YEARS,
+    MASS_SUFFIX,
+    OVERALL_REDUCTION_PREFIX,
+    REALIZED_EFFICIENCY_PREFIX,
+    REMOVED_MASS_PREFIX,
+    TREATED_BASELINE_MASS_PREFIX,
+    TREATMENT_EXPOSURE_PREFIX,
     CFG_BMP_COST,
     CFG_BMP_SEL,
     CFG_OUTPUTS,
@@ -114,13 +123,6 @@ from src.constants import (
 )
 
 
-# Current production runs use an annual timestep. Multiplying annual load rates
-# (kg/yr) by one year converts them to mass (kg) without changing the numeric
-# value. Future dynamic implementations should replace this constant with the
-# actual timestep duration in years before aggregating mass.
-_CURRENT_TIMESTEP_YEARS = 1.0
-
-
 def _safe_mass_ratio(numerator: float, denominator: float) -> Optional[float]:
     """Return a dimensionless mass ratio, or ``None`` when undefined."""
     numerator = float(numerator)
@@ -179,22 +181,22 @@ def _add_mass_metrics_to_bmp_record(
     removed_mass_kg: np.ndarray,
 ) -> None:
     """Write explicit mass accounting and dimensionless BMP metrics to a record."""
-    bmp_rec["mass_timestep_years"] = float(_CURRENT_TIMESTEP_YEARS)
+    bmp_rec[COL_MASS_TIMESTEP_YEARS] = float(_CURRENT_TIMESTEP_YEARS)
     for pol_idx, pol in enumerate(pollutants):
         baseline_mass = float(baseline_mass_kg[pol_idx])
         treated_mass = float(treated_mass_kg[pol_idx])
         removed_mass = float(removed_mass_kg[pol_idx])
 
-        bmp_rec[f"baseline_mass_{pol}_kg"] = baseline_mass
-        bmp_rec[f"treated_baseline_mass_{pol}_kg"] = treated_mass
-        bmp_rec[f"removed_mass_{pol}_kg"] = removed_mass
+        bmp_rec[f"{BASELINE_MASS_PREFIX}{pol}{MASS_SUFFIX}"] = baseline_mass
+        bmp_rec[f"{TREATED_BASELINE_MASS_PREFIX}{pol}{MASS_SUFFIX}"] = treated_mass
+        bmp_rec[f"{REMOVED_MASS_PREFIX}{pol}{MASS_SUFFIX}"] = removed_mass
 
         exposure = _safe_mass_ratio(treated_mass, baseline_mass)
         realized = _safe_mass_ratio(removed_mass, treated_mass)
         overall = _safe_mass_ratio(removed_mass, baseline_mass)
-        bmp_rec[f"treatment_exposure_fraction_{pol}"] = exposure
-        bmp_rec[f"realized_efficiency_{pol}"] = realized
-        bmp_rec[f"overall_reduction_fraction_{pol}"] = overall
+        bmp_rec[f"{TREATMENT_EXPOSURE_PREFIX}{pol}"] = exposure
+        bmp_rec[f"{REALIZED_EFFICIENCY_PREFIX}{pol}"] = realized
+        bmp_rec[f"{OVERALL_REDUCTION_PREFIX}{pol}"] = overall
 
 
 

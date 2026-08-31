@@ -17,8 +17,10 @@ if TYPE_CHECKING:
     from .model import Model
 
 from .constants import (
-    CFG_BUFFER_DEPTH_FT,
     BMP_CPS_NAME_MAP,
+    CFG_BMP_SEL_PROB_VIA_COSTS,
+    CFG_BUFFER_DEPTH_FT,
+    CPS_CONSTRUCTED_WETLAND,
     COL_CPS,
     COL_PROBABILITY,
     OUTPUT_BUFFER_AREA,
@@ -32,14 +34,18 @@ from .constants import (
     DATA_BMP_COST,
     DATA_CPS,
     DEFAULT_BUFFER_DEPTH_FT,
+    FT_TO_M,
+    GRASSED_WATERWAY_PERIMETER_FRACTION_STATS,
+    GRASSED_WATERWAY_TREATED_FRACTION_STATS,
+    M2_PER_HA,
     PATHWAY_VALUES,
+    WETLAND_AREA_HA_STATS,
+    WETLAND_CATCHMENT_RATIO_STATS,
 )
 from .logging_utils import log_scope
 
 ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
 ParcelUpListFn = Callable[[Union[int, str]], List[str]]
-
-FT_TO_M = 0.3048  # meters per foot
 
 
 def _active_pathways(self: "Model") -> List[str]:
@@ -200,7 +206,7 @@ def _simulate_wetland(
     load_rates: np.ndarray,
     bmp_rec: Dict[str, Any],
     bmp_mass_rate_outputs: Dict[str, np.ndarray],
-    cps: Union[int, str] = 656,
+    cps: Union[int, str] = CPS_CONSTRUCTED_WETLAND,
 ) -> None:
     """Apply a wetland BMP and update parcel loads.
 
@@ -235,7 +241,7 @@ def _simulate_wetland(
 
         # wetland area (ha), clipped by field area
         area_field_ha = float(self.parcel_area_ha[parcel_idx])
-        wet_area_stats = {"min": 0.1, "p25": 0.4, "p50": 0.81, "p75": 2.0, "max": 4.0}  # heuristic
+        wet_area_stats = WETLAND_AREA_HA_STATS  # heuristic
         wet_area = self._sample_from_stats(stats=wet_area_stats, kind=None)
         wet_area = min(wet_area, area_field_ha)
         # Restored from legacy: detailed diagnostics
@@ -244,7 +250,7 @@ def _simulate_wetland(
         )
 
         # catchment area ratio (dimensionless)
-        ratio_stats = {"min": 1.0, "p25": 2.0, "p50": 5.0, "p75": 10.0, "max": 100.0}  # heuristic
+        ratio_stats = WETLAND_CATCHMENT_RATIO_STATS  # heuristic
         cat_ratio = self._sample_from_stats(stats=ratio_stats, kind=None)
         cat_ratio = max(0.0, float(cat_ratio))
 
@@ -367,7 +373,7 @@ def _simulate_grassed(
         # Depth and area (length * depth -> m^2 -> ha)
         depth_ft = float(self.cfg.get(CFG_BUFFER_DEPTH_FT, DEFAULT_BUFFER_DEPTH_FT))
         depth_m = depth_ft * FT_TO_M
-        area_ha = (length_m * depth_m) / 10000.0
+        area_ha = (length_m * depth_m) / M2_PER_HA
         self.logger.verbose(
             f"grassed buffer depth={depth_ft:.2f} ft ({depth_m:.2f} m), area={area_ha:.4f} ha"
         )
@@ -519,7 +525,7 @@ def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.D
         )
         return df[[COL_CPS, COL_PROBABILITY]]
     else:
-        est_via_costs = self.cfg.get("bmp_sel_prob_via_costs", False)
+        est_via_costs = self.cfg.get(CFG_BMP_SEL_PROB_VIA_COSTS, False)
         if est_via_costs and self.data[DATA_BMP_COST] is not None:
             self.logger.info("estimating BMP selection probabilities via cost heuristics")
             df = self._estimate_costs_for_probabilities()

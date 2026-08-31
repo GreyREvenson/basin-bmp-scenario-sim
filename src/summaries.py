@@ -16,24 +16,24 @@ import numpy as np
 import pandas as pd
 
 from .constants import (
+    BASELINE_MASS_PREFIX,
     BMP_CPS_NAME_MAP,
+    CPS_CONSTRUCTED_WETLAND,
+    CPS_GRASSED_WATERWAY,
+    MASS_SUFFIX,
+    OVERALL_REDUCTION_PREFIX,
+    OUTPUT_BMP_FAILED,
     OUTPUT_BUFFER_AREA,
     OUTPUT_CATCHMENT_RATIO,
-    OUTPUT_LINEAR_LENGTH,
-    OUTPUT_WETLAND_AREA,
     OUTPUT_COST_USD,
+    OUTPUT_LINEAR_LENGTH,
     OUTPUT_TOTAL_COST_USD,
-    OUTPUT_BMP_FAILED,
+    OUTPUT_WETLAND_AREA,
+    REALIZED_EFFICIENCY_PREFIX,
+    REMOVED_MASS_PREFIX,
+    TREATED_BASELINE_MASS_PREFIX,
+    TREATMENT_EXPOSURE_PREFIX,
 )
-
-
-BASELINE_MASS_PREFIX = "baseline_mass_"
-TREATED_BASELINE_MASS_PREFIX = "treated_baseline_mass_"
-REMOVED_MASS_PREFIX = "removed_mass_"
-MASS_SUFFIX = "_kg"
-TREATMENT_EXPOSURE_PREFIX = "treatment_exposure_fraction_"
-REALIZED_EFFICIENCY_PREFIX = "realized_efficiency_"
-OVERALL_REDUCTION_PREFIX = "overall_reduction_fraction_"
 
 
 def _compute_statistics(values: np.ndarray) -> Dict[str, float]:
@@ -166,14 +166,14 @@ class BMPSummaryCollector:
         group = self.bmp_by_cps[cps]
         group["records"].append(bmp_record)
 
-        if cps == 656:  # Constructed Wetland
+        if cps == CPS_CONSTRUCTED_WETLAND:  # Constructed Wetland
             wetland_area = bmp_record.get(OUTPUT_WETLAND_AREA)
             catchment_ratio = bmp_record.get(OUTPUT_CATCHMENT_RATIO)
             if wetland_area is not None:
                 group["attributes"]["wetland_area_ha"].append(float(wetland_area))
             if catchment_ratio is not None:
                 group["attributes"]["catchment_ratio"].append(float(catchment_ratio))
-        elif cps == 412:  # Grassed Waterway
+        elif cps == CPS_GRASSED_WATERWAY:  # Grassed Waterway
             buffer_area = bmp_record.get(OUTPUT_BUFFER_AREA)
             linear_length = bmp_record.get(OUTPUT_LINEAR_LENGTH)
             if buffer_area is not None:
