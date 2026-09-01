@@ -83,10 +83,14 @@ from .input_distributions import (
     stats_from_row,
 )
 from .input_validation import (
+    FRACTION_DOMAIN,
+    NONNEGATIVE_DOMAIN,
+    POSITIVE_DOMAIN,
     require_columns,
     validate_config,
     validate_distribution_bounds,
     validate_distribution_catalog,
+    validate_numeric_columns_in_domain,
     validate_numeric_distribution_rows,
     validate_plet_input_table,
     validate_plet_runtime_inputs,
@@ -1157,6 +1161,9 @@ def _load_parcels(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) ->
     parcels["area_m2"] = parcels.geometry.area
     parcels["perim_m"] = parcels.geometry.length
     parcels["area_ha"] = parcels["area_m2"] / 10000.0
+    validate_numeric_columns_in_domain(
+        parcels, ["area_m2", "area_ha", "perim_m"], POSITIVE_DOMAIN, CFG_PARCELS
+    )
     return parcels
 
 
@@ -1503,10 +1510,10 @@ def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: A
             key_columns=[],
         )
         if df.empty:
-            raise ValueError(f"{CFG_PARCEL_P} has no {COL_PID}s that exist in parcels after clipping")
+            raise ValueError(f"{CFG_PARCEL_P} has no {COL_PID}s that exist in parcels after filtering")
         total_prob = df[COL_PROBABILITY].sum()
         if total_prob <= 0:
-            raise ValueError(f"{CFG_PARCEL_P} probabilities sum to zero or negative")
+            raise ValueError(f"{CFG_PARCEL_P} selection weights sum to zero or negative")
         df[COL_PROBABILITY] /= total_prob
         return df[[COL_PID, COL_PROBABILITY]].copy()
     # synthesize uniform
@@ -1571,7 +1578,14 @@ def _load_optional_outlet_stats(
         logger.verbose(f"Optional key {key} not provided; skipping {label}")
         return None
     df = _merge_csvs(ci_get(cfg, key), required_cols, label, logger)
-    return _normalize_pollutant_column(df, COL_POLLUTANT, label, logger)
+    df = _normalize_pollutant_column(df, COL_POLLUTANT, label, logger)
+    numeric_columns = [
+        column for column in (COL_TARGET, COL_MEAN) if column in df.columns
+    ]
+    validate_numeric_columns_in_domain(
+        df, numeric_columns, NONNEGATIVE_DOMAIN, label
+    )
+    return df
 
 
 def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataFrame]:
@@ -2129,6 +2143,8 @@ def _resolve_aggregate_pathway_fractions(
     for path in pathways:
         fractions.setdefault(path, 0.0)
     vals = np.asarray(list(fractions.values()), dtype=float)
+    if not np.all(np.isfinite(vals)):
+        raise ValueError("pollutant load rate pathway fractions must be finite")
     if (vals < 0.0).any() or (vals > 1.0).any():
         raise ValueError("pollutant load rate pathway fractions must each be in [0,1]")
     total = float(vals.sum())
@@ -2189,8 +2205,9 @@ def _complete_delivery_ratio_defaults(
         if column not in out.columns:
             out[column] = pd.Series(dtype=float)
         out[column] = pd.to_numeric(out[column], errors="raise")
-        if ((out[column] < 0.0) | (out[column] > 1.0)).any():
-            raise ValueError(f"{CFG_DELIVERY_RATIOS}.{column} values must be in [0, 1]")
+        validate_numeric_columns_in_domain(
+            out, [column], FRACTION_DOMAIN, CFG_DELIVERY_RATIOS
+        )
     return out.reset_index(drop=True)
 
 def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:

@@ -10,6 +10,12 @@ from __future__ import annotations
 import numpy as np
 from typing import Dict, Optional, Tuple, TYPE_CHECKING
 
+from .input_validation import (
+    PhysicalDomain,
+    physical_domain_for_sampling_kind,
+    validate_scalar_in_domain,
+)
+
 if TYPE_CHECKING:
     from .model import Model
 
@@ -40,34 +46,69 @@ def _trunc_normal(
     high: Optional[float] = None,
     size: Optional[int] = None,
 ) -> np.ndarray:
-    """Draw truncated normal samples.
+    """Draw samples from an explicitly truncated normal distribution.
+
+    Bounds define the distribution support; they are not used to repair an
+    invalid draw after sampling. A deterministic ``sd == 0`` value outside
+    the support is therefore rejected.
+
     Parameters
     ----------
     self : Model
         Active simulation model instance providing the RNG.
     mean : float
-        Mean of the normal distribution.
+        Mean of the underlying normal distribution.
     sd : float
-        Standard deviation of the normal distribution.
+        Standard deviation of the underlying normal distribution.
     low : float or None, optional
-        Minimum allowed value. Default is ``None``.
+        Lower truncation bound.
     high : float or None, optional
-        Maximum allowed value. Default is ``None``.
+        Upper truncation bound.
     size : int or None, optional
-        Number of values to sample. Default is ``None``.
+        Number of values to sample.
+
     Returns
     -------
     numpy.ndarray
-        Array of sampled values clipped to the requested bounds.
+        Samples lying within the requested support.
+
+    Raises
+    ------
+    ValueError
+        If the distribution definition is non-finite, has negative spread,
+        has reversed bounds, or a deterministic value is outside the support.
     """
+    mean = float(mean)
+    sd = float(sd)
+    if not np.isfinite(mean) or not np.isfinite(sd):
+        raise ValueError("Normal mean and sd must be finite")
+    if sd < 0.0:
+        raise ValueError("Normal sd must be >= 0")
+    if low is not None:
+        low = float(low)
+        if not np.isfinite(low):
+            raise ValueError("Normal lower bound must be finite")
+    if high is not None:
+        high = float(high)
+        if not np.isfinite(high):
+            raise ValueError("Normal upper bound must be finite")
+    if low is not None and high is not None and low > high:
+        raise ValueError("Normal lower bound cannot exceed upper bound")
+
     n = int(size or 1)
-    if sd <= 0:
-        val = mean
-        if low is not None:
-            val = max(low, val)
-        if high is not None:
-            val = min(high, val)
-        return np.full(n, float(val))
+    if n < 1:
+        raise ValueError("Normal sample size must be >= 1")
+
+    def in_support(value: float) -> bool:
+        return (low is None or value >= low) and (high is None or value <= high)
+
+    if sd == 0.0:
+        if not in_support(mean):
+            raise ValueError(
+                f"Deterministic normal value {mean:g} is outside truncation support "
+                f"[{low}, {high}]"
+            )
+        return np.full(n, mean, dtype=float)
 
     out = np.empty(n, dtype=float)
     filled = 0
@@ -86,13 +127,17 @@ def _trunc_normal(
             filled += k
         tries += 1
         batch = min(max(batch * 2, n - filled), (n - filled) * 8 + 1024)
+
     if filled < n:
-        fallback = mean
-        if low is not None:
-            fallback = max(low, fallback)
-        if high is not None:
-            fallback = min(high, fallback)
-        out[filled:] = float(fallback)
+        # A validated mean lies inside every explicit physical/support bound.
+        # Reusing it here is a numerical fallback for very low acceptance, not
+        # a correction of an invalid user value.
+        if not in_support(mean):
+            raise RuntimeError(
+                "Could not draw enough truncated-normal samples and the mean "
+                "is outside the requested support"
+            )
+        out[filled:] = mean
 
     return out
 
@@ -163,25 +208,27 @@ def _sample_from_stats(
     stats: Dict[str, float],
     kind: Optional[str] = None,
 ) -> float:
-    """Sample one value from summary statistics.
+    """Sample one value from validated summary statistics.
 
-    The sampler chooses an appropriate strategy based on the available
-    statistics. Fixed values are returned directly. Mean/standard-deviation
-    rows are sampled with a truncated normal distribution, honoring any row
-    ``min``/``max`` bounds; min/max rows are sampled uniformly; and percentile
-    rows are sampled by piecewise linear interpolation.
+    ``kind`` supplies a physical domain. For Normal inputs that domain becomes
+    explicit truncation support. Input distributions are assumed to have been
+    physically validated once during input loading; this hot-path sampler does
+    not revalidate every supplied statistic on every Monte Carlo draw. The
+    sampled result is still checked against the requested domain as an internal
+    invariant and is never clipped into compliance.
+
     Parameters
     ----------
     self : Model
-        Active simulation model instance providing the RNG and sampling
-        helpers.
+        Active simulation model instance providing the RNG.
     stats : dict[str, float]
         Summary statistics for one sampled value.
     kind : str or None, optional
-        Optional semantic hint. Use ``"efficiency"`` for a signed BMP effect
-        capped at ``1`` or ``"load_rate"`` to clamp the result at zero.
-        Negative efficiencies are preserved because they represent load increases.
-        Default is ``None``.
+        Semantic domain. Supported values are ``efficiency``, ``load_rate``,
+        ``nonnegative``, ``fraction``, ``cn``, ``ia_ratio``, ``percent``, and
+        ``positive``. Negative efficiencies remain valid; efficiencies above
+        one are rejected.
+
     Returns
     -------
     float
@@ -190,50 +237,67 @@ def _sample_from_stats(
     Raises
     ------
     ValueError
-        If the supplied statistics are insufficient to determine a sample.
+        If statistics are insufficient or violate the requested physical
+        domain.
     """
     cols = {str(k).lower(): v for k, v in stats.items()}
+    domain: Optional[PhysicalDomain] = physical_domain_for_sampling_kind(kind)
+    if kind is not None and domain is None:
+        raise ValueError(f"Unknown sampling kind: {kind!r}")
+
+    # Physical/statistical input validation is deliberately performed once in
+    # the input-loading layer. Repeating those dictionary scans here would put
+    # validation work inside the Monte Carlo hot path.
+
     has_min = any(k in cols for k in ("min", "minimum", "p0"))
     has_max = any(k in cols for k in ("max", "maximum", "p100"))
     has_sd = any(k in cols for k in ("sd", "std"))
     has_mean = any(k in cols for k in ("mean", "average", "avg"))
-    has_percentiles = any(str(k).startswith("p") and str(k)[1:].isdigit() for k in cols.keys())
+    has_percentiles = any(
+        str(k).startswith("p") and str(k)[1:].isdigit() for k in cols
+    )
 
-    low, high = None, None
-    if kind == "efficiency":
-        high = 1.0
-    elif kind == "load_rate":
-        low = 0.0
+    physical_low = domain.low if domain is not None else None
+    physical_high = domain.high if domain is not None else None
+
     if "value" in cols:
-        s = float(cols["value"])
+        sample = float(cols["value"])
     elif has_min and has_max and has_percentiles:
-        s = float(self._piecewise_quantile_sample(cols, size=1)[0])
+        sample = float(self._piecewise_quantile_sample(cols, size=1)[0])
     elif has_min and has_max and has_mean and not has_sd:
-        mn = float(_first_present(cols, ("mean", "average", "avg")))
-        lo = float(_first_present(cols, ("min", "minimum", "p0")))
-        hi = float(_first_present(cols, ("max", "maximum", "p100")))
-        sd = max((hi - lo) / 4.0, 1e-12)
-        s = float(self._trunc_normal(mn, sd, low=lo if low is None else max(low, lo), high=hi if high is None else min(high, hi), size=1)[0])
+        mean = float(_first_present(cols, ("mean", "average", "avg")))
+        low = float(_first_present(cols, ("min", "minimum", "p0")))
+        high = float(_first_present(cols, ("max", "maximum", "p100")))
+        sd = max((high - low) / 4.0, 1e-12)
+        sample = float(
+            self._trunc_normal(mean, sd, low=low, high=high, size=1)[0]
+        )
     elif has_min and has_max and not has_mean and not has_sd and not has_percentiles:
-        lo = float(_first_present(cols, ("min", "minimum", "p0")))
-        hi = float(_first_present(cols, ("max", "maximum", "p100")))
-        lo = max(lo, low) if low is not None else lo
-        hi = min(hi, high) if high is not None else hi
-        s = float(self.rng.uniform(lo, hi))
+        low = float(_first_present(cols, ("min", "minimum", "p0")))
+        high = float(_first_present(cols, ("max", "maximum", "p100")))
+        sample = float(self.rng.uniform(low, high))
     elif has_mean and has_sd:
-        mn = float(_first_present(cols, ("mean", "average", "avg")))
+        mean = float(_first_present(cols, ("mean", "average", "avg")))
         sd = float(_first_present(cols, ("sd", "std")))
-        if has_min:
-            row_low = float(_first_present(cols, ("min", "minimum", "p0")))
-            low = row_low if low is None else max(low, row_low)
-        if has_max:
-            row_high = float(_first_present(cols, ("max", "maximum", "p100")))
-            high = row_high if high is None else min(high, row_high)
-        s = float(self._trunc_normal(mn, sd, low=low, high=high, size=1)[0])
+        low = (
+            float(_first_present(cols, ("min", "minimum", "p0")))
+            if has_min
+            else physical_low
+        )
+        high = (
+            float(_first_present(cols, ("max", "maximum", "p100")))
+            if has_max
+            else physical_high
+        )
+        sample = float(
+            self._trunc_normal(mean, sd, low=low, high=high, size=1)[0]
+        )
     else:
         raise ValueError("Insufficient distribution statistics to sample")
-    if low is not None and s < low:
-        s = low
-    if high is not None and s > high:
-        s = high
-    return float(s)
+
+    if not np.isfinite(sample):
+        raise ValueError("Sampled value must be finite")
+    if domain is not None:
+        validate_scalar_in_domain(sample, domain, f"sampled {kind}")
+    return float(sample)
+

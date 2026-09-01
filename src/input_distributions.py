@@ -133,6 +133,15 @@ def _nonblank(value: Any) -> bool:
 
 
 
+
+
+
+
+
+
+
+
+
 def sample_group_key(row: Mapping[str, Any], *, pid: str, variable: str) -> Tuple[str, str]:
     """Return a cache key for optional shared draws.
 
@@ -203,10 +212,24 @@ def sample_stats_bounded(
     has_sd = "sd" in cols
     has_percentiles = any(_percentile_number(k) not in (None, 0, 100) for k in cols)
 
+    # Physical bounds define the distribution support. Explicit user statistics
+    # outside that support are invalid input and must not be silently narrowed.
+    for name, value in cols.items():
+        if name in {"sd", "std"}:
+            continue
+        if low is not None and value < low:
+            raise ValueError(
+                f"Distribution statistic {name}={value} is below allowed minimum {low}"
+            )
+        if high is not None and value > high:
+            raise ValueError(
+                f"Distribution statistic {name}={value} exceeds allowed maximum {high}"
+            )
+
     row_low = cols.get("min") if has_min else None
     row_high = cols.get("max") if has_max else None
-    effective_low = low if row_low is None else (row_low if low is None else max(low, row_low))
-    effective_high = high if row_high is None else (row_high if high is None else min(high, row_high))
+    effective_low = row_low if row_low is not None else low
+    effective_high = row_high if row_high is not None else high
     if effective_low is not None and effective_high is not None and effective_low > effective_high:
         raise ValueError("Distribution bounds do not overlap the parameter's allowed range")
 

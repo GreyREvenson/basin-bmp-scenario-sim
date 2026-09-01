@@ -7,15 +7,19 @@ assembly live in :mod:`src.input_config`.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
 from .constants import (
+    CFG_BMP_COST,
     CFG_BMP_EFFICIENCY,
     CFG_BMP_FAIL_RATE,
     CFG_BMP_FAIL_REDUCTION,
+    CFG_BMP_LIMIT_N,
+    CFG_BMP_LIMIT_USD,
     CFG_BUFFER_DEPTH_FT,
     CFG_N_SCENARIOS,
     CFG_PARALLEL,
@@ -25,9 +29,252 @@ from .constants import (
     COL_PID,
     COL_POLLUTANT,
     COL_PROBABILITY,
+    LOAD_CONCENTRATIONS,
+    LOAD_GROUNDWATER_CONCENTRATIONS,
 )
 from .input_distributions import DISTRIBUTION_ID, stats_from_row
 from .utils import ci_get
+
+
+@dataclass(frozen=True)
+class PhysicalDomain:
+    """Allowed physical domain for a user-supplied numeric quantity.
+
+    Parameters
+    ----------
+    low : float or None
+        Lower bound, or ``None`` when no lower bound applies.
+    high : float or None
+        Upper bound, or ``None`` when no upper bound applies.
+    low_inclusive : bool, optional
+        Whether the lower bound is included.
+    high_inclusive : bool, optional
+        Whether the upper bound is included.
+    """
+
+    low: Optional[float] = None
+    high: Optional[float] = None
+    low_inclusive: bool = True
+    high_inclusive: bool = True
+
+    def contains(self, value: float) -> bool:
+        """Return whether ``value`` is finite and inside the domain."""
+        if not np.isfinite(float(value)):
+            return False
+        numeric = float(value)
+        if self.low is not None:
+            if self.low_inclusive:
+                if numeric < self.low:
+                    return False
+            elif numeric <= self.low:
+                return False
+        if self.high is not None:
+            if self.high_inclusive:
+                if numeric > self.high:
+                    return False
+            elif numeric >= self.high:
+                return False
+        return True
+
+    def describe(self) -> str:
+        """Return a compact human-readable description of the domain."""
+        if self.low is None and self.high is None:
+            return "all finite values"
+        if self.low is None:
+            operator = "<=" if self.high_inclusive else "<"
+            return f"{operator} {self.high:g}"
+        if self.high is None:
+            operator = ">=" if self.low_inclusive else ">"
+            return f"{operator} {self.low:g}"
+        left = "[" if self.low_inclusive else "("
+        right = "]" if self.high_inclusive else ")"
+        return f"{left}{self.low:g}, {self.high:g}{right}"
+
+
+NONNEGATIVE_DOMAIN = PhysicalDomain(low=0.0)
+POSITIVE_DOMAIN = PhysicalDomain(low=0.0, low_inclusive=False)
+FRACTION_DOMAIN = PhysicalDomain(low=0.0, high=1.0)
+EFFICIENCY_DOMAIN = PhysicalDomain(high=1.0)
+PERCENT_DOMAIN = PhysicalDomain(low=0.0, high=100.0)
+CN_DOMAIN = PhysicalDomain(low=0.0, high=100.0, low_inclusive=False)
+IA_RATIO_DOMAIN = PhysicalDomain(low=0.0, high=0.20)
+
+
+_TABLE_PHYSICAL_DOMAINS: Dict[str, PhysicalDomain] = {
+    CFG_POLLUTANT_LOAD_RATE: NONNEGATIVE_DOMAIN,
+    CFG_BMP_EFFICIENCY: EFFICIENCY_DOMAIN,
+    CFG_BMP_COST: NONNEGATIVE_DOMAIN,
+    LOAD_CONCENTRATIONS: NONNEGATIVE_DOMAIN,
+    LOAD_GROUNDWATER_CONCENTRATIONS: NONNEGATIVE_DOMAIN,
+}
+
+
+_PARAMETER_PHYSICAL_DOMAINS: Dict[str, PhysicalDomain] = {
+    "annual_precip_in": NONNEGATIVE_DOMAIN,
+    "rain_days": NONNEGATIVE_DOMAIN,
+    "rain_correction_fraction": FRACTION_DOMAIN,
+    "runoff_day_fraction": FRACTION_DOMAIN,
+    "cn": CN_DOMAIN,
+    "ia_ratio": IA_RATIO_DOMAIN,
+    "infiltration_fraction": FRACTION_DOMAIN,
+    "runoff_multiplier": NONNEGATIVE_DOMAIN,
+    "groundwater_multiplier": NONNEGATIVE_DOMAIN,
+    "r": NONNEGATIVE_DOMAIN,
+    "k": NONNEGATIVE_DOMAIN,
+    "ls": NONNEGATIVE_DOMAIN,
+    "c": NONNEGATIVE_DOMAIN,
+    "p": NONNEGATIVE_DOMAIN,
+    "sdr": FRACTION_DOMAIN,
+    "watershed_area_mi2": POSITIVE_DOMAIN,
+    "sediment_multiplier": NONNEGATIVE_DOMAIN,
+    "sediment_delivery_multiplier": NONNEGATIVE_DOMAIN,
+    "sediment_n_pct": PERCENT_DOMAIN,
+    "sediment_p_pct": PERCENT_DOMAIN,
+    "enrichment_ratio": NONNEGATIVE_DOMAIN,
+    "fraction_subsurface_shallow": FRACTION_DOMAIN,
+}
+
+
+def physical_parameter_domain(parameter: Any) -> Optional[PhysicalDomain]:
+    """Return the physical domain for a canonical model parameter, if known."""
+    name = str(parameter).strip().lower()
+    if name.startswith("load_multiplier_"):
+        return NONNEGATIVE_DOMAIN
+    return _PARAMETER_PHYSICAL_DOMAINS.get(name)
+
+
+_SAMPLING_KIND_PHYSICAL_DOMAINS: Dict[str, PhysicalDomain] = {
+    "efficiency": EFFICIENCY_DOMAIN,
+    "load_rate": NONNEGATIVE_DOMAIN,
+    "nonnegative": NONNEGATIVE_DOMAIN,
+    "fraction": FRACTION_DOMAIN,
+    "cn": CN_DOMAIN,
+    "ia_ratio": IA_RATIO_DOMAIN,
+    "percent": PERCENT_DOMAIN,
+    "positive": POSITIVE_DOMAIN,
+}
+
+
+def physical_domain_for_sampling_kind(kind: Optional[str]) -> Optional[PhysicalDomain]:
+    """Return the physical domain represented by a sampling semantic hint."""
+    if kind is None:
+        return None
+    return _SAMPLING_KIND_PHYSICAL_DOMAINS.get(str(kind).strip().lower())
+
+
+def sampling_kind_for_parameter(parameter: Any) -> Optional[str]:
+    """Return the sampler semantic required by a physical parameter domain."""
+    name = str(parameter).strip().lower()
+    if name == "cn":
+        return "cn"
+    if name == "ia_ratio":
+        return "ia_ratio"
+    if name in {"infiltration_fraction", "rain_correction_fraction", "runoff_day_fraction", "sdr", "fraction_subsurface_shallow"}:
+        return "fraction"
+    if name in {"sediment_n_pct", "sediment_p_pct"}:
+        return "percent"
+    if name == "watershed_area_mi2":
+        return "positive"
+    domain = physical_parameter_domain(name)
+    if domain == NONNEGATIVE_DOMAIN:
+        return "nonnegative"
+    return None
+
+
+def validate_scalar_in_domain(value: Any, domain: PhysicalDomain, label: str) -> float:
+    """Validate one scalar against an explicit physical domain and return it."""
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be numeric") from exc
+    if not np.isfinite(numeric):
+        raise ValueError(f"{label} must be finite")
+    if not domain.contains(numeric):
+        raise ValueError(
+            f"{label}={numeric:g} is outside the allowed physical domain {domain.describe()}"
+        )
+    return numeric
+
+
+def validate_parameter_value(parameter: Any, value: Any, *, label: Optional[str] = None) -> float:
+    """Validate one model parameter value against its centralized physical domain."""
+    name = str(parameter).strip().lower()
+    domain = physical_parameter_domain(name)
+    if domain is None:
+        numeric = float(value)
+        if not np.isfinite(numeric):
+            raise ValueError(f"{label or name} must be finite")
+        return numeric
+    return validate_scalar_in_domain(value, domain, label or name)
+
+
+def validate_numeric_columns_in_domain(
+    df: pd.DataFrame,
+    columns: Sequence[str],
+    domain: PhysicalDomain,
+    label: str,
+) -> None:
+    """Validate dataframe columns against one physical numeric domain.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input table containing the columns to validate.
+    columns : sequence of str
+        Numeric columns that share the physical domain.
+    domain : PhysicalDomain
+        Allowed physical domain.
+    label : str
+        Dataset label used in validation errors.
+    """
+    if df is None or df.empty:
+        return
+    for column in columns:
+        if column not in df.columns:
+            continue
+        numeric = pd.to_numeric(df[column], errors="coerce")
+        invalid = ~np.isfinite(numeric.to_numpy(dtype=float))
+        if domain.low is not None:
+            invalid |= (numeric < domain.low).to_numpy() if domain.low_inclusive else (numeric <= domain.low).to_numpy()
+        if domain.high is not None:
+            invalid |= (numeric > domain.high).to_numpy() if domain.high_inclusive else (numeric >= domain.high).to_numpy()
+        if np.any(invalid):
+            bad_index = df.index[np.asarray(invalid, dtype=bool)][0]
+            bad_value = df.loc[bad_index, column]
+            raise ValueError(
+                f"{label} row {bad_index} {column}={bad_value!r} is outside the "
+                f"allowed physical domain {domain.describe()}"
+            )
+
+
+def validate_physical_distribution_rows(df: pd.DataFrame, label: str) -> None:
+    """Validate supplied distribution statistics against physical input domains.
+
+    Normal rows are allowed for bounded quantities because the sampler treats
+    the physical domain as explicit truncation support. The supplied mean and
+    any explicit endpoints/percentiles must nevertheless be physically valid.
+    Standard deviation is a spread parameter and is checked separately by
+    :func:`validate_numeric_distribution_rows`.
+    """
+    if df is None or df.empty:
+        return
+    table_domain = _TABLE_PHYSICAL_DOMAINS.get(str(label).strip().lower())
+    for index, row in df.iterrows():
+        domain = table_domain
+        parameter = None
+        if "parameter" in row.index and _nonblank(row.get("parameter")):
+            parameter = str(row.get("parameter")).strip().lower()
+            domain = physical_parameter_domain(parameter) or domain
+        if domain is None:
+            continue
+        stats = _row_stats_raw(row)
+        for statistic, value in stats.items():
+            if statistic == "sd":
+                continue
+            item = f"{parameter}.{statistic}" if parameter else statistic
+            validate_scalar_in_domain(
+                value, domain, f"{label} row {index} {item}"
+            )
 
 
 def require_columns(df: pd.DataFrame, required: Sequence[str], label: str, logger: Any = None) -> None:
@@ -217,6 +464,7 @@ def validate_stats_table(df: pd.DataFrame, label: str) -> None:
         
     """
     validate_numeric_distribution_rows(df, label)
+    validate_physical_distribution_rows(df, label)
 
 
 def validate_stats_rows(df: pd.DataFrame, label: str) -> None:
@@ -231,6 +479,7 @@ def validate_stats_rows(df: pd.DataFrame, label: str) -> None:
         
     """
     validate_numeric_distribution_rows(df, label)
+    validate_physical_distribution_rows(df, label)
 
 
 def validate_distribution_catalog(catalog: pd.DataFrame) -> None:
@@ -262,7 +511,7 @@ def validate_distribution_catalog(catalog: pd.DataFrame) -> None:
 
 
 def validate_bmp_selection_table(df: pd.DataFrame, cps: Sequence[int]) -> None:
-    """Validate a normalized explicit BMP-selection probability table.
+    """Validate a normalized explicit BMP-selection weight table.
 
         Parameters
         ----------
@@ -274,13 +523,13 @@ def validate_bmp_selection_table(df: pd.DataFrame, cps: Sequence[int]) -> None:
         Raises
         ------
         ValueError
-            If CPS identifiers or probabilities are invalid, duplicated, missing, or do not define a positive probability mass.
+            If CPS identifiers or selection weights are invalid, duplicated, missing, or do not define positive total weight.
         
     """
     required = {COL_CPS, COL_PROBABILITY}
     if not required.issubset(df.columns):
         raise ValueError(
-            f"bmp selection file must contain {sorted(required)} or an accepted probability alias"
+            f"bmp selection file must contain {sorted(required)} or an accepted selection-weight alias"
         )
     cps_numeric = pd.to_numeric(df[COL_CPS], errors="coerce")
     invalid_cps = (~np.isfinite(cps_numeric)) | (cps_numeric % 1 != 0)
@@ -296,7 +545,7 @@ def validate_bmp_selection_table(df: pd.DataFrame, cps: Sequence[int]) -> None:
     if duplicated.any():
         duplicate_cps = sorted(filtered_cps.loc[duplicated].unique().tolist())
         raise ValueError(
-            "bmp selection file contains duplicate probability rows for cps values: "
+            "bmp selection file contains duplicate selection-weight rows for cps values: "
             f"{duplicate_cps}"
         )
     probs = pd.to_numeric(df[COL_PROBABILITY], errors="coerce")
@@ -304,7 +553,7 @@ def validate_bmp_selection_table(df: pd.DataFrame, cps: Sequence[int]) -> None:
     if invalid.any():
         bad_rows = df.loc[invalid, [COL_CPS, COL_PROBABILITY]].head(5).to_dict(orient="records")
         raise ValueError(
-            "bmp selection probabilities must be finite and nonnegative; "
+            "bmp selection weights must be finite and nonnegative; "
             f"example bad rows: {bad_rows}"
         )
     found_cps = set(filtered_cps.tolist())
@@ -312,7 +561,7 @@ def validate_bmp_selection_table(df: pd.DataFrame, cps: Sequence[int]) -> None:
     if missing:
         raise ValueError(f"bmp selection file is missing probability rows for cps values: {missing}")
     if float(probs.sum()) <= 0.0:
-        raise ValueError("bmp_sel probabilities sum to zero or negative")
+        raise ValueError("bmp_sel selection weights sum to zero or negative")
 
 
 def validate_trajectory_table(df: pd.DataFrame) -> None:
@@ -551,34 +800,58 @@ def validate_plet_runtime_inputs(
 def validate_config(cfg: Dict[str, Any]) -> None:
     """Validate configuration values after defaults and normalization are applied.
 
-        Parameters
-        ----------
-        cfg : Dict[str, Any]
-            Normalized model configuration mapping.
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Normalized model configuration mapping.
 
-        Raises
-        ------
-        ValueError
-            If a normalized configuration value is outside its allowed range or has an invalid structure.
-        
+    Raises
+    ------
+    ValueError
+        If a configuration value is non-finite, non-integral where an integer
+        is required, or outside its allowed physical range.
     """
-    if int(ci_get(cfg, CFG_N_SCENARIOS)) < 1:
-        raise ValueError(f"{CFG_N_SCENARIOS} must be >= 1")
-    if float(ci_get(cfg, CFG_BUFFER_DEPTH_FT)) <= 0.0:
-        raise ValueError(f"{CFG_BUFFER_DEPTH_FT} must be > 0")
-    fail_rate = float(ci_get(cfg, CFG_BMP_FAIL_RATE))
-    fail_reduction = float(ci_get(cfg, CFG_BMP_FAIL_REDUCTION))
-    if not 0.0 <= fail_rate <= 1.0:
-        raise ValueError(f"{CFG_BMP_FAIL_RATE} must be in [0, 1]")
-    if not 0.0 <= fail_reduction <= 1.0:
-        raise ValueError(f"{CFG_BMP_FAIL_REDUCTION} must be in [0, 1]")
+    n_scenarios_raw = ci_get(cfg, CFG_N_SCENARIOS)
+    n_scenarios = validate_scalar_in_domain(
+        n_scenarios_raw, POSITIVE_DOMAIN, CFG_N_SCENARIOS
+    )
+    if not float(n_scenarios).is_integer():
+        raise ValueError(f"{CFG_N_SCENARIOS} must be an integer >= 1")
+
+    validate_scalar_in_domain(
+        ci_get(cfg, CFG_BUFFER_DEPTH_FT), POSITIVE_DOMAIN, CFG_BUFFER_DEPTH_FT
+    )
+    validate_scalar_in_domain(
+        ci_get(cfg, CFG_BMP_FAIL_RATE), FRACTION_DOMAIN, CFG_BMP_FAIL_RATE
+    )
+    validate_scalar_in_domain(
+        ci_get(cfg, CFG_BMP_FAIL_REDUCTION), FRACTION_DOMAIN, CFG_BMP_FAIL_REDUCTION
+    )
+
+    limit_n = ci_get(cfg, CFG_BMP_LIMIT_N)
+    if limit_n is not None:
+        numeric_limit_n = validate_scalar_in_domain(
+            limit_n, NONNEGATIVE_DOMAIN, CFG_BMP_LIMIT_N
+        )
+        if not numeric_limit_n.is_integer():
+            raise ValueError(f"{CFG_BMP_LIMIT_N} must be an integer >= 0")
+
+    limit_usd = ci_get(cfg, CFG_BMP_LIMIT_USD)
+    if limit_usd is not None:
+        validate_scalar_in_domain(
+            limit_usd, NONNEGATIVE_DOMAIN, CFG_BMP_LIMIT_USD
+        )
+
     parallel = ci_get(cfg, CFG_PARALLEL)
     if not isinstance(parallel, dict):
         raise ValueError(f"{CFG_PARALLEL} must be a mapping")
     if "n_jobs" not in parallel or parallel["n_jobs"] is None:
         raise ValueError("parallel.n_jobs must be specified after configuration normalization")
-    if int(parallel["n_jobs"]) < 1:
-        raise ValueError("parallel.n_jobs must be >= 1")
+    n_jobs = validate_scalar_in_domain(
+        parallel["n_jobs"], POSITIVE_DOMAIN, "parallel.n_jobs"
+    )
+    if not n_jobs.is_integer():
+        raise ValueError("parallel.n_jobs must be an integer >= 1")
 
 
 def validate_unique_rows(df: pd.DataFrame, keys: Sequence[str], label: str) -> None:

@@ -38,9 +38,9 @@ def test_efficiency_sampler_preserves_negative_values(stats: dict[str, float]) -
     assert sampled < 0.0
 
 
-def test_efficiency_sampler_retains_upper_bound() -> None:
-    sampled = _sample_from_stats(_Sampler(), {"value": 1.25}, kind="efficiency")
-    assert sampled == pytest.approx(1.0)
+def test_efficiency_sampler_rejects_value_above_upper_bound() -> None:
+    with pytest.raises(ValueError, match="allowed physical domain"):
+        _sample_from_stats(_Sampler(), {"value": 1.25}, kind="efficiency")
 
 
 def test_cross_zero_efficiency_distribution_retains_adverse_outcomes() -> None:

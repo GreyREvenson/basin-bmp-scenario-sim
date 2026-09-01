@@ -107,7 +107,7 @@ def test_wetland_treats_nonselectable_upstream_parcels() -> None:
 
 
 def test_plet_initialization_uses_full_hydrologic_parcel_universe(monkeypatch) -> None:
-    import plet_rusle as lg
+    import src.plet_rusle as lg
 
     ctx = SimpleNamespace(
         parcel_ids=["A", "B", "C"],

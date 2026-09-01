@@ -32,13 +32,14 @@ from .constants import (
     DATA_BMP_COST,
     DATA_CPS,
     PATHWAY_VALUES,
-    FT_TO_M,
 )
 from .logging_utils import log_scope
 from .input_config import load_bmp_selection_probabilities
 
 ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
 ParcelUpListFn = Callable[[Union[int, str]], List[str]]
+
+FT_TO_M = 0.3048  # meters per foot
 
 
 def _active_pathways(self: "Model") -> List[str]:
@@ -164,7 +165,13 @@ def _apply_pathway_reduction(
     for path_idx, path in enumerate(_active_pathways(self)):
         current_load_rate = float(pathway_load_rates[parcel_idx, pol_idx, path_idx])
         eff = float(eff_map[path])
-        new_value = max(0.0, current_load_rate * (1.0 - treatment_fraction * eff))
+        if current_load_rate < 0.0:
+            raise RuntimeError("Current pathway load rate cannot be negative")
+        if not 0.0 <= float(treatment_fraction) <= 1.0:
+            raise RuntimeError("Treatment fraction must remain in [0, 1]")
+        if eff > 1.0:
+            raise RuntimeError("BMP efficiency must not exceed 1 after input validation")
+        new_value = current_load_rate * (1.0 - treatment_fraction * eff)
         removed_load_rate += current_load_rate - new_value
         pathway_load_rates[parcel_idx, pol_idx, path_idx] = new_value
     return float(removed_load_rate)
@@ -305,8 +312,7 @@ def _simulate_wetland(
 
         # catchment area ratio (dimensionless)
         ratio_stats = {"min": 1.0, "p25": 2.0, "p50": 5.0, "p75": 10.0, "max": 100.0}  # heuristic
-        cat_ratio = self._sample_from_stats(stats=ratio_stats, kind=None)
-        cat_ratio = max(0.0, float(cat_ratio))
+        cat_ratio = float(self._sample_from_stats(stats=ratio_stats, kind=None))
 
         # Impacted area to satisfy ratio
         impacted_idxs: List[int] = [parcel_idx]
@@ -331,7 +337,10 @@ def _simulate_wetland(
                 f"(wetland+catchment) ({impacted_area_ha:.2f} ha)"
             )
             impacted_area_ha = total_available_ha
-            cat_ratio = max(0.0, (impacted_area_ha - wet_area) / max(wet_area, 1e-9))
+            # This is a derived-state constraint, not input sanitization. The
+            # denominator guard protects the ratio calculation if a degenerate
+            # zero-area parcel reaches this internal heuristic.
+            cat_ratio = (impacted_area_ha - wet_area) / max(wet_area, 1e-9)
             self.logger.verbose(
                 f"reduced impacted area to {impacted_area_ha:.2f} ha and catchment ratio to {cat_ratio:.2f}"
             )
@@ -374,7 +383,7 @@ def _simulate_wetland(
                     if getattr(self, "current_pathway_load_rates", None) is not None
                     else (load_rate - removed_mass_rate_kg_per_yr / parcel_area_ha)
                 )
-                load_rates[p_idx, pol_idx] = max(0.0, updated_load_rate)
+                load_rates[p_idx, pol_idx] = updated_load_rate
 
             remaining -= parcel_area_ha
 
@@ -457,7 +466,7 @@ def _simulate_grassed(
             bmp_mass_rate_outputs[OUTPUT_TREATED][pol_idx] += treated_baseline_mass_rate_kg_per_yr
             bmp_mass_rate_outputs[OUTPUT_REMOVED][pol_idx] += removed_mass_rate_kg_per_yr
             updated_load_rate = self._get_current_total_load_rate(parcel_idx, pol_idx, load_rate) if getattr(self, "current_pathway_load_rates", None) is not None else (load_rate - removed_mass_rate_kg_per_yr / parcel_area_ha)
-            load_rates[parcel_idx, pol_idx] = max(0.0, updated_load_rate)
+            load_rates[parcel_idx, pol_idx] = updated_load_rate
 
 
 def _simulate_infield(
@@ -513,7 +522,7 @@ def _simulate_infield(
             bmp_mass_rate_outputs[OUTPUT_TREATED][pol_idx] += treated_baseline_mass_rate_kg_per_yr
             bmp_mass_rate_outputs[OUTPUT_REMOVED][pol_idx] += removed_mass_rate_kg_per_yr
             updated_load_rate = self._get_current_total_load_rate(parcel_idx, pol_idx, load_rate) if getattr(self, "current_pathway_load_rates", None) is not None else (load_rate - removed_mass_rate_kg_per_yr / parcel_area_ha)
-            load_rates[parcel_idx, pol_idx] = max(0.0, updated_load_rate)
+            load_rates[parcel_idx, pol_idx] = updated_load_rate
 
 
 def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.DataFrame:

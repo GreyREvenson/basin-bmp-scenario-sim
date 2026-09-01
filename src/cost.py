@@ -22,7 +22,6 @@ from .constants import (
     COL_UNIT,
     CFG_BUFFER_DEPTH_FT,
     DEFAULT_BUFFER_DEPTH_FT,
-    FT_TO_M,
 )
 from .logging_utils import log_scope
 
@@ -30,6 +29,7 @@ from .logging_utils import log_scope
 PROB_EST_WETLAND_MAX_AREA_HA: float = 0.8
 PROB_EST_BUFFER_PERIM_FRACTION: float = 0.2
 
+FT_TO_M = 0.3048  # meters per foot
 
 
 def _finite_numeric_row_values(row: pd.Series) -> Dict[str, float]:
@@ -109,7 +109,7 @@ def _get_bmp_cost(
         if not stats:
             raise ValueError(f"No finite BMP cost value or distribution statistics for cps={cps}")
 
-        rate_value = float(self._sample_from_stats(stats, kind=None))
+        rate_value = float(self._sample_from_stats(stats, kind="nonnegative"))
         if not np.isfinite(rate_value):
             raise ValueError(f"Sampled non-finite BMP cost rate for cps={cps}: {rate_value}")
         self.logger.verbose(f"sampled cost rate {rate_value:.4f} for cps={cps}, unit={unit}")
@@ -119,6 +119,8 @@ def _get_bmp_cost(
                 area_ha = float(quantity)
             else:
                 if int(cps) in (656, 657):
+                    # Internal cost-estimation heuristic: cap assumed wetland
+                    # area at the model's configured probability-estimation size.
                     area_ha = float(min(PROB_EST_WETLAND_MAX_AREA_HA, self.data[DATA_AVG_AREA_HA]))
                 else:
                     area_ha = float(self.data[DATA_AVG_AREA_HA])
@@ -129,6 +131,8 @@ def _get_bmp_cost(
                 depth_ft = float(self.cfg[CFG_BUFFER_DEPTH_FT])
                 depth_m = depth_ft * FT_TO_M
                 area_m2 = float(quantity) * 10000.0
+                # buffer_depth_ft is validated as > 0; the epsilon is only a
+                # defensive floating-point denominator safeguard.
                 length_m = area_m2 / max(depth_m, 1e-9)
             else:
                 # Fallback to average-perimeter heuristic (selection-time heuristic reused)
@@ -245,6 +249,8 @@ def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
 
             if unit in ("usd/ha", "usd per ha", "usd_per_ha", "usd per unit area"):
                 if cps in (656, 657):
+                    # Internal cost-estimation heuristic: cap assumed wetland
+                    # area at the model's configured probability-estimation size.
                     area_ha = float(min(PROB_EST_WETLAND_MAX_AREA_HA, self.data[DATA_AVG_AREA_HA]))
                 else:
                     area_ha = float(self.data[DATA_AVG_AREA_HA])
@@ -260,6 +266,8 @@ def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
 
             if not np.isfinite(total):
                 raise ValueError(f"Computed non-finite representative BMP cost for cps={cps}: {total}")
+            # Zero cost is physically valid. This epsilon is an internal
+            # inverse-cost weighting safeguard, not correction of invalid input.
             rows.append({"cps": int(cps), "est_total_cost": float(max(total, 0.01))})
         df = pd.DataFrame(rows)
         if df.empty:

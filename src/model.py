@@ -791,12 +791,10 @@ def _run_one_scenario(
                 fr_cfg = ctx.cfg[CFG_BMP_FAIL_RATE]
                 fail_rate = float(fr_cfg if fr_cfg is not None else 0.0)
                 if fail_rate > 0.0:
-                    fail_rate = max(0.0, min(1.0, fail_rate))
                     failed = int(ctx.rng.choice([0, 1], p=[1.0 - fail_rate, fail_rate]))
                     if failed == 1:
                         red_cfg = ctx.cfg[CFG_BMP_FAIL_REDUCTION]
                         reduction = float(red_cfg if red_cfg is not None else DEFAULT_BMP_FAIL_REDUCTION)
-                        reduction = max(0.0, min(1.0, reduction))
                         eff_maps = [{k: float(v) * reduction for k, v in emap.items()} for emap in eff_maps]
                         failed_flag = True
                         ctx.logger.verbose(f"BMP failure triggered for cps={cps}; scaling efficiencies by {reduction:.2f}")

@@ -84,13 +84,14 @@ def test_parcel_sampler_uses_only_load_rate_name() -> None:
     assert _sample_load_rate(ctx, 0, 0) == pytest.approx(12.5)
 
 
-def test_sampling_hint_uses_load_rate_name() -> None:
+def test_sampling_hint_rejects_negative_load_rate() -> None:
     ctx = SimpleNamespace(
         rng=np.random.default_rng(1),
         _piecewise_quantile_sample=lambda cols, size=1: np.asarray([0.0]),
         _trunc_normal=lambda mean, sd, low=None, high=None, size=1: np.asarray([mean]),
     )
-    assert _sample_from_stats(ctx, {"value": -2.0}, kind="load_rate") == pytest.approx(0.0)
+    with pytest.raises(ValueError, match="allowed physical domain"):
+        _sample_from_stats(ctx, {"value": -2.0}, kind="load_rate")
 
 
 def test_negative_efficiency_returns_signed_removed_load_rate() -> None:

@@ -14,15 +14,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from .constants import (
-    INCH_OVER_HA_TO_LITERS,
-    TON_PER_ACRE_TO_KG_PER_HA,
-    ACRES_PER_SQUARE_MILE,
-)
-
 from .input_distributions import (
     sample_group_key,
-    sample_stats_bounded,
     stats_from_row,
 )
 from .input_config import (
@@ -30,9 +23,18 @@ from .input_config import (
     _rows_for_pid,
     apply_plet_parameter_defaults,
 )
-from .input_validation import validate_plet_input_table
+from .input_validation import (
+    NONNEGATIVE_DOMAIN,
+    sampling_kind_for_parameter,
+    validate_parameter_value,
+    validate_plet_input_table,
+    validate_scalar_in_domain,
+)
 
 
+INCH_OVER_HA_TO_LITERS = 254_000.0
+TON_PER_ACRE_TO_KG_PER_HA = 907.18474 / 0.40468564224
+ACRES_PER_SQUARE_MILE = 640.0
 PLET_PATHWAY_NAMES = ("surface", "subsurface")
 PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
 PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
@@ -354,12 +356,16 @@ def plet_runoff_depth_in(
         inches.
     """
 
-    annual_precip_in = max(0.0, float(annual_precip_in))
-    rain_days = max(0.0, float(rain_days))
-    rain_correction_fraction = float(np.clip(rain_correction_fraction, 0.0, 1.0))
-    runoff_day_fraction = float(np.clip(runoff_day_fraction, 0.0, 1.0))
-    cn = float(np.clip(cn, 1.0e-6, 100.0))
-    ia_ratio = max(0.0, float(ia_ratio))
+    annual_precip_in = validate_parameter_value("annual_precip_in", annual_precip_in)
+    rain_days = validate_parameter_value("rain_days", rain_days)
+    rain_correction_fraction = validate_parameter_value(
+        "rain_correction_fraction", rain_correction_fraction
+    )
+    runoff_day_fraction = validate_parameter_value(
+        "runoff_day_fraction", runoff_day_fraction
+    )
+    cn = validate_parameter_value("cn", cn)
+    ia_ratio = validate_parameter_value("ia_ratio", ia_ratio)
 
     runoff_days = rain_days * runoff_day_fraction
     if runoff_days <= 0.0:
@@ -367,6 +373,8 @@ def plet_runoff_depth_in(
 
     event_rainfall = annual_precip_in * rain_correction_fraction / runoff_days
     retention = (1000.0 / cn) - 10.0
+    # CN is validated in (0, 100]; max() only guards floating-point roundoff
+    # in this derived state and never repairs a user input.
     retention = max(0.0, retention)
     initial_abstraction = ia_ratio * retention
     if event_rainfall <= initial_abstraction:
@@ -404,16 +412,18 @@ def rusle_sediment_load_rate_kg_ha_yr(parameters: Mapping[str, Any]) -> float:
         return 0.0
     gross_ton_ac = 1.0
     for name in _REQUIRED_RUSLE:
-        gross_ton_ac *= max(0.0, float(parameters[name]))
+        gross_ton_ac *= validate_parameter_value(name, parameters[name])
 
     sdr = 1.0
     if "sdr" in parameters:
-        sdr = float(parameters["sdr"])
-        if sdr < 0.0 or sdr > 1.0:
-            raise ValueError("RUSLE input parameter value for sdr must be between 0.0 and 1.0")
+        sdr = validate_parameter_value("sdr", parameters["sdr"])
 
-    sediment_multiplier = max(0.0, float(parameters["sediment_multiplier"]))
-    delivery_multiplier = max(0.0, float(parameters["sediment_delivery_multiplier"]))
+    sediment_multiplier = validate_parameter_value(
+        "sediment_multiplier", parameters["sediment_multiplier"]
+    )
+    delivery_multiplier = validate_parameter_value(
+        "sediment_delivery_multiplier", parameters["sediment_delivery_multiplier"]
+    )
     return gross_ton_ac * sdr * TON_PER_ACRE_TO_KG_PER_HA * sediment_multiplier * delivery_multiplier
 
 
@@ -444,7 +454,9 @@ def plet_annual_surface_runoff_in(
         parameters["cn"],
         parameters["ia_ratio"],
     )
-    runoff_multiplier = max(0.0, float(parameters["runoff_multiplier"]))
+    runoff_multiplier = validate_parameter_value(
+        "runoff_multiplier", parameters["runoff_multiplier"]
+    )
     annual_total_runoff = annual_storm_runoff * runoff_multiplier
     return event_rainfall, event_runoff, annual_storm_runoff, annual_total_runoff
 
@@ -468,22 +480,31 @@ def plet_annual_infiltration_in(parameters: Mapping[str, Any]) -> float:
             "Resolved PLET parameters are missing infiltration_fraction"
         )
     parameters = apply_plet_parameter_defaults(parameters)
-    infiltration_fraction = float(
-        np.clip(parameters["infiltration_fraction"], 0.0, 1.0)
+    infiltration_fraction = validate_parameter_value(
+        "infiltration_fraction", parameters["infiltration_fraction"]
     )
-    annual_precip = max(0.0, float(parameters["annual_precip_in"]))
-    rain_correction_fraction = float(
-        np.clip(parameters["rain_correction_fraction"], 0.0, 1.0)
+    annual_precip = validate_parameter_value(
+        "annual_precip_in", parameters["annual_precip_in"]
+    )
+    rain_correction_fraction = validate_parameter_value(
+        "rain_correction_fraction", parameters["rain_correction_fraction"]
+    )
+    groundwater_multiplier = validate_parameter_value(
+        "groundwater_multiplier", parameters["groundwater_multiplier"]
     )
     infiltration = annual_precip * rain_correction_fraction * infiltration_fraction
-    infiltration *= max(0.0, float(parameters["groundwater_multiplier"]))
-    return float(max(0.0, infiltration))
+    return float(infiltration * groundwater_multiplier)
 
 
 
 
-def _sample_stats(ctx: Any, stats: Mapping[str, float], *, nonnegative: bool = False) -> float:
-    """Sample a single numeric value from statistics.
+def _sample_stats(
+    ctx: Any,
+    stats: Mapping[str, float],
+    *,
+    kind: Optional[str] = None,
+) -> float:
+    """Sample one numeric value using an explicit physical sampling domain.
 
     Parameters
     ----------
@@ -491,23 +512,17 @@ def _sample_stats(ctx: Any, stats: Mapping[str, float], *, nonnegative: bool = F
         Object providing ``_sample_from_stats``.
     stats : Mapping[str, float]
         Sampling statistics or a fixed ``value`` entry.
-    nonnegative : bool, optional
-        If ``True``, clamp the returned value at zero. Default is ``False``.
+    kind : str or None, optional
+        Physical sampling semantic. Bounded Normal inputs are sampled as
+        truncated Normal distributions; fixed/explicit support values outside
+        the domain are rejected rather than clipped.
 
     Returns
     -------
     float
         Sampled numeric value.
     """
-    if "value" in stats:
-        value = float(stats["value"])
-    else:
-        value = float(ctx._sample_from_stats(dict(stats), kind="load_rate" if nonnegative else None))
-    return max(0.0, value) if nonnegative else value
-
-
-
-
+    return float(ctx._sample_from_stats(dict(stats), kind=kind))
 
 
 def _sample_parameter_table(
@@ -569,7 +584,7 @@ def _sample_parameter_table(
                     cache[cache_key] = _sample_stats(
                         ctx,
                         stats,
-                        nonnegative=parameter not in {"load_delta"},
+                        kind=sampling_kind_for_parameter(parameter),
                     )
             values[parameter] = cache[cache_key]
         sampled.append(values)
@@ -617,7 +632,7 @@ def _sample_concentrations(ctx: Any, table: Optional[pd.DataFrame], parcel_ids: 
                 )
                 if not stats:
                     raise ValueError(f"No concentration value or statistics supplied for {pid}/{pollutant}")
-                cache[key] = _sample_stats(ctx, stats, nonnegative=True)
+                cache[key] = _sample_stats(ctx, stats, kind="nonnegative")
             values[pollutant] = cache[key]
         sampled.append(values)
     return sampled
@@ -712,14 +727,9 @@ def _sample_plet_hydrology(
         )
         cache_key = (variable_key, group_key)
         if cache_key not in cache:
-            if parameter == "cn":
-                cache[cache_key] = sample_stats_bounded(
-                    ctx, stats, low=1.0e-9, high=100.0
-                )
-            else:
-                cache[cache_key] = sample_stats_bounded(
-                    ctx, stats, low=0.0, high=1.0
-                )
+            cache[cache_key] = _sample_stats(
+                ctx, stats, kind=sampling_kind_for_parameter(parameter)
+            )
         values[parameter] = float(cache[cache_key])
     return values
 
@@ -798,7 +808,9 @@ def calculate_plet_pathway_load_rates(
     infiltration_l_ha = plet_annual_infiltration_in(parameters) * INCH_OVER_HA_TO_LITERS
     has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
     sediment_load_rate_kg_ha_yr = rusle_sediment_load_rate_kg_ha_yr(parameters) if has_rusle else 0.0
-    enrichment_ratio = max(0.0, float(parameters["enrichment_ratio"]))
+    enrichment_ratio = validate_parameter_value(
+        "enrichment_ratio", parameters["enrichment_ratio"]
+    )
     groundwater_concentrations = groundwater_concentrations or {}
 
     pathway_load_rates = np.zeros((len(pollutants), len(PLET_PATHWAY_NAMES)), dtype=float)
@@ -806,31 +818,42 @@ def calculate_plet_pathway_load_rates(
         pol = str(pollutant).upper()
         runoff_areal_load_rate = 0.0
         if pol != "TSS" or not has_rusle:
-            runoff_areal_load_rate = (
-                max(0.0, float(concentrations[pol]))
-                * runoff_l_ha / 1_000_000.0
+            runoff_concentration = validate_scalar_in_domain(
+                concentrations[pol], NONNEGATIVE_DOMAIN, f"{pol} runoff concentration"
             )
+            runoff_areal_load_rate = runoff_concentration * runoff_l_ha / 1_000_000.0
         subsurface_areal_load_rate = 0.0
         if pol != "TSS":
+            groundwater_concentration = validate_scalar_in_domain(
+                groundwater_concentrations[pol],
+                NONNEGATIVE_DOMAIN,
+                f"{pol} groundwater concentration",
+            )
             subsurface_areal_load_rate = (
-                max(0.0, float(groundwater_concentrations[pol]))
-                * infiltration_l_ha / 1_000_000.0
+                groundwater_concentration * infiltration_l_ha / 1_000_000.0
             )
 
         if pol == "TSS":
             surface_areal_load_rate = sediment_load_rate_kg_ha_yr if has_rusle else runoff_areal_load_rate
         elif pol == "TN":
-            sediment_fraction = max(0.0, float(parameters["sediment_n_pct"])) / 100.0
+            sediment_fraction = validate_parameter_value(
+                "sediment_n_pct", parameters["sediment_n_pct"]
+            ) / 100.0
             surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
         elif pol == "TP":
-            sediment_fraction = max(0.0, float(parameters["sediment_p_pct"])) / 100.0
+            sediment_fraction = validate_parameter_value(
+                "sediment_p_pct", parameters["sediment_p_pct"]
+            ) / 100.0
             surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
         else:
             surface_areal_load_rate = runoff_areal_load_rate
 
-        multiplier = max(0.0, float(parameters[f"load_multiplier_{pol.lower()}"]))
-        pathway_load_rates[idx, 0] = max(0.0, surface_areal_load_rate) * multiplier
-        pathway_load_rates[idx, 1] = max(0.0, subsurface_areal_load_rate) * multiplier
+        multiplier_name = f"load_multiplier_{pol.lower()}"
+        multiplier = validate_parameter_value(
+            multiplier_name, parameters[multiplier_name]
+        )
+        pathway_load_rates[idx, 0] = surface_areal_load_rate * multiplier
+        pathway_load_rates[idx, 1] = subsurface_areal_load_rate * multiplier
     return pathway_load_rates
 
 
