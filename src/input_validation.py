@@ -370,7 +370,7 @@ def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
     """
     if table is None or table.empty:
         return []
-    from .load_generation import canonical_parameter_name
+    from .plet_rusle import canonical_parameter_name
     pids = table[COL_PID].astype(str)
     combined = pd.concat([table[pids == "*"], table[pids == str(pid)]], ignore_index=True)
     if combined.empty:
@@ -403,7 +403,7 @@ def validate_plet_input_table(table: pd.DataFrame, parcel_ids: Sequence[str]) ->
             If PLET classifications or parameter rows violate the PLET input contract.
         
     """
-    from .load_generation import (
+    from .plet_rusle import (
         PLET_CLASSIFICATION_PARAMETERS,
         _PLET_DERIVED_PARAMETERS,
         canonical_parameter_name,
@@ -478,7 +478,7 @@ def validate_plet_runtime_inputs(
             If any parcel lacks required PLET/RUSLE parameters or pollutant concentrations for runtime load generation.
         
     """
-    from .load_generation import _REQUIRED_PLET_INPUTS, _REQUIRED_RUSLE, canonical_parameter_name
+    from .plet_rusle import _REQUIRED_PLET_INPUTS, _REQUIRED_RUSLE, canonical_parameter_name
 
     def effective_parameters(table: Optional[pd.DataFrame], pid: str) -> Dict[str, pd.Series]:
         """Return the effective parameter rows for a parcel.

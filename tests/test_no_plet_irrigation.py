@@ -3,8 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-import src.load_generation as load_generation
-from src.load_generation import (
+import plet_rusle as plet_rusle
+from src.plet_rusle import (
     calculate_load_diagnostics,
     plet_annual_surface_runoff_in,
     validate_plet_input_table,
@@ -24,7 +24,7 @@ def _plet_parameters() -> dict[str, float]:
 
 
 def test_removed_irrigation_helper_is_not_public() -> None:
-    assert not hasattr(load_generation, "plet_annual_irrigation_runoff_in")
+    assert not hasattr(plet_rusle, "plet_annual_irrigation_runoff_in")
 
 
 def test_surface_runoff_total_is_precipitation_runoff_only() -> None:

@@ -15,7 +15,7 @@ from src.input_config import (
     _load_plet_parameter_table,
 )
 from src.input_validation import validate_numeric_distribution_rows
-from src.load_generation import (
+from src.plet_rusle import (
     PLET_HSG_VALUES,
     PLET_LAND_COVERS,
     _sample_parameter_table,

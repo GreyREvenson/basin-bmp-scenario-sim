@@ -12,7 +12,7 @@ from src.bmp import (
     _simulate_infield,
 )
 from src.constants import OUTPUT_REMOVED, OUTPUT_TREATED
-from src.load_generation import LoadState, calculate_load_rate_components, calculate_plet_pathway_load_rates
+from src.plet_rusle import LoadState, calculate_plet_pathway_load_rates
 from src.parcel import _sample_load_rate
 from src.sampling import _sample_from_stats
 
@@ -73,7 +73,6 @@ def test_load_state_exposes_only_load_rate_names() -> None:
 
 
 def test_load_generation_helpers_use_only_load_rate_names() -> None:
-    assert callable(calculate_load_rate_components)
     assert callable(calculate_plet_pathway_load_rates)
 
 

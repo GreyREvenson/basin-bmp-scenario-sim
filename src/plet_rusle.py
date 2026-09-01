@@ -33,9 +33,6 @@ from .input_config import (
 from .input_validation import validate_plet_input_table
 
 
-# Standard three-path order used by deterministic helper calculations.
-# Production plet_rusle scenarios use PLET_PATHWAY_NAMES instead.
-PATHWAY_NAMES = ("surface", "shallow subsurface", "deep subsurface")
 PLET_PATHWAY_NAMES = ("surface", "subsurface")
 PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
 PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
@@ -753,129 +750,6 @@ def calculate_load_diagnostics(parameters: Mapping[str, Any]) -> Dict[str, float
         "annual_infiltration_in": float(plet_annual_infiltration_in(parameters)),
         "sediment_load_rate_kg_ha_yr": float(sediment_load_rate_kg_ha_yr),
     }
-
-
-def calculate_load_rate_components(
-    parameters: Mapping[str, Any],
-    concentrations: Mapping[str, float],
-    groundwater_concentrations: Optional[Mapping[str, float]],
-    pollutants: Sequence[str],
-    *,
-    groundwater_loads: bool = False,
-    treat_groundwater_with_bmps: bool = False,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Calculate BMP-treatable pathways and protected groundwater load_rates.
-
-    Pathway load_rates are derived directly from PLET/RUSLE runoff, infiltration,
-    sediment, and pollutant concentrations. Surface runoff and sediment loads
-    remain in the surface pathway. BMP-treatable groundwater is split between
-    shallow and deep subsurface pathways using
-    ``fraction_subsurface_shallow``.
-
-    Parameters
-    ----------
-    parameters : Mapping[str, Any]
-        Parcel parameters used to compute runoff and other drivers.
-    concentrations : Mapping[str, float]
-        Runoff concentrations keyed by pollutant name.
-    groundwater_concentrations : Mapping[str, float] or None
-        Groundwater concentrations keyed by pollutant name.
-    pollutants : sequence of str
-        Pollutants to calculate.
-    groundwater_loads : bool, optional
-        Whether groundwater concentrations should contribute to pollutant
-        loads. Default is ``False``.
-    treat_groundwater_with_bmps : bool, optional
-        Whether groundwater loads should be exposed to pathway-specific BMP
-        efficiencies. When ``False``, groundwater is returned as a separate
-        protected load so pathway BMP efficiencies cannot reduce it. Default
-        is ``False``.
-
-    Returns
-    -------
-    tuple[numpy.ndarray, numpy.ndarray]
-        The BMP-treatable surface, shallow-subsurface, and deep-subsurface
-        loads with shape ``(n_pollutants, 3)``, followed by the protected
-        groundwater loads with shape ``(n_pollutants,)``.
-    """
-
-    parameters = apply_plet_parameter_defaults(parameters, pollutants)
-    missing = [
-        name for name in _REQUIRED_RESOLVED_PLET if name not in parameters
-    ]
-    if missing:
-        raise ValueError(f"PLET inputs are missing required parameters: {missing}")
-
-    _, _, _, annual_runoff_in = plet_annual_surface_runoff_in(parameters)
-    runoff_l_ha = annual_runoff_in * INCH_OVER_HA_TO_LITERS
-    infiltration_l_ha = plet_annual_infiltration_in(parameters) * INCH_OVER_HA_TO_LITERS
-
-    has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
-    sediment_load_rate_kg_ha_yr = rusle_sediment_load_rate_kg_ha_yr(parameters) if has_rusle else 0.0
-    enrichment_ratio = max(0.0, float(parameters["enrichment_ratio"]))
-
-    groundwater_concentrations = groundwater_concentrations or {}
-    pathway_load_rates = np.zeros((len(pollutants), len(PATHWAY_NAMES)), dtype=float)
-    untreated_groundwater_load_rates = np.zeros(len(pollutants), dtype=float)
-    for idx, pollutant in enumerate(pollutants):
-        pol = str(pollutant).upper()
-        runoff_areal_load_rate = 0.0
-        if pol != "TSS" or not has_rusle:
-            runoff_areal_load_rate = (
-                max(0.0, float(concentrations[pol])) * runoff_l_ha / 1_000_000.0
-            )
-        groundwater_areal_load_rate = 0.0
-        if groundwater_loads and pol != "TSS":
-            groundwater_areal_load_rate = (
-                max(0.0, float(groundwater_concentrations[pol])) * infiltration_l_ha / 1_000_000.0
-            )
-        # PLET resolves surface runoff and total subsurface/groundwater load,
-        # but not the shallow-versus-deep subsurface split used by the BMP
-        # simulator.  Keep those concepts separate by partitioning total
-        # subsurface load with an explicit, independently sampled parameter.
-        if groundwater_loads and pol != "TSS" and treat_groundwater_with_bmps:
-            if "fraction_subsurface_shallow" not in parameters:
-                raise ValueError(
-                    "BMP-treatable groundwater loads require the PLET "
-                    "parameter 'fraction_subsurface_shallow' (0 to 1)"
-                )
-            fraction_subsurface_shallow = float(
-                np.clip(parameters["fraction_subsurface_shallow"], 0.0, 1.0)
-            )
-        else:
-            fraction_subsurface_shallow = 0.0
-
-        if pol == "TSS":
-            surface_areal_load_rate = sediment_load_rate_kg_ha_yr if has_rusle else runoff_areal_load_rate
-            shallow_areal_load_rate = 0.0
-            deep_areal_load_rate = 0.0
-        elif pol == "TN":
-            sediment_fraction = max(0.0, float(parameters["sediment_n_pct"])) / 100.0
-            surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
-            shallow_areal_load_rate = groundwater_areal_load_rate * fraction_subsurface_shallow
-            deep_areal_load_rate = groundwater_areal_load_rate * (1.0 - fraction_subsurface_shallow)
-        elif pol == "TP":
-            sediment_fraction = max(0.0, float(parameters["sediment_p_pct"])) / 100.0
-            surface_areal_load_rate = runoff_areal_load_rate + sediment_load_rate_kg_ha_yr * sediment_fraction * enrichment_ratio
-            shallow_areal_load_rate = groundwater_areal_load_rate * fraction_subsurface_shallow
-            deep_areal_load_rate = groundwater_areal_load_rate * (1.0 - fraction_subsurface_shallow)
-        else:
-            surface_areal_load_rate = runoff_areal_load_rate
-            shallow_areal_load_rate = groundwater_areal_load_rate * fraction_subsurface_shallow
-            deep_areal_load_rate = groundwater_areal_load_rate * (1.0 - fraction_subsurface_shallow)
-
-        load_multiplier = max(
-            0.0,
-            float(parameters[f"load_multiplier_{pol.lower()}"]),
-        )
-        pathway_load_rates[idx, 0] = max(0.0, surface_areal_load_rate) * load_multiplier
-        if treat_groundwater_with_bmps:
-            pathway_load_rates[idx, 1] = max(0.0, shallow_areal_load_rate) * load_multiplier
-            pathway_load_rates[idx, 2] = max(0.0, deep_areal_load_rate) * load_multiplier
-        else:
-            untreated_groundwater_load_rates[idx] = max(0.0, groundwater_areal_load_rate) * load_multiplier
-    return pathway_load_rates, untreated_groundwater_load_rates
-
 
 
 def calculate_plet_pathway_load_rates(

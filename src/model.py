@@ -33,7 +33,7 @@ from src.bmp import (
 from src.cost import _estimate_costs_for_probabilities, _get_bmp_cost, _select_cost_rate_median
 from src.io_utils import _write_parquet_atomic, _flatten_plot_records
 from src.logging_utils import make_worker_logger, log_scope
-from src.load_generation import (
+from src.plet_rusle import (
     calculate_load_diagnostics,
     initialize_plet_rusle_state,
 )

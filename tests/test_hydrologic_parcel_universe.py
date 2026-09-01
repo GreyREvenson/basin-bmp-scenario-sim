@@ -12,7 +12,7 @@ from src.constants import (
     OUTPUT_REMOVED,
     OUTPUT_TREATED,
 )
-from src.load_generation import initialize_plet_rusle_state
+from src.plet_rusle import initialize_plet_rusle_state
 from src.model import Model, _ScenarioContext
 
 
@@ -107,7 +107,7 @@ def test_wetland_treats_nonselectable_upstream_parcels() -> None:
 
 
 def test_plet_initialization_uses_full_hydrologic_parcel_universe(monkeypatch) -> None:
-    import src.load_generation as lg
+    import plet_rusle as lg
 
     ctx = SimpleNamespace(
         parcel_ids=["A", "B", "C"],

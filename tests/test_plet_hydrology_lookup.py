@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from src.input_config import _load_plet_hydrology_lookup, _load_plet_parameter_table
-from src.load_generation import (
+from src.plet_rusle import (
     PLET_HYDROLOGY_LOOKUP_PATH,
     plet_hydrology_from_classifications,
 )

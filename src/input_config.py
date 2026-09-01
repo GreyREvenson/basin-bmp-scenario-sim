@@ -517,7 +517,7 @@ def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
     """
     if table is None or table.empty:
         return []
-    from .load_generation import canonical_parameter_name
+    from .plet_rusle import canonical_parameter_name
     pids = table[COL_PID].astype(str)
     wildcard_rows = table[pids == "*"]
     exact_rows = table[pids == str(pid)]
@@ -556,7 +556,7 @@ def _load_plet_hydrology_records(
             If the deterministic lookup is missing required columns or values, contains duplicate rows, or contains stochastic definitions.
         
     """
-    from .load_generation import (
+    from .plet_rusle import (
         PLET_HYDROLOGY_LOOKUP_PATH,
         _PLET_DERIVED_PARAMETERS,
         canonical_parameter_name,
@@ -796,7 +796,7 @@ def _load_parameter_stats_table(path: Any, label: str, logger: Any, distribution
     """
     if path is None:
         return None
-    from .load_generation import canonical_parameter_name
+    from .plet_rusle import canonical_parameter_name
     df = _merge_csvs(path, [COL_PID, "parameter"], label, logger)
     df[COL_PID] = df[COL_PID].astype(str)
     df["parameter"] = df["parameter"].map(canonical_parameter_name)
@@ -843,7 +843,7 @@ def _load_plet_parameter_table(
 
     if path is None:
         return None
-    from .load_generation import canonical_parameter_name, PLET_CLASSIFICATION_PARAMETERS
+    from .plet_rusle import canonical_parameter_name, PLET_CLASSIFICATION_PARAMETERS
     df = _merge_csvs(path, [COL_PID, "parameter"], LOAD_PLET_INPUTS, logger)
     df[COL_PID] = df[COL_PID].astype(str)
     df["parameter"] = df["parameter"].map(canonical_parameter_name)
@@ -914,7 +914,7 @@ def _load_plet_hydrology_lookup(
         raise ValueError(
             "load_generation.hydrology_lookup is required for mode='plet_rusle'"
         )
-    from .load_generation import (
+    from .plet_rusle import (
         PLET_HSG_VALUES,
         PLET_LAND_COVERS,
         canonical_parameter_name,

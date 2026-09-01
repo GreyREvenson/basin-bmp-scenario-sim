@@ -13,9 +13,8 @@ from src.bmp import (
     _simulate_infield,
 )
 from src.constants import OUTPUT_REMOVED, OUTPUT_TREATED
-from src.load_generation import (
+from src.plet_rusle import (
     INCH_OVER_HA_TO_LITERS,
-    calculate_load_rate_components,
     plet_annual_infiltration_in,
 )
 
@@ -38,72 +37,6 @@ def test_plet_infiltration_uses_rain_corrected_precipitation() -> None:
         10.0 * 0.5 * 0.2 * 1.25
     )
 
-
-def test_plet_runoff_load_is_always_assigned_to_surface_pathway() -> None:
-    parameters = _plet_parameters() | {"ia_ratio": 0.0}
-    pathway_load_rates, untreated_groundwater_load_rates = calculate_load_rate_components(
-        parameters,
-        {"TN": 2.0},
-        None,
-        ["TN"],
-    )
-    assert pathway_load_rates[0, 0] > 0.0
-    assert pathway_load_rates[0, 1:] == pytest.approx([0.0, 0.0])
-    assert untreated_groundwater_load_rates[0] == pytest.approx(0.0)
-
-
-def test_untreated_groundwater_is_separate_and_mass_balanced() -> None:
-    parameters = _plet_parameters()
-    expected_groundwater_load_rate = (
-        4.0
-        * plet_annual_infiltration_in(parameters)
-        * INCH_OVER_HA_TO_LITERS
-        / 1_000_000.0
-    )
-    pathway_load_rates, untreated_groundwater_load_rates = calculate_load_rate_components(
-        parameters,
-        {"TN": 0.0},
-        {"TN": 4.0},
-        ["TN"],
-        groundwater_loads=True,
-        treat_groundwater_with_bmps=False,
-    )
-    total_load_rates = np.sum(pathway_load_rates, axis=1) + untreated_groundwater_load_rates
-
-    assert pathway_load_rates[0] == pytest.approx([0.0, 0.0, 0.0])
-    assert untreated_groundwater_load_rates[0] == pytest.approx(
-        expected_groundwater_load_rate
-    )
-    assert total_load_rates[0] == pytest.approx(
-        pathway_load_rates[0].sum() + untreated_groundwater_load_rates[0]
-    )
-
-
-def test_treatable_groundwater_uses_configured_shallow_deep_split() -> None:
-    parameters = _plet_parameters() | {"fraction_subsurface_shallow": 0.25}
-    expected_groundwater_load_rate = (
-        4.0
-        * plet_annual_infiltration_in(parameters)
-        * INCH_OVER_HA_TO_LITERS
-        / 1_000_000.0
-    )
-    pathway_load_rates, untreated_groundwater_load_rates = calculate_load_rate_components(
-        parameters,
-        {"TN": 0.0},
-        {"TN": 4.0},
-        ["TN"],
-        groundwater_loads=True,
-        treat_groundwater_with_bmps=True,
-    )
-
-    assert pathway_load_rates[0] == pytest.approx(
-        [
-            0.0,
-            expected_groundwater_load_rate * 0.25,
-            expected_groundwater_load_rate * 0.75,
-        ]
-    )
-    assert untreated_groundwater_load_rates[0] == pytest.approx(0.0)
 
 
 def test_infield_bmp_does_not_treat_or_reduce_protected_groundwater() -> None:
