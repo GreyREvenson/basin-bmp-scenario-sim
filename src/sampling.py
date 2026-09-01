@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 from typing import Dict, Optional, Tuple, TYPE_CHECKING
 
+from .input_units import convert_sampling_mapping
 from .input_validation import (
     PhysicalDomain,
     physical_domain_for_sampling_kind,
@@ -215,7 +216,8 @@ def _sample_from_stats(
     physically validated once during input loading; this hot-path sampler does
     not revalidate every supplied statistic on every Monte Carlo draw. The
     sampled result is still checked against the requested domain as an internal
-    invariant and is never clipped into compliance.
+    invariant and is never clipped into compliance. Supplied unit metadata is
+    converted to canonical units before the physical-domain rules are applied.
 
     Parameters
     ----------
@@ -240,7 +242,15 @@ def _sample_from_stats(
         If statistics are insufficient or violate the requested physical
         domain.
     """
-    cols = {str(k).lower(): v for k, v in stats.items()}
+    unit_kind = {
+        "efficiency": "fraction",
+        "load_rate": "load_rate",
+        "fraction": "fraction",
+        "cn": "dimensionless",
+        "ia_ratio": "fraction",
+        "percent": "percent",
+    }.get(kind)
+    cols = convert_sampling_mapping(stats, expected_kind=unit_kind)
     domain: Optional[PhysicalDomain] = physical_domain_for_sampling_kind(kind)
     if kind is not None and domain is None:
         raise ValueError(f"Unknown sampling kind: {kind!r}")

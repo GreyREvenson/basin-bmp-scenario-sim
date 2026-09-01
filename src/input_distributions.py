@@ -19,8 +19,11 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from .input_units import convert_row_statistics, row_unit, unit_labels_same_scale
+
 DISTRIBUTION_ID = "distribution_id"
 SAMPLE_GROUP = "sample_group"
+_DISTRIBUTION_UNITS: Dict[str, Any] = {}
 
 # Canonical names used by new files. Existing aliases remain accepted.
 _STAT_ALIASES = {
@@ -141,12 +144,14 @@ def statistic_columns(columns: Iterable[Any]) -> list[str]:
 
 
 def stats_from_row(row: Mapping[str, Any], exclude: Iterable[str] = ()) -> Dict[str, float]:
-    """Extract normalized numeric sampling statistics from a row.
+    """Extract normalized, unit-aware numeric sampling statistics from a row.
 
-    Metadata such as units, distribution IDs, and sample groups are ignored.
-    Aliases are normalized to ``mean``, ``sd``, ``min`` and ``max``. Multiple
-    populated columns that resolve to the same statistic are rejected rather
-    than being applied in last-column-wins order.
+    Statistic aliases are canonicalized and duplicate aliases are rejected.
+    When unit metadata is present on a model-use row, all statistics are
+    converted to the canonical internal unit before validation or sampling.
+    Reusable distribution-catalog rows retain their numeric scale until they
+    are resolved into a model-use row, because a catalog row alone does not
+    necessarily identify the physical dimension.
 
     Parameters
     ----------
@@ -158,13 +163,15 @@ def stats_from_row(row: Mapping[str, Any], exclude: Iterable[str] = ()) -> Dict[
     Returns
     -------
     Dict[str, float]
-        Normalized numeric statistics extracted from the input row.
+        Canonicalized statistics in canonical internal units when the physical
+        context is known.
 
     Raises
     ------
     ValueError
-        If a percentile-like column label is invalid or multiple populated
-        columns define the same canonical statistic.
+        If percentile labels are invalid, duplicate aliases define the same
+        statistic, units are unsupported/incompatible, or a reusable
+        distribution is reinterpreted using a different numeric unit scale.
     """
     excluded = {str(value).strip().lower() for value in exclude}
     excluded.update({DISTRIBUTION_ID, SAMPLE_GROUP, "units", "unit", "notes"})
@@ -191,7 +198,49 @@ def stats_from_row(row: Mapping[str, Any], exclude: Iterable[str] = ()) -> Dict[
             )
         out[canonical] = float(value)
         source_labels[canonical] = label
-    return out
+
+    ref = row.get(DISTRIBUTION_ID)
+    unit = row_unit(row)
+    ref_id = str(ref).strip() if _nonblank(ref) else ""
+    identifier_columns = {
+        "pid", "cps", "pollutant", "parameter", "land_cover", "hsg", "oid"
+    }
+    normalized_row_keys = {str(key).strip().lower() for key in row.keys()}
+    is_catalog_row = bool(
+        ref_id and out and not identifier_columns.intersection(normalized_row_keys)
+    )
+
+    # Catalog rows do not by themselves identify the target physical dimension.
+    # Register their declared unit so use-site overrides can be checked, but do
+    # not numerically convert until the row has model context.
+    if is_catalog_row:
+        if unit is not None:
+            _DISTRIBUTION_UNITS[ref_id] = unit
+        return out
+
+    # A distribution reference may use a spelling alias with the same scale,
+    # but may not reinterpret copied catalog statistics at a new scale.
+    if ref_id and unit is not None and not out:
+        catalog_unit = _DISTRIBUTION_UNITS.get(ref_id)
+        if catalog_unit is not None and not unit_labels_same_scale(catalog_unit, unit):
+            raise ValueError(
+                f"distribution_id={ref_id!r} is defined using units {catalog_unit!r}, "
+                f"but the use-site row supplies {unit!r}; distribution references "
+                "may not reinterpret catalog statistics at a different scale"
+            )
+
+    conversion_row: Mapping[str, Any] = row
+    if ref_id and unit is None and ref_id in _DISTRIBUTION_UNITS:
+        copied = dict(row)
+        copied["units"] = _DISTRIBUTION_UNITS[ref_id]
+        conversion_row = copied
+
+    expected_kind = None
+    # PLET/RUSLE concentration sampling explicitly excludes both identifiers.
+    if {"pid", "pollutant"}.issubset(excluded) and "parameter" not in excluded:
+        expected_kind = "concentration"
+
+    return convert_row_statistics(conversion_row, out, expected_kind=expected_kind)
 
 
 def _nonblank(value: Any) -> bool:
