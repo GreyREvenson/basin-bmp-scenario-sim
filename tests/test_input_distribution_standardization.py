@@ -184,3 +184,93 @@ def test_plet_classifications_reject_distribution_statistics(tmp_path):
     ]).to_csv(path, index=False)
     with pytest.raises(ValueError, match="classifications and must use only a fixed value"):
         _load_plet_parameter_table(path, ["P1"], Logger())
+
+
+def test_numeric_schema_rejects_negative_sd():
+    table = pd.DataFrame([{"mean": 5.0, "sd": -0.1}])
+    with pytest.raises(ValueError, match="sd must be >= 0"):
+        validate_numeric_distribution_rows(table, "x")
+
+
+def test_numeric_schema_rejects_min_greater_than_max():
+    table = pd.DataFrame([{"min": 10.0, "max": 5.0}])
+    with pytest.raises(ValueError, match="min > max"):
+        validate_numeric_distribution_rows(table, "x")
+
+
+def test_numeric_schema_rejects_mean_outside_explicit_bounds():
+    table = pd.DataFrame([{"mean": 12.0, "sd": 1.0, "min": 0.0, "max": 10.0}])
+    with pytest.raises(ValueError, match="mean must lie between min and max"):
+        validate_numeric_distribution_rows(table, "x")
+
+
+def test_numeric_schema_rejects_nonmonotonic_percentiles():
+    table = pd.DataFrame(
+        [{"min": 0.0, "p05": 2.0, "p50": 6.0, "p95": 5.0, "max": 10.0}]
+    )
+    with pytest.raises(ValueError, match="distribution is not monotonic"):
+        validate_numeric_distribution_rows(table, "x")
+
+
+def test_numeric_schema_accepts_monotonic_percentiles():
+    table = pd.DataFrame(
+        [{"min": 0.0, "p05": 2.0, "p50": 5.0, "p95": 8.0, "max": 10.0}]
+    )
+    validate_numeric_distribution_rows(table, "x")
+
+
+def test_numeric_schema_rejects_duplicate_named_statistic_aliases():
+    table = pd.DataFrame([{"mean": 10.0, "avg": 11.0, "sd": 1.0}])
+    with pytest.raises(ValueError, match="Multiple populated columns define statistic 'mean'"):
+        validate_numeric_distribution_rows(table, "x")
+
+
+def test_numeric_schema_rejects_duplicate_percentile_aliases():
+    table = pd.DataFrame(
+        [{"min": 0.0, "p05": 2.0, "p5": 3.0, "max": 10.0}]
+    )
+    with pytest.raises(ValueError, match="Multiple populated columns define statistic 'p5'"):
+        validate_numeric_distribution_rows(table, "x")
+
+
+@pytest.mark.parametrize("column", ["p-5", "p5.5", "p105"])
+def test_numeric_schema_rejects_invalid_percentile_labels(column):
+    table = pd.DataFrame([{"min": 0.0, column: 2.0, "max": 10.0}])
+    with pytest.raises(ValueError, match="Invalid percentile statistic column"):
+        validate_numeric_distribution_rows(table, "x")
+
+
+def test_distribution_catalog_rejects_duplicate_statistic_aliases(tmp_path):
+    path = tmp_path / "d.csv"
+    pd.DataFrame(
+        [{"distribution_id": "rain", "mean": 42.0, "avg": 43.0, "sd": 3.0}]
+    ).to_csv(path, index=False)
+    with pytest.raises(ValueError, match="Multiple populated columns define statistic 'mean'"):
+        load_distribution_catalog(path)
+
+
+def test_distribution_catalog_rejects_nonmonotonic_percentiles(tmp_path):
+    path = tmp_path / "d.csv"
+    pd.DataFrame(
+        [
+            {
+                "distribution_id": "rain",
+                "min": 30.0,
+                "p05": 35.0,
+                "p50": 45.0,
+                "p95": 40.0,
+                "max": 55.0,
+            }
+        ]
+    ).to_csv(path, index=False)
+    with pytest.raises(ValueError, match="distribution is not monotonic"):
+        load_distribution_catalog(path)
+
+
+def test_distribution_catalog_rejects_invalid_percentile_label(tmp_path):
+    path = tmp_path / "d.csv"
+    pd.DataFrame(
+        [{"distribution_id": "rain", "min": 30.0, "p105": 42.0, "max": 55.0}]
+    ).to_csv(path, index=False)
+    with pytest.raises(ValueError, match="Invalid percentile statistic column"):
+        load_distribution_catalog(path)
