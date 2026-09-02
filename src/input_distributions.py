@@ -220,7 +220,7 @@ def stats_from_row(row: Mapping[str, Any], exclude: Iterable[str] = ()) -> Dict[
 
     # A distribution reference may use a spelling alias with the same scale,
     # but may not reinterpret copied catalog statistics at a new scale.
-    if ref_id and unit is not None and not out:
+    if ref_id and unit is not None and not is_catalog_row:
         catalog_unit = _DISTRIBUTION_UNITS.get(ref_id)
         if catalog_unit is not None and not unit_labels_same_scale(catalog_unit, unit):
             raise ValueError(
