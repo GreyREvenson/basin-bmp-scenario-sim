@@ -34,7 +34,6 @@ from .input_validation import (
 
 INCH_OVER_HA_TO_LITERS = 254_000.0
 TON_PER_ACRE_TO_KG_PER_HA = 907.18474 / 0.40468564224
-ACRES_PER_SQUARE_MILE = 640.0
 PLET_PATHWAY_NAMES = ("surface", "subsurface")
 PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
 PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
@@ -94,8 +93,6 @@ _PARAMETER_ALIASES: Dict[str, str] = {
     "rusle_p": "p",
     "delivery_ratio": "sdr",
     "sediment_delivery_ratio": "sdr",
-    "watershed_area_sqmi": "watershed_area_mi2",
-    "watershed_area_sq_mi": "watershed_area_mi2",
     "soil_n_percent": "sediment_n_pct",
     "soil_p_percent": "sediment_p_pct",
     "enrichment": "enrichment_ratio",
@@ -400,11 +397,6 @@ def rusle_sediment_load_rate_kg_ha_yr(parameters: Mapping[str, Any]) -> float:
     -------
     float
         Annual sediment load rate in kilograms per hectare per year.
-
-    Raises
-    ------
-    ValueError
-        If neither ``sdr`` nor ``watershed_area_mi2`` is provided.
     """
 
     parameters = apply_plet_parameter_defaults(parameters)

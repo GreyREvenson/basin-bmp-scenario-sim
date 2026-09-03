@@ -101,7 +101,7 @@ Both parameters may be supplied as fixed values or distributions. This file repl
 
 ### `load_generation.rusle_inputs`
 
-Optional long-form RUSLE parameter table. Numeric rows use the common distribution schema and may use `pid="*"` defaults. A parcel with RUSLE data must have a complete factor set and an SDR or watershed area value required by the current delivery formulation.
+Optional long-form RUSLE parameter table. Numeric rows use the common distribution schema and may use `pid="*"` defaults. A parcel with RUSLE data must have a complete factor set, and may supply `sdr` to override the default sediment delivery ratio of 1.0.
 
 ### `load_generation.pollutant_concentrations`
 

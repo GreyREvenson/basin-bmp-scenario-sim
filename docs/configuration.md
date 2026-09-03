@@ -200,8 +200,8 @@ In `plet_rusle` mode:
 - parcel `plet_inputs` must supply fixed `land_cover` and `hsg` classifications and may not supply `cn` or `infiltration_fraction` directly;
 - `pollutant_concentrations` is required when TN or TP is modeled;
 - `groundwater_concentrations` is required for every modeled non-TSS pollutant;
-- `rusle_inputs` is optional, but a parcel that supplies RUSLE inputs must supply a complete RUSLE factor set and either `sdr` or `watershed_area_mi2`;
-- `pathway_mode` has been removed and is an error if supplied; and
+- `rusle_inputs` is optional, but a parcel that supplies RUSLE inputs must supply a complete RUSLE factor set, and may supply `sdr` to override the default delivery ratio of 1.0;
+- `pathway_mode` and `watershed_area_mi2` have been removed and are an error if supplied; and
 - statistical pathway-fraction settings do not control PLET/RUSLE pathways.
 
 Legacy `groundwater_loads` and `treat_groundwater_with_bmps` settings do not control production PLET/RUSLE pathway generation. The production calculation always estimates the subsurface load from groundwater concentration and the sampled infiltration fraction. BMP treatment is controlled by the `subsurface` BMP efficiency.

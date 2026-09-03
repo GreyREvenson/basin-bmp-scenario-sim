@@ -171,7 +171,7 @@ RUSLE input is optional, but if any RUSLE values are supplied for a parcel the r
 - `c`; and
 - `p`.
 
-The parcel must also provide either `sdr` or `watershed_area_mi2`, allowing a sediment delivery ratio to be supplied or derived according to the current model formulation.
+The parcel may also provide `sdr`, the sediment delivery ratio. When it is omitted the model applies a delivery ratio of 1.0, meaning all gross erosion is delivered.
 
 Gross erosion is based on:
 
@@ -251,6 +251,8 @@ See [Standardized numeric inputs and distributions](input_distributions.md).
 ## Removed/legacy configuration concepts
 
 `load_generation.pathway_mode` has been removed. `plet_rusle` always derives its two production pathways from PLET/RUSLE inputs.
+
+`watershed_area_mi2` has been removed from `rusle_inputs` and is an error if supplied, along with its `watershed_area_sqmi` and `watershed_area_sq_mi` spellings. No delivery ratio was ever derived from it; parcels that relied on it were silently computed at a delivery ratio of 1.0. Supply `sdr` explicitly instead.
 
 Legacy `groundwater_loads` and `treat_groundwater_with_bmps` keys do not determine production pathway generation. The current production calculation always estimates subsurface load from groundwater concentration and sampled infiltration. Whether a BMP reduces that load is determined by the BMP's `subsurface` efficiency.
 

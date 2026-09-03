@@ -175,24 +175,6 @@ MASS_RATE_SPEC = _spec(
         "tonne/year": 1000.0,
     },
 )
-AREA_MI2_SPEC = _spec(
-    "mi2",
-    {
-        "sq mi": 1.0,
-        "square mile": 1.0,
-        "square miles": 1.0,
-        "km2": 0.3861021585424458,
-        "sq km": 0.3861021585424458,
-        "ha": 0.003861021585424458,
-        "hectare": 0.003861021585424458,
-        "hectares": 0.003861021585424458,
-        "acre": 1.0 / 640.0,
-        "acres": 1.0 / 640.0,
-        "ac": 1.0 / 640.0,
-        "m2": 3.861021585424458e-7,
-        "ft2": 1.0 / (5280.0 * 5280.0),
-    },
-)
 COST_AREA_SPEC = _spec(
     "usd/ha",
     {
@@ -258,7 +240,6 @@ _KIND_SPECS: Dict[str, Tuple[UnitSpec, ...]] = {
     "concentration": (CONCENTRATION_SPEC,),
     "load_rate": (LOAD_RATE_SPEC,),
     "mass_rate": (MASS_RATE_SPEC,),
-    "area_mi2": (AREA_MI2_SPEC,),
     "cost": (COST_AREA_SPEC, COST_LENGTH_SPEC, COST_PROJECT_SPEC),
     "rusle_r": (RUSLE_R_SPEC,),
     "rusle_k": (RUSLE_K_SPEC,),
@@ -280,7 +261,6 @@ _PARAMETER_KINDS: Dict[str, str] = {
     "c": "dimensionless",
     "p": "dimensionless",
     "sdr": "fraction",
-    "watershed_area_mi2": "area_mi2",
     "sediment_multiplier": "dimensionless",
     "sediment_delivery_multiplier": "dimensionless",
     "sediment_n_pct": "percent",

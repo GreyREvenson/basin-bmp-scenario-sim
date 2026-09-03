@@ -71,7 +71,6 @@ def test_bmp_cost_and_concentration_are_nonnegative():
         ("annual_precip_in", -0.01),
         ("r", -0.01),
         ("sediment_n_pct", 100.01),
-        ("watershed_area_mi2", 0.0),
     ],
 )
 def test_plet_rusle_parameter_domains_are_enforced(parameter, value):

@@ -125,7 +125,6 @@ _PARAMETER_PHYSICAL_DOMAINS: Dict[str, PhysicalDomain] = {
     "c": NONNEGATIVE_DOMAIN,
     "p": NONNEGATIVE_DOMAIN,
     "sdr": FRACTION_DOMAIN,
-    "watershed_area_mi2": POSITIVE_DOMAIN,
     "sediment_multiplier": NONNEGATIVE_DOMAIN,
     "sediment_delivery_multiplier": NONNEGATIVE_DOMAIN,
     "sediment_n_pct": PERCENT_DOMAIN,
@@ -173,8 +172,6 @@ def sampling_kind_for_parameter(parameter: Any) -> Optional[str]:
         return "fraction"
     if name in {"sediment_n_pct", "sediment_p_pct"}:
         return "percent"
-    if name == "watershed_area_mi2":
-        return "positive"
     domain = physical_parameter_domain(name)
     if domain == NONNEGATIVE_DOMAIN:
         return "nonnegative"
@@ -729,6 +726,19 @@ def validate_plet_runtime_inputs(
     """
     from .plet_rusle import _REQUIRED_PLET_INPUTS, _REQUIRED_RUSLE, canonical_parameter_name
 
+    if rusle_inputs is not None and not rusle_inputs.empty and "parameter" in rusle_inputs.columns:
+        raw_parameter_labels = rusle_inputs["parameter"].map(
+            lambda value: str(value).strip().lower().replace("-", "_").replace(" ", "_")
+        )
+        removed_parameters = sorted(
+            set(raw_parameter_labels[raw_parameter_labels.str.startswith("watershed_area")])
+        )
+        if removed_parameters:
+            raise ValueError(
+                f"RUSLE watershed-area parameters are no longer supported: {removed_parameters}; "
+                "supply 'sdr' instead"
+            )
+
     def effective_parameters(table: Optional[pd.DataFrame], pid: str) -> Dict[str, pd.Series]:
         """Return the effective parameter rows for a parcel.
 
@@ -783,8 +793,6 @@ def validate_plet_runtime_inputs(
             missing_rusle = [name for name in _REQUIRED_RUSLE if name not in rusle_effective]
             if missing_rusle:
                 raise ValueError(f"RUSLE inputs for pid={pid} are incomplete; missing: {missing_rusle}")
-            if "sdr" not in rusle_effective and "watershed_area_mi2" not in rusle_effective:
-                raise ValueError(f"RUSLE inputs for pid={pid} require 'sdr' or 'watershed_area_mi2'")
         for pollutant in pollutants:
             pol = str(pollutant).upper()
             if pol in {"TN", "TP"} and not has_concentration(pollutant_concentrations, pid, pol):

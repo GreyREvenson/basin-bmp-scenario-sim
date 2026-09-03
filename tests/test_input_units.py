@@ -47,13 +47,6 @@ def test_sediment_fraction_converts_to_percent() -> None:
     assert stats["value"] == pytest.approx(0.12)
 
 
-def test_watershed_area_hectares_converts_to_square_miles() -> None:
-    stats = stats_from_row(
-        {"pid": "*", "parameter": "watershed_area_mi2", "value": 100.0, "units": "ha"}
-    )
-    assert stats["value"] == pytest.approx(0.3861021585424458)
-
-
 def test_bmp_efficiency_percent_converts_to_fraction() -> None:
     stats = stats_from_row(
         {"cps": 340, "pollutant": "TN", "value": 35.0, "units": "%"}

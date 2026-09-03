@@ -47,7 +47,6 @@ from src.model import Model
 
 INCH_OVER_HA_TO_LITERS = 254_000.0
 TON_PER_ACRE_TO_KG_PER_HA = 907.18474 / 0.40468564224
-ACRES_PER_SQUARE_MILE = 640.0
 FAIL_TOL = 1.0e-9
 
 
@@ -423,7 +422,6 @@ def _extract_param_sets(
         "c",
         "p",
         "sdr",
-        "watershed_area_mi2",
         "sediment_n_pct",
         "sediment_p_pct",
         "enrichment_ratio",

@@ -1,4 +1,5 @@
-"""Run the model from the command line using a YAML settings file."""
+"""Run the model from the command line using a YAML settings file.
+"""
 
 from __future__ import annotations
 

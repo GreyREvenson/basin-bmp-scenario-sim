@@ -25,7 +25,6 @@ FT_TO_M = 0.3048
 M2_PER_HA = 10_000.0
 INCH_OVER_HA_TO_LITERS = 254_000.0
 TON_PER_ACRE_TO_KG_PER_HA = 907.18474 / 0.40468564224
-ACRES_PER_SQUARE_MILE = 640.0
 CURRENT_TIMESTEP_YEARS = 1.0
 
 
@@ -143,8 +142,6 @@ PLET_PARAMETER_ALIASES = {
     "rusle_p": "p",
     "delivery_ratio": "sdr",
     "sediment_delivery_ratio": "sdr",
-    "watershed_area_sqmi": "watershed_area_mi2",
-    "watershed_area_sq_mi": "watershed_area_mi2",
     "soil_n_percent": "sediment_n_pct",
     "soil_p_percent": "sediment_p_pct",
     "enrichment": "enrichment_ratio",

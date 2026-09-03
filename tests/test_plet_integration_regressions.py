@@ -6,9 +6,11 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from src.constants import OUTPUT_IMPACTED_PIDS
 from src.input_config import _build_parcel_up_map
+from src.input_validation import validate_plet_runtime_inputs
 from src.model import _bmp_impacted_parcel_indices
 
 
@@ -135,3 +137,26 @@ def test_unknown_load_generation_mode_is_rejected(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="Unsupported load_generation mode"):
         load_and_validate_all(cfg, logging.getLogger("test_bad_load_mode"))
+
+
+@pytest.mark.parametrize(
+    "label", ["watershed_area_mi2", "watershed_area_sqmi", "Watershed Area SQ MI"]
+)
+def test_removed_watershed_area_rusle_input_is_rejected(label) -> None:
+    """Ensure a stale watershed-area row cannot be silently ignored at 100% delivery."""
+    rusle_inputs = pd.DataFrame(
+        [
+            {"pid": "*", "parameter": "r", "value": 100.0},
+            {"pid": "*", "parameter": label, "value": 5.0},
+        ]
+    )
+
+    with pytest.raises(ValueError, match="no longer supported"):
+        validate_plet_runtime_inputs(
+            pd.DataFrame(columns=["pid", "parameter", "value"]),
+            rusle_inputs,
+            None,
+            None,
+            ["P1"],
+            ["TN"],
+        )
