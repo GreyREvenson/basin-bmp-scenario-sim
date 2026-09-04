@@ -164,6 +164,8 @@ The model is a scenario and uncertainty framework, not a substitute for a calibr
 
 BMP efficiencies are applied serially to the current remaining load. Parcel-to-outlet routing may use optional delivery ratios, but the simulator does not independently resolve all physical fate and transport processes between a parcel and an outlet.
 
+When both BMP-count and cost limits are configured, the scenario uses an OR stopping rule: no additional BMPs are added once either limit has been reached or exceeded.
+
 Model outputs should therefore be interpreted as conditional on the selected model structure and input assumptions.
 
 ## Citation

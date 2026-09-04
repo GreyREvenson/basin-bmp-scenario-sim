@@ -711,8 +711,11 @@ def _run_one_scenario(
             )
 
         # Limits
-        limit_n = cfg.get("bmp_limit_n")
-        limit_usd = cfg.get("bmp_limit_usd")
+        limit_n = cfg.get("bmp_limit_n",None)
+        limit_usd = cfg.get("bmp_limit_usd",None)
+        if limit_n is None and limit_usd is None:
+            logger.warning("No BMP limits specified; setting bmp limit to 1 to prevent indefinite run")
+            limit_n = 1
         total_cost = 0.0
         total_bmp = 0
 

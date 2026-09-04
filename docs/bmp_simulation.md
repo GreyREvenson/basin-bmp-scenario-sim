@@ -65,7 +65,11 @@ Where applicable, `parcel_up` supplies upstream parcel relationships used by BMP
 
 ## Cost and stopping conditions
 
-BMP costs may be sampled from `bmp_cost` when configured. Scenarios may be limited by BMP count, cost, or both. Cost can also optionally influence BMP-selection probabilities when `bmp_sel_prob_via_costs` is enabled.
+BMP costs may be sampled from `bmp_cost` when configured. Cost can also optionally influence BMP-selection probabilities when `bmp_sel_prob_via_costs` is enabled.
+
+Scenarios may be limited by BMP count, cost, or both. No additional BMPs are added once a configured stopping condition has been met. If both `bmp_limit_n` and `bmp_limit_usd` are configured, the scenario stops before another BMP is added as soon as **either** limit has been reached.
+
+The stopping check occurs at the start of each BMP-placement iteration. This means a BMP that causes cumulative cost or BMP count to reach or exceed its configured limit is included in the scenario, and the run then stops before the next BMP would be added.
 
 ## Interpretation
 

@@ -180,7 +180,17 @@ Legacy `groundwater_loads` and `treat_groundwater_with_bmps` settings do not con
 
 ## Scenario stopping conditions
 
-The model supports a BMP-count limit, a cost limit, or both. When both are configured, the scenario terminates when a stopping condition is reached according to the scenario engine's current implementation.
+The model supports a BMP-count limit, a cost limit, or both.
+
+A scenario stops before adding another BMP as soon as **either** configured stopping condition has been met. In other words:
+
+- if only `bmp_limit_n` is configured, no additional BMPs are added after the BMP-count limit is reached
+- if only `bmp_limit_usd` is configured, no additional BMPs are added after the cost limit is reached
+- if both are configured, no additional BMPs are added after **either** the BMP-count limit or the cost limit has been reached
+
+This is an **OR** stopping rule, not an **AND** rule.
+
+The stopping check occurs at the start of each BMP-placement iteration. A BMP that causes cumulative cost or BMP count to reach or exceed its configured limit is retained, and the scenario stops before another BMP is added.
 
 ## Parallel configuration
 
