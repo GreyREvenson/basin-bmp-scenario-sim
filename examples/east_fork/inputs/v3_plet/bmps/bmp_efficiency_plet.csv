@@ -1,0 +1,77 @@
+BMP Name,Landuse Type,Pollutant,Mean,Min,Max,References
+Bioreactor,Cropland,TN,0.45,0.13,0.72,"Christianson et al. 2016; Husk et al. 2017; Woli et al. 2010; DeBoe et al. 2017; Tetra Tech 2016"
+Buffer - Forest (100ft wide),Cropland,TN,0.49,0.19,0.92,"Udawatta et al. 2018; Jontos 2004; Lee et al. 2003; USEPA 2010"
+Buffer - Forest (100ft wide),Cropland,TP,0.47,0.080,0.93,"Merriman et al. 2009; Udawatta et al. 2018; Jontos 2004; Lee et al. 2003; USEPA 2010; Jontos 2004"
+Buffer - Forest (100ft wide),Cropland,Sediment,0.60,0.19,0.95,"Udawatta et al. 2018; Schmitt et al. 1999; Yuan et al. 2009; Lee et al. 2003; USEPA 2010"
+Buffer - Grass (35ft wide),Cropland,TN,0.34,0.13,0.46,USEPA 2010
+Buffer - Grass (35ft wide),Cropland,TP,0.44,0.30,0.47,USEPA 2010
+Buffer - Grass (35ft wide),Cropland,Sediment,0.53,0.40,0.60,USEPA 2010
+Conservation Tillage 1 (30-59% Residue),Cropland,TN,0.070,0.040,0.10,CBP 2016a
+Conservation Tillage 1 (30-59% Residue),Cropland,TP,0.36,0.020,0.60,CBP 2016a
+Conservation Tillage 1 (30-59% Residue),Cropland,Sediment,0.46,0.41,0.50,"Christianson et al. 2016; CBP 2016a"
+Conservation Tillage 2 (equal or more than 60% Residue),Cropland,TN,0.13,0.12,0.14,CBP 2016a
+Conservation Tillage 2 (equal or more than 60% Residue),Cropland,TP,0.69,0.11,0.90,"Christianson et al. 2016; CBP 2016a"
+Conservation Tillage 2 (equal or more than 60% Residue),Cropland,Sediment,0.79,0.79,0.79,CBP 2016a
+Controlled Drainage,Cropland,TN,0.39,0.33,0.45,"Christianson et al. 2016; Evans et al. 1996"
+Controlled Drainage,Cropland,TP,0.35,0.35,0.35,Evans et al. 1996
+Cover Crop 1 (Group A Commodity) (High Till only for Sediment),Cropland,TN,0.0078,0,0.013,"CBP 2015; CBP 2017"
+Cover Crop 2 (Group A Traditional Normal Planting Time) (High Till only for TP and Sediment),Cropland,TN,0.20,0.20,0.20,"CBP 2015; CBP 2017"
+Cover Crop 2 (Group A Traditional Normal Planting Time) (High Till only for TP and Sediment),Cropland,TP,0.070,0.070,0.070,"CBP 2015; CBP 2017"
+Cover Crop 2 (Group A Traditional Normal Planting Time) (High Till only for TP and Sediment),Cropland,Sediment,0.10,0.10,0.10,"CBP 2015; CBP 2017"
+Cover Crop 3 (Group A Traditional Early Planting Time) (High Till only for TP and Sediment),Cropland,TN,0.20,0.20,0.20,"CBP 2015; CBP 2017"
+Cover Crop 3 (Group A Traditional Early Planting Time) (High Till only for TP and Sediment),Cropland,TP,0.15,0.15,0.15,"CBP 2015; CBP 2017"
+Cover Crop 3 (Group A Traditional Early Planting Time) (High Till only for TP and Sediment),Cropland,Sediment,0.20,0.20,0.20,"CBP 2015; CBP 2017"
+Land Retirement,Cropland,TN,0.90,0.83,0.96,"Evans, Lehning and Corradini 2003; Christianson et al. 2016"
+Land Retirement,Cropland,TP,0.81,0.56,0.98,"Evans, Lehning and Corradini 2003; Christianson et al. 2016"
+Land Retirement,Cropland,Sediment,0.95,0.92,0.98,Evans, Lehning and Corradini 2003
+Nutrient Management 1 (Determined Rate),Cropland,TN,0.15,0.15,0.15,CBP 2016b
+Nutrient Management 1 (Determined Rate),Cropland,TP,0.45,0.45,0.45,"Christianson et al. 2016; USEPA 1993; USEPA 2010"
+Nutrient Management 2 (Determined Rate Plus Additional Considerations),Cropland,TN,0.22,0.090,0.70,"Christianson et al. 2016; Lam et al. 2011; Shepard 2005; Evans, Lehning and Corradini 2003; USEPA 1993"
+Nutrient Management 2 (Determined Rate Plus Additional Considerations),Cropland,TP,0.56,0.56,0.56,"Determined based on input from Tetra Tech and CBP 2016b"
+Streambank Stabilization and Fencing,Cropland,TN,0.75,0.75,0.75,USEPA 1993
+Streambank Stabilization and Fencing,Cropland,TP,0.75,0.75,0.75,USEPA 1993
+Streambank Stabilization and Fencing,Cropland,Sediment,0.75,0.75,0.75,USEPA 1993
+Terrace,Cropland,TN,0.27,-6.0E-03,0.67,"Tuppad et al. 2010; Gassman et al. 2006; Evans, Lehning and Corradini 2003; USEPA 1993"
+Terrace,Cropland,TP,0.31,0.060,0.70,"Tuppad et al. 2010; Gassman et al. 2006; Makarewicz et al. 2015; Evans, Lehning and Corradini 2003; USEPA 1993"
+Terrace,Cropland,Sediment,0.41,-0.037,0.92,"Yang et al. 2012; Tuppad et al. 2010; Gassman et al. 2006; Makarewicz et al. 2015; Evans, Lehning and Corradini 2003; USEPA 1993"
+Two-Stage Ditch,Cropland,TN,0.12,0.12,0.12,Tetra Tech 2016
+Two-Stage Ditch,Cropland,TP,0.28,0.28,0.28,Tetra Tech 2016
+30m Buffer with Optimal Grazing,Pastureland,TN,0.16,0.46,0.36,Chaubey et al. 2010
+30m Buffer with Optimal Grazing,Pastureland,TP,0.65,0.66,0.65,Chaubey et al. 2010
+Alternative Water Supply,Pastureland,TN,0.18,0.050,0.30,"USEPA 2010; Oklahoma NPS Coordinator 2014"
+Alternative Water Supply,Pastureland,TP,0.13,0.00,0.30,"USEPA 2010; Oklahoma NPS Coordinator 2014; Sheshukov et al. 2016"
+Alternative Water Supply,Pastureland,Sediment,0.20,0,0.54,"USEPA 2010; Oklahoma NPS Coordinator 2014; Sheshukov et al. 2016; Line et al. 2000; Sheffield et al. 1997"
+Critical Area Planting,Pastureland,TN,0.18,0.050,0.30,"USEPA 2010; Oklahoma NPS Coordinator 2014"
+Critical Area Planting,Pastureland,TP,0.20,0.10,0.30,"USEPA 2010; Oklahoma NPS Coordinator 2014"
+Critical Area Planting,Pastureland,Sediment,0.42,0.14,0.70,"USEPA 2010; Oklahoma NPS Coordinator 2014"
+Grazing Land Management (rotational grazing with fenced areas),Pastureland,TN,0.43,0.43,0.43,Evans, Lehning and Corradini 2003
+Grazing Land Management (rotational grazing with fenced areas),Pastureland,TP,0.26,0,0.59,"ISU 2014; McDowell and Houlbrooke 2009; Owens, Edwards and Van Keuren 1989"
+Heavy Use Area Protection,Pastureland,TN,0.18,0.05,0.30,"USEPA 2010; Oklahoma NPS Coordinator 2014"
+Heavy Use Area Protection,Pastureland,TP,0.19,0.080,0.30,"USEPA 2010; Oklahoma NPS Coordinator 2014"
+Heavy Use Area Protection,Pastureland,Sediment,0.33,0.10,0.50,"USEPA 2010; Oklahoma NPS Coordinator 2014"
+Litter Storage and Management,Pastureland,TN,0.14,0.14,0.14,Oklahoma NPS Coordinator 2014
+Litter Storage and Management,Pastureland,TP,0.14,0.14,0.14,Oklahoma NPS Coordinator 2014
+Litter Storage and Management,Pastureland,Sediment,0.00,0.00,0.00,Oklahoma NPS Coordinator 2014
+Livestock Exclusion Fencing,Pastureland,TN,0.20,0.20,0.20,Oklahoma NPS Coordinator 2014
+Livestock Exclusion Fencing,Pastureland,TP,0.43,0.02,0.76,"Carline and Walsh 2007; Line et al. 2000; Oklahoma NPS Coordinator 2014"
+Livestock Exclusion Fencing,Pastureland,Sediment,0.64,0.20,0.87,"Oklahoma NPS Coordinator 2014; Carline and Walsh 2007; Line et al. 2000; Owens et al. 1996"
+Multiple Practices,Pastureland,TN,0.25,-0.39,0.89,"Chaubey et al. 2010; Owens and Bonta 2004"
+Multiple Practices,Pastureland,TP,0.20,-5.2,0.66,"Chaubey et al. 2010; Meals 2004; Sistani et al. 2008"
+Multiple Practices,Pastureland,Sediment,0.22,-1.0,0.61,"Carline and Walsh 2007; Meals 2004; Sistani et al. 2008"
+Pasture and Hayland Planting (also called Forage Planting),Pastureland,TN,0.18,-0.33,0.68,"Owens et al. 1994; Owens, Edwards and Van Keuren 1989; Oklahoma NPS Coordinator 2014"
+Pasture and Hayland Planting (also called Forage Planting),Pastureland,TP,0.15,0.00,0.30,"Oklahoma NPS Coordinator 2014; Owens, Edwards and Van Keuren 1989"
+Prescribed Grazing,Pastureland,TN,0.41,0.090,0.92,"Butler et al. 2007; USEPA 2010"
+Prescribed Grazing,Pastureland,TP,0.23,0.20,0.24,USEPA 2010
+Prescribed Grazing,Pastureland,Sediment,0.33,0.30,0.40,USEPA 2010
+Streambank Protection w/o Fencing,Pastureland,TN,0.15,0.15,0.15,USEPA 2010
+Streambank Protection w/o Fencing,Pastureland,TP,0.22,0.22,0.22,USEPA 2010
+Streambank Protection w/o Fencing,Pastureland,Sediment,0.58,0.30,0.85,"USEPA 2010; Meals 2004"
+Streambank Stabilization and Fencing,Pastureland,TN,0.75,0.75,0.75,USEPA 1993
+Streambank Stabilization and Fencing,Pastureland,TP,0.75,0.75,0.75,USEPA 1993
+Streambank Stabilization and Fencing,Pastureland,Sediment,0.75,0.75,0.75,USEPA 1993
+Use Exclusion,Pastureland,TN,0.43,0.050,0.80,"Butler et al. 2008; USEPA 2010"
+Use Exclusion,Pastureland,TP,0.08,0.080,0.080,USEPA 2010
+Use Exclusion,Pastureland,Sediment,0.51,0.10,0.97,"Butler et al. 2008; USEPA 2010"
+Winter Feeding Facility,Pastureland,TN,0.35,0.35,0.35,Oklahoma NPS Coordinator 2014
+Winter Feeding Facility,Pastureland,TP,0.40,0.40,0.40,Oklahoma NPS Coordinator 2014
+Winter Feeding Facility,Pastureland,Sediment,0.40,0.40,0.40,Oklahoma NPS Coordinator 2014
