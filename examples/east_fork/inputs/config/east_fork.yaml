@@ -4,22 +4,22 @@ outputs: ./examples/east_fork/outputs/default/run_1
 random_seed: 42
 
 # Required geospatial inputs
-domain: ./examples/east_fork/inputs/default/domain.gpkg
-parcels: ./examples/east_fork/inputs/default/parcels.gpkg
-outlet_loc: ./examples/east_fork/inputs/default/outlet_loc.gpkg
+domain: ./examples/east_fork/inputs/domain/domain.gpkg
+parcels: ./examples/east_fork/inputs/parcels/parcels.gpkg
+outlet_loc: ./examples/east_fork/inputs/outlets/outlet_loc.gpkg
 # Drainage and selection
-parcel_out: ./examples/east_fork/inputs/default/parcel_out.csv
-parcel_up: ./examples/east_fork/inputs/default/parcel_up.csv
-parcel_p: ./examples/east_fork/inputs/default/parcel_p.csv
+parcel_out: ./examples/east_fork/inputs/parcels/parcel_out.csv
+parcel_up: ./examples/east_fork/inputs/parcels/parcel_up.csv
+parcel_p: ./examples/east_fork/inputs/parcels/parcel_p.csv
 
 pollutants: ["TN", "TP", "TSS"]
 cps: [340, 329, 590, 412, 656]
 # Optional reusable distribution catalog
-input_distributions: ./examples/east_fork/inputs/default/input_distributions.csv
+input_distributions: ./examples/east_fork/inputs/misc/input_distributions.csv
 
-pollutant_load_rate: ./examples/east_fork/inputs/default/pollutant_load_rates.csv
-bmp_efficiency: ./examples/east_fork/inputs/default/bmp_efficiency.csv
-bmp_cost: ./examples/east_fork/inputs/default/bmp_cost.csv
+pollutant_load_rate: ./examples/east_fork/inputs/parcels/pollutant_load_rates.csv
+bmp_efficiency: ./examples/east_fork/inputs/bmps/bmp_efficiency.csv
+bmp_cost: ./examples/east_fork/inputs/bmps/bmp_cost.csv
 
 # Explicitly document the default load-generation mode.
 load_generation:
@@ -31,9 +31,9 @@ pollutant_load_rate_pathway_fractions:
   shallow subsurface: 0.40
   deep subsurface: 0.30
 # Optional delivery ratios and targets/means
-# delivery_ratios: ./examples/east_fork/inputs/default/delivery_ratios.csv
-outlet_target: ./examples/east_fork/inputs/default/outlet_target.csv
-outlet_mean: ./examples/east_fork/inputs/default/outlet_mean.csv
+# delivery_ratios: ./examples/east_fork/inputs/outlets/delivery_ratios.csv
+outlet_target: ./examples/east_fork/inputs/outlets/outlet_target.csv
+outlet_mean: ./examples/east_fork/inputs/outlets/outlet_mean.csv
 
 n_scenarios: 1
 bmp_limit_n: 200

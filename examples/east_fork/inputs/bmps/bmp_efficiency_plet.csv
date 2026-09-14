@@ -1,0 +1,39 @@
+cps,BMP Name,pathway,Pollutant,Value,Min,Mean,Max,References/Notes
+605,Bioreactor,Surface,TN,,0.13,0.45,0.72,Christianson et al. 2016; Husk et al. 2017; Woli et al. 2010; DeBoe et al. 2017; Tetra Tech 2016
+605,Bioreactor,Subsurface,TN,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+412,Buffer - Grass (35ft wide),Surface,TN,,0.13,0.34,0.46,USEPA 2010
+412,Buffer - Grass (35ft wide),Subsurface,TN,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+412,Buffer - Grass (35ft wide),Surface,TP,,0.30,0.44,0.47,USEPA 2010
+412,Buffer - Grass (35ft wide),Subsurface,TP,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+412,Buffer - Grass (35ft wide),Surface,TSS,,0.40,0.53,0.60,USEPA 2010
+412,Buffer - Grass (35ft wide),Subsurface,TSS,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+329,Conservation Tillage 2 (equal or more than 60% Residue),Surface,TN,,0.12,0.13,0.14,CBP 2016a
+329,Conservation Tillage 2 (equal or more than 60% Residue),Subsurface,TN,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+329,Conservation Tillage 2 (equal or more than 60% Residue),Surface,TP,,0.11,0.69,0.90,Christianson et al. 2016; CBP 2016a
+329,Conservation Tillage 2 (equal or more than 60% Residue),Subsurface,TP,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+329,Conservation Tillage 2 (equal or more than 60% Residue),Surface,TSS,,0.79,0.79,0.79,CBP 2016a
+329,Conservation Tillage 2 (equal or more than 60% Residue),Subsurface,TSS,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+340,Cover Crop 2 (Group A Traditional Normal Planting Time) (High Till only for TP and Sediment),Surface,TN,,0.20,0.20,0.20,CBP 2015; CBP 2017
+340,Cover Crop 2 (Group A Traditional Normal Planting Time) (High Till only for TP and Sediment),Subsurface,TN,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+340,Cover Crop 2 (Group A Traditional Normal Planting Time) (High Till only for TP and Sediment),Surface,TP,,0.070,0.070,0.070,CBP 2015; CBP 2017
+340,Cover Crop 2 (Group A Traditional Normal Planting Time) (High Till only for TP and Sediment),Subsurface,TP,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+340,Cover Crop 2 (Group A Traditional Normal Planting Time) (High Till only for TP and Sediment),Surface,TSS,,0.10,0.10,0.10,CBP 2015; CBP 2017
+340,Cover Crop 2 (Group A Traditional Normal Planting Time) (High Till only for TP and Sediment),Subsurface,TSS,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+327,Land Retirement,Surface,TN,,0.83,0.90,0.96,"Evans, Lehning and Corradini 2003; Christianson et al. 2016"
+327,Land Retirement,Subsurface,TN,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+327,Land Retirement,Surface,TP,,0.56,0.81,0.98,"Evans, Lehning and Corradini 2003; Christianson et al. 2016"
+327,Land Retirement,Subsurface,TP,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+327,Land Retirement,Surface,TSS,,0.92,0.95,0.98,"Evans, Lehning and Corradini 2003; Christianson et al. 2016"
+327,Land Retirement,Subsurface,TSS,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+590,Nutrient Management 2 (Determined Rate Plus Additional Considerations),Surface,TN,,0.090,0.22,0.70,"Christianson et al. 2016; Lam et al. 2011; Shepard 2005; Evans, Lehning and Corradini 2003; USEPA 1993"
+590,Nutrient Management 2 (Determined Rate Plus Additional Considerations),Subsurface,TN,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+590,Nutrient Management 2 (Determined Rate Plus Additional Considerations),Surface,TP,,0.56,0.56,0.56,Determined based on input from Tetra Tech and CBP 2016b
+590,Nutrient Management 2 (Determined Rate Plus Additional Considerations),Subsurface,TP,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+590,Nutrient Management 2 (Determined Rate Plus Additional Considerations),Surface,TSS,0.0,,,,
+590,Nutrient Management 2 (Determined Rate Plus Additional Considerations),Subsurface,TSS,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+656,Constructed Wetland,Surface,TSS,,0.5,0.75,0.90,**** NOT PLET VALUE ****
+656,Constructed Wetland,Subsurface,TSS,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+656,Constructed Wetland,Surface,TN,,0.25,0.45,0.7,**** NOT PLET VALUE ****
+656,Constructed Wetland,Subsurface,TN,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
+656,Constructed Wetland,Surface,TP,,0.3,0.5,0.75,**** NOT PLET VALUE ****
+656,Constructed Wetland,Subsurface,TP,0.0,,,,**** BMP impacts on subsurface pollutants is not simulated in PLET mode ****
