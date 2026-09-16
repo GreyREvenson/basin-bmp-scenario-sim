@@ -1,5 +1,5 @@
 # East Fork comparison run using PLET/RUSLE load generation
-verbose: True
+verbose: False
 outputs: ../../outputs/plet/run_1
 
 random_seed: 42
@@ -31,12 +31,12 @@ load_generation:
 outlet_target: ../outlets/outlet_target.csv
 outlet_mean: ../outlets/outlet_mean.csv
 
-n_scenarios: 1
+n_scenarios: 500
 bmp_limit_n: 500
 buffer_depth_ft: 35
 
 parallel:
-  n_jobs: 1
+  n_jobs: 10
 
 bmp_sel_prob_via_costs: False
 bmp_fail_rate: 0.25

@@ -4,50 +4,6 @@ from pathlib import Path
 from typing import Dict
 
 import pandas as pd
-import run_model
-
-
-EXAMPLE_CONFIG_NAMES = {
-    "statistical": "east_fork.yaml",
-    "plet_rusle": "east_fork_plet.yaml",
-}
-
-
-def example_config_path(mode: str) -> Path:
-    """Return the centrally defined East Fork example config for one mode."""
-    try:
-        filename = EXAMPLE_CONFIG_NAMES[mode]
-    except KeyError as exc:
-        raise ValueError(f"Unknown example mode: {mode}") from exc
-    repo_root = Path(__file__).resolve().parents[1]
-    return repo_root / "examples" / "east_fork" / "inputs" / "config" / filename
-
-
-def run_config_with_overrides(
-    *,
-    base_config_path: Path,
-    outputs_dir: Path,
-    n_jobs: int,
-    n_scenarios: int,
-    random_seed: int,
-    bmp_limit_n: int = 5,
-    verbose: bool = False,
-) -> Path:
-    """Run one example config programmatically without copying its YAML file.
-
-    The original config path remains authoritative, so all relative input paths
-    are resolved against the config's real directory before parallel execution.
-    """
-    return run_model.run_from_config(
-        base_config_path,
-        outputs=outputs_dir,
-        n_jobs=n_jobs,
-        n_scenarios=n_scenarios,
-        seed=random_seed,
-        bmp_limit_n=bmp_limit_n,
-        verbose=verbose,
-        make_plots=False,
-    )
 
 
 def canonical_output_paths(outputs_dir: Path, *, expect_load_parameters: bool) -> Dict[str, Path]:

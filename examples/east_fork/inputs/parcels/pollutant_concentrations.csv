@@ -1,5 +1,5 @@
 pid,pollutant,pathway,value,distribution_id,mean,sd,min,p05,p50,p95,max,sample_group,units,notes
 *,TN,surface,,runoff_tn_east_fork,,,,,,,,,mg/L,
-*,TP,surface,0.35,,,,,,,,,,mg/L,
-*,TN,subsurface,5.5,,,,,,,,,,mg/L,
-*,TP,subsurface,0.08,,,,,,,,,,mg/L,
+*,TP,surface,0.5,,,,,,,,,,mg/L,
+*,TN,subsurface,1.44,,,,,,,,,,mg/L,
+*,TP,subsurface,0.063,,,,,,,,,,mg/L,
