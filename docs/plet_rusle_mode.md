@@ -18,7 +18,6 @@ A typical configuration is:
       hydrology_lookup: ./inputs/plet/plet_hydrology_lookup.csv
       rusle_inputs: ./inputs/plet/rusle_inputs.csv
       pollutant_concentrations: ./inputs/plet/pollutant_concentrations.csv
-      groundwater_concentrations: ./inputs/plet/groundwater_concentrations.csv
 
 ## Production pathways
 
@@ -88,15 +87,19 @@ A parcel with RUSLE data must have a complete factor set and may supply `sdr` to
 
 ## Pollutant concentrations
 
-### Runoff concentrations
+`load_generation.pollutant_concentrations` is the single concentration input for both PLET pathways. Each row has a required `pathway` value of `surface` or `subsurface`.
 
-`load_generation.pollutant_concentrations` is required when TN or TP is modeled.
+Surface concentration rows are used with PLET runoff volume. They are required for TN and TP, and TSS surface concentration is also required when RUSLE is unavailable for a modeled parcel.
 
-TSS concentration is also needed when RUSLE is not available for a parcel and TSS is modeled. `pid="*"` defaults and parcel-specific overrides are supported.
+Subsurface concentration rows are used with PLET infiltration volume and are required for every modeled non-TSS pollutant. `pid="*"` defaults and parcel-specific overrides are supported independently for each pollutant/pathway combination.
 
-### Groundwater concentrations
+Example:
 
-`load_generation.groundwater_concentrations` is required for each modeled non-TSS pollutant. These values are used with PLET infiltration volume to calculate the `subsurface` pathway. `pid="*"` defaults and parcel-specific overrides are supported.
+    pid,pollutant,pathway,value,units
+    *,TN,surface,2.4,mg/L
+    *,TN,subsurface,1.1,mg/L
+    *,TP,surface,0.35,mg/L
+    *,TP,subsurface,0.08,mg/L
 
 ## BMP efficiency expectations
 
@@ -121,7 +124,7 @@ This prevents an incorrectly labeled row from silently changing infiltration-der
 
 `watershed_area_mi2` has been removed from `rusle_inputs` and is an error if supplied, along with its `watershed_area_sqmi` and `watershed_area_sq_mi` spellings. No delivery ratio was ever derived from it; parcels that relied on it were silently computed at a delivery ratio of 1.0. Supply `sdr` explicitly instead.
 
-Legacy `groundwater_loads` and `treat_groundwater_with_bmps` keys do not determine production pathway generation. The current production calculation always estimates subsurface load from groundwater concentration and sampled infiltration. Whether a BMP reduces that load is determined by the BMP's `subsurface` efficiency.
+Legacy `groundwater_loads` and `treat_groundwater_with_bmps` keys do not determine production pathway generation. The current production calculation always estimates subsurface load from the configured `subsurface` pollutant concentration and sampled infiltration. Whether a BMP reduces that load is determined by the BMP's `subsurface` efficiency.
 
 Statistical pathway-fraction settings are not used to generate baseline PLET/RUSLE loads.
 
@@ -140,7 +143,6 @@ For a PLET/RUSLE project:
         plet_hydrology_lookup.csv
         rusle_inputs.csv
         pollutant_concentrations.csv
-        groundwater_concentrations.csv
         bmp_efficiency.csv
         bmp_cost.csv
         ...spatial and routing inputs...

@@ -93,7 +93,7 @@ Required long-form PLET parcel parameter table. It supplies climate variables an
 
 Required long-form land-cover/HSG hydrology input table. It contains exactly one `cn` and one `infiltration_fraction` row for every supported land-cover × HSG pairing.
 
-Both parameters may be supplied as fixed values or distributions. This file replaces the old source-code data file `src/data/plet_hydrology_lookup.csv`.
+Both parameters may be supplied as fixed values or distributions. The table is a required user input: there is no built-in source-code fallback, so the values used in a run are always those supplied through the active configuration.
 
 ### `load_generation.rusle_inputs`
 
@@ -101,11 +101,7 @@ Optional long-form RUSLE parameter table. Numeric rows use the common distributi
 
 ### `load_generation.pollutant_concentrations`
 
-Runoff concentration values and distributions. Required when TN or TP is modeled. TSS concentration is also needed when RUSLE is not available for a parcel and TSS is modeled. `pid="*"` defaults and parcel-specific overrides are supported.
-
-### `load_generation.groundwater_concentrations`
-
-Required for each modeled non-TSS pollutant. Used with PLET infiltration volume to calculate the `subsurface` pathway. `pid="*"` defaults and parcel-specific overrides are supported.
+Unified surface/subsurface concentration values and distributions. Each row includes a `pathway` column with `surface` or `subsurface`. Surface rows are used with PLET runoff volume; subsurface rows are used with PLET infiltration volume. Required pathway/pollutant combinations depend on the pollutants being modeled and whether RUSLE supplies sediment. `pid="*"` defaults and parcel-specific overrides are supported independently by pathway.
 
 ## Recommended PLET input layout
 
@@ -116,7 +112,6 @@ Required for each modeled non-TSS pollutant. Used with PLET infiltration volume 
         plet_hydrology_lookup.csv
         rusle_inputs.csv
         pollutant_concentrations.csv
-        groundwater_concentrations.csv
         bmp_efficiency.csv
         bmp_cost.csv
         ...spatial and routing inputs...

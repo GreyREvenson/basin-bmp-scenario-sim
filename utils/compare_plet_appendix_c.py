@@ -25,7 +25,7 @@ See the canonical implementation and tests in the snapshot.
 
 Usage
 -----
-python compare_plet_appendix_c_independent.py --base-config examples/east_fork/inputs/plet/east_fork_plet.yaml
+python compare_plet_appendix_c_independent.py --base-config examples/east_fork/inputs/config/east_fork_plet.yaml
 """
 
 from __future__ import annotations

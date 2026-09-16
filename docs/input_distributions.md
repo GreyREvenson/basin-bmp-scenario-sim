@@ -10,8 +10,7 @@ Numeric model inputs use one common row-level convention. The convention is used
 - PLET numeric parameters
 - the PLET land-cover/HSG Curve Number and infiltration table
 - RUSLE parameters
-- runoff concentrations
-- groundwater concentrations
+- PLET surface and subsurface pollutant concentrations
 - BMP efficiencies
 - BMP costs
 

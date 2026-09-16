@@ -18,8 +18,6 @@ map through ``POLLUTANT_ALIAS_MAP``. Output prefixes such as ``treated_`` and
 ``total_cost_usd`` capture BMP costing.
 """
 
-from pathlib import Path
-
 # Unit conversions
 FT_TO_M = 0.3048
 M2_PER_HA = 10_000.0
@@ -76,10 +74,6 @@ LOAD_TREAT_GROUNDWATER_WITH_BMPS = "treat_groundwater_with_bmps"
 PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
 PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
 PLET_HSG_VALUES = ("A", "B", "C", "D")
-PLET_HYDROLOGY_LOOKUP_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "examples" / "east_fork" / "inputs" / "plet" / "plet_hydrology_lookup.csv"
-)
 PLET_DERIVED_PARAMETERS = ("cn", "infiltration_fraction")
 PLET_REQUIRED_INPUTS = (
     "annual_precip_in",

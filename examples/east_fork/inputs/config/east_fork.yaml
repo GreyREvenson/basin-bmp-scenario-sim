@@ -1,25 +1,25 @@
 # Example East Fork (OH) watershed configuration (synthetic data)
 verbose: True
-outputs: ./examples/east_fork/outputs/default/run_1
+outputs: ../../outputs/default/run_1
 random_seed: 42
 
 # Required geospatial inputs
-domain: ./examples/east_fork/inputs/domain/domain.gpkg
-parcels: ./examples/east_fork/inputs/parcels/parcels.gpkg
-outlet_loc: ./examples/east_fork/inputs/outlets/outlet_loc.gpkg
+domain: ../domain/domain.gpkg
+parcels: ../parcels/parcels.gpkg
+outlet_loc: ../outlets/outlet_loc.gpkg
 # Drainage and selection
-parcel_out: ./examples/east_fork/inputs/parcels/parcel_out.csv
-parcel_up: ./examples/east_fork/inputs/parcels/parcel_up.csv
-parcel_p: ./examples/east_fork/inputs/parcels/parcel_p.csv
+parcel_out: ../parcels/parcel_out.csv
+parcel_up: ../parcels/parcel_up.csv
+parcel_p: ../parcels/parcel_p.csv
 
 pollutants: ["TN", "TP", "TSS"]
 cps: [340, 329, 590, 412, 656]
 # Optional reusable distribution catalog
-input_distributions: ./examples/east_fork/inputs/misc/input_distributions.csv
+input_distributions: ../misc/input_distributions.csv
 
-pollutant_load_rate: ./examples/east_fork/inputs/parcels/pollutant_load_rates.csv
-bmp_efficiency: ./examples/east_fork/inputs/bmps/bmp_efficiency.csv
-bmp_cost: ./examples/east_fork/inputs/bmps/bmp_cost.csv
+pollutant_load_rate: ../parcels/pollutant_load_rates.csv
+bmp_efficiency: ../bmps/bmp_efficiency.csv
+bmp_cost: ../bmps/bmp_cost.csv
 
 # Explicitly document the default load-generation mode.
 load_generation:
@@ -31,9 +31,9 @@ pollutant_load_rate_pathway_fractions:
   shallow subsurface: 0.40
   deep subsurface: 0.30
 # Optional delivery ratios and targets/means
-# delivery_ratios: ./examples/east_fork/inputs/outlets/delivery_ratios.csv
-outlet_target: ./examples/east_fork/inputs/outlets/outlet_target.csv
-outlet_mean: ./examples/east_fork/inputs/outlets/outlet_mean.csv
+# delivery_ratios: ../outlets/delivery_ratios.csv
+outlet_target: ../outlets/outlet_target.csv
+outlet_mean: ../outlets/outlet_mean.csv
 
 n_scenarios: 1
 bmp_limit_n: 200

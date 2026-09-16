@@ -106,8 +106,7 @@ PLET/RUSLE mode is enabled explicitly and requires a hydrology table:
       plet_inputs: ./inputs/plet/plet_inputs.csv
       hydrology_lookup: ./inputs/plet/plet_hydrology_lookup.csv
       rusle_inputs: ./inputs/plet/rusle_inputs.csv
-      pollutant_concentrations: ./inputs/plet/pollutant_concentrations.csv
-      groundwater_concentrations: ./inputs/plet/groundwater_concentrations.csv
+      pollutant_concentrations: ./inputs/plet/pollutant_concentrations.csv  # rows use pathway=surface/subsurface
 
 See the docs below for complete examples and mode-specific requirements.
 

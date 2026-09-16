@@ -196,8 +196,8 @@ def test_main_applies_cli_overrides_creates_outputs_and_runs_pipeline(tmp_path, 
     assert calls["normalize_input"] == {"raw": "cfg"}
 
     validated_cfg = calls["validated_cfg"]
-    assert validated_cfg[CFG_OUTPUTS] == str(tmp_path / "from_cfg")
-    assert validated_cfg[CFG_RANDOM_SEED] == 111
+    assert validated_cfg[CFG_OUTPUTS] == str(override_outputs)
+    assert validated_cfg[CFG_RANDOM_SEED] == 999
 
     logger_call = calls["make_logger"]
     assert logger_call["outputs_dir"] == override_outputs

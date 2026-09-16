@@ -710,9 +710,11 @@ def validate_plet_runtime_inputs(
         rusle_inputs : Optional[pd.DataFrame]
             RUSLE parameter input table, if configured.
         pollutant_concentrations : Optional[pd.DataFrame]
-            Pollutant concentration input table, if configured.
+            Runtime surface-pathway concentration rows split from the unified
+            pollutant concentration input table.
         groundwater_concentrations : Optional[pd.DataFrame]
-            Groundwater pollutant concentrations or concentration table, if configured.
+            Runtime subsurface-pathway concentration rows split from the unified
+            pollutant concentration input table.
         parcel_ids : Sequence[str]
             Parcel identifiers in model order.
         pollutants : Sequence[str]
@@ -796,10 +798,10 @@ def validate_plet_runtime_inputs(
         for pollutant in pollutants:
             pol = str(pollutant).upper()
             if pol in {"TN", "TP"} and not has_concentration(pollutant_concentrations, pid, pol):
-                raise ValueError(f"Runoff concentration for pid={pid}, pollutant={pol} is required")
+                raise ValueError(f"Surface concentration for pid={pid}, pollutant={pol} is required")
             if pol != "TSS" and not has_concentration(groundwater_concentrations, pid, pol):
                 raise ValueError(
-                    f"Groundwater concentration for pid={pid}, pollutant={pol} is required in plet_rusle mode"
+                    f"Subsurface concentration for pid={pid}, pollutant={pol} is required in plet_rusle mode"
                 )
             if pol == "TSS" and not rusle_effective and not has_concentration(pollutant_concentrations, pid, pol):
                 raise ValueError(f"TSS for pid={pid} requires complete RUSLE inputs or a TSS concentration")

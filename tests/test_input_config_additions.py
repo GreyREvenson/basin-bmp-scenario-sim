@@ -240,3 +240,64 @@ def test_load_and_validate_all_accepts_mixed_case_plet_mode_and_builds_maps(monk
 
     assert parcel_out_map["P1"] == ["O1", "O2"]
     assert parcel_out_map["P2"] == ["O2", "O3"]
+
+def test_load_pollutant_concentrations_requires_and_preserves_plet_pathway(tmp_path) -> None:
+    logger = DummyLogger()
+    path = tmp_path / "pollutant_concentrations.csv"
+    pd.DataFrame(
+        [
+            {"pid": "*", "pollutant": "tn", "pathway": "Surface", "value": 2.0, "units": "mg/L"},
+            {"pid": "*", "pollutant": "TN", "pathway": "subsurface", "value": 3.0, "units": "mg/L"},
+            {"pid": "*", "pollutant": "TP", "pathway": "surface", "value": 0.2, "units": "mg/L"},
+            {"pid": "*", "pollutant": "TP", "pathway": "subsurface", "value": 0.3, "units": "mg/L"},
+        ]
+    ).to_csv(path, index=False)
+
+    loaded = input_config._load_pollutant_concentrations(
+        path, ["TN", "TP"], logger, None
+    )
+
+    assert loaded is not None
+    assert loaded[["pollutant", "pathway"]].to_dict("records") == [
+        {"pollutant": "TN", "pathway": "surface"},
+        {"pollutant": "TN", "pathway": "subsurface"},
+        {"pollutant": "TP", "pathway": "surface"},
+        {"pollutant": "TP", "pathway": "subsurface"},
+    ]
+
+    surface, subsurface = input_config._split_plet_concentrations(loaded)
+    assert surface is not None and subsurface is not None
+    assert set(surface["pathway"]) == {"surface"}
+    assert set(subsurface["pathway"]) == {"subsurface"}
+    assert surface.set_index("pollutant").loc["TN", "value"] == pytest.approx(2.0)
+    assert subsurface.set_index("pollutant").loc["TN", "value"] == pytest.approx(3.0)
+
+
+def test_load_pollutant_concentrations_rejects_missing_pathway_column(tmp_path) -> None:
+    logger = DummyLogger()
+    path = tmp_path / "pollutant_concentrations.csv"
+    pd.DataFrame(
+        [{"pid": "*", "pollutant": "TN", "value": 2.0, "units": "mg/L"}]
+    ).to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="pathway"):
+        input_config._load_pollutant_concentrations(path, ["TN"], logger, None)
+
+
+def test_load_pollutant_concentrations_rejects_non_plet_pathway(tmp_path) -> None:
+    logger = DummyLogger()
+    path = tmp_path / "pollutant_concentrations.csv"
+    pd.DataFrame(
+        [
+            {
+                "pid": "*",
+                "pollutant": "TN",
+                "pathway": "groundwater",
+                "value": 3.0,
+                "units": "mg/L",
+            }
+        ]
+    ).to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="surface.*subsurface|unexpected"):
+        input_config._load_pollutant_concentrations(path, ["TN"], logger, None)

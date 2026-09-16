@@ -45,6 +45,26 @@ Common optional settings include:
 
 Pollutant aliases such as `nitrogen`, `phosphorus`, and `sediment` are normalized to canonical pollutant labels where supported.
 
+## Path resolution
+
+Relative filesystem paths in a YAML configuration are resolved relative to the
+YAML file itself, not relative to the process working directory. This applies
+to common input paths, PLET/RUSLE input paths, optional input tables, and the
+configured output directory. Absolute paths are preserved.
+
+For example, if a configuration is stored at `inputs/config/model.yaml`, it can
+refer to a sibling parcel directory as:
+
+    parcels: ../parcels/parcels.gpkg
+
+The same configuration can then be launched from another working directory
+without changing the path. If an input file is renamed or moved, update its YAML
+entry; source code and tests should not need to know the physical filename.
+
+The CLI and programmatic `run_from_config(...)` entry point resolve these paths
+once in the parent process before inputs are loaded and before parallel scenario
+workers are launched.
+
 ## Standard numeric input schema
 
 Numeric input tables use a common fixed-value and distribution convention. New files should use canonical columns:
@@ -155,7 +175,6 @@ A typical configuration is:
       hydrology_lookup: ./inputs/plet/plet_hydrology_lookup.csv
       rusle_inputs: ./inputs/plet/rusle_inputs.csv
       pollutant_concentrations: ./inputs/plet/pollutant_concentrations.csv
-      groundwater_concentrations: ./inputs/plet/groundwater_concentrations.csv
 
     n_scenarios: 1000
     bmp_limit_n: 200
@@ -170,13 +189,15 @@ In `plet_rusle` mode:
 - `hydrology_lookup` is required
 - every supported land-cover × HSG pairing in `hydrology_lookup` must define both `cn` and `infiltration_fraction` as either a fixed value or a valid distribution
 - parcel `plet_inputs` must supply fixed `land_cover` and `hsg` classifications and may not supply `cn` or `infiltration_fraction` directly
-- `pollutant_concentrations` is required when TN or TP is modeled
-- `groundwater_concentrations` is required for every modeled non-TSS pollutant
+- `pollutant_concentrations` is a single concentration table with a required `pathway` column
+- PLET/RUSLE concentration pathways must be `surface` or `subsurface`
+- `surface` concentrations are required for TN and TP; they are also required for TSS when complete RUSLE inputs are unavailable
+- `subsurface` concentrations are required for every modeled non-TSS pollutant
 - `rusle_inputs` is optional, but a parcel that supplies RUSLE inputs must supply a complete RUSLE factor set and may supply `sdr` to override the default delivery ratio of 1.0
 - `pathway_mode` and `watershed_area_mi2` have been removed and are an error if supplied
 - statistical pathway-fraction settings do not control PLET/RUSLE pathways
 
-Legacy `groundwater_loads` and `treat_groundwater_with_bmps` settings do not control production PLET/RUSLE pathway generation. The production calculation always estimates the subsurface load from groundwater concentration and the sampled infiltration fraction. BMP treatment is controlled by the `subsurface` BMP efficiency.
+Legacy `groundwater_loads` and `treat_groundwater_with_bmps` settings do not control production PLET/RUSLE pathway generation. The production calculation always estimates the subsurface load from the configured `subsurface` pollutant concentration and the sampled infiltration fraction. BMP treatment is controlled by the `subsurface` BMP efficiency.
 
 ## Scenario stopping conditions
 

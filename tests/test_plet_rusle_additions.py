@@ -61,8 +61,10 @@ def test_plet_pathway_names_are_surface_and_subsurface_only() -> None:
         ("userdefined", "user_defined"),
     ],
 )
-def test_plet_hydrology_from_classifications_normalizes_land_cover_aliases(land_cover, expected) -> None:
-    params = plet_hydrology_from_classifications(land_cover, "b")
+def test_plet_hydrology_from_classifications_normalizes_land_cover_aliases(land_cover, expected, tmp_path) -> None:
+    lookup_path = tmp_path / "hydrology.csv"
+    hydrology_rows().to_csv(lookup_path, index=False)
+    params = plet_hydrology_from_classifications(land_cover, "b", lookup_path=lookup_path)
     assert params["land_cover"] == expected
     assert params["hsg"] == "B"
     assert "cn" in params

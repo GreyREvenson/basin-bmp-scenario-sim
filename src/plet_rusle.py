@@ -38,13 +38,6 @@ PLET_PATHWAY_NAMES = ("surface", "subsurface")
 PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
 PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
 PLET_HSG_VALUES = ("A", "B", "C", "D")
-# Default example path retained only for the public deterministic helper.
-# Production plet_rusle runs require load_generation.hydrology_lookup explicitly.
-PLET_HYDROLOGY_LOOKUP_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "examples" / "east_fork" / "inputs" / "plet" / "plet_hydrology_lookup.csv"
-)
-
 _PLET_DERIVED_PARAMETERS = ("cn", "infiltration_fraction")
 _PLET_LAND_COVER_ALIASES: Dict[str, str] = {
     "urban": "urban",
@@ -281,14 +274,14 @@ def plet_hydrology_from_classifications(
     land_cover: Any,
     hsg: Any,
     *,
-    lookup_path: Optional[Path] = None,
+    lookup_path: Path,
 ) -> Dict[str, Any]:
     """Resolve fixed hydrology values from a lookup table.
 
-        This helper remains for compatibility and deterministic validation. The
-        actual PLET/RUSLE scenario path samples the required hydrology input table,
-        allowing each CN and infiltration fraction to be a fixed value or a
-        distribution.
+        This deterministic helper requires an explicit user-supplied hydrology
+        lookup path. The actual PLET/RUSLE scenario path samples the validated
+        hydrology input table loaded from configuration, allowing each CN and
+        infiltration fraction to be a fixed value or a distribution.
 
         Parameters
         ----------
@@ -296,8 +289,8 @@ def plet_hydrology_from_classifications(
             PLET land-cover classification.
         hsg : Any
             Hydrologic soil group classification.
-        lookup_path : Optional[Path]
-            Optional path to the PLET hydrology lookup table.
+        lookup_path : Path
+            Path to the user-supplied PLET hydrology lookup table.
 
         Returns
         -------
@@ -877,6 +870,8 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
     # Scenario workers provide the full hydrologic parcel universe via
     # ``parcel_ids``.  Fall back to ``parcel_selection_ids`` only for legacy
     # direct callers/tests that construct a minimal context without parcel_ids.
+    # TODO: remove legacy fallback to parcel_selection_ids. double-check that it
+    # will not break existing tests or direct calls.
     parcel_ids = [
         str(pid)
         for pid in getattr(ctx, "parcel_ids", getattr(ctx, "parcel_selection_ids", []))
@@ -918,6 +913,8 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
         # Compatibility field retained for callers/tests that inspect the old
         # protected-groundwater array. Actual PLET subsurface load is now in
         # pathway_load_rates[:, :, 1], so this stays zero.
+        # TODO: remove untreated_groundwater_load_rates but confirm that it
+        # will not break existing functionality
         untreated_groundwater_load_rates[i, :] = 0.0
         load_rates[i, :] = np.sum(pathway_load_rates[i, :, :], axis=1)
 

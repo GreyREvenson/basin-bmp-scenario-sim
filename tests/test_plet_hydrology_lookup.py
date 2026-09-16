@@ -6,10 +6,7 @@ import pandas as pd
 import pytest
 
 from src.input_config import _load_plet_hydrology_lookup, _load_plet_parameter_table
-from src.plet_rusle import (
-    PLET_HYDROLOGY_LOOKUP_PATH,
-    plet_hydrology_from_classifications,
-)
+from src.plet_rusle import plet_hydrology_from_classifications
 from src.input_validation import validate_plet_input_table
 
 PLET_REFERENCE_VALUES = {
@@ -36,27 +33,59 @@ PLET_REFERENCE_VALUES = {
 }
 
 
+def _write_reference_lookup(path) -> None:
+    rows = []
+    for (land_cover, hsg), (cn, infiltration_fraction) in PLET_REFERENCE_VALUES.items():
+        rows.append({"land_cover": land_cover, "hsg": hsg, "parameter": "cn", "value": cn})
+        rows.append(
+            {
+                "land_cover": land_cover,
+                "hsg": hsg,
+                "parameter": "infiltration_fraction",
+                "value": infiltration_fraction,
+            }
+        )
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
 @pytest.mark.parametrize(("classification", "expected"), PLET_REFERENCE_VALUES.items())
-def test_lookup_matches_plet_v2_reference_tables(
-    classification: tuple[str, str], expected: tuple[float, float]
+def test_lookup_matches_supplied_reference_values(
+    classification: tuple[str, str], expected: tuple[float, float], tmp_path
 ) -> None:
+    lookup_path = tmp_path / "hydrology.csv"
+    _write_reference_lookup(lookup_path)
     land_cover, hsg = classification
-    resolved = plet_hydrology_from_classifications(land_cover, hsg)
+    resolved = plet_hydrology_from_classifications(land_cover, hsg, lookup_path=lookup_path)
     assert resolved["cn"] == pytest.approx(expected[0])
     assert resolved["infiltration_fraction"] == pytest.approx(expected[1])
 
 
-def test_example_lookup_contains_exactly_the_plet_reference_rows() -> None:
-    table = pd.read_csv(PLET_HYDROLOGY_LOOKUP_PATH)
-    values = {}
-    for row in table.itertuples(index=False):
-        values.setdefault((str(row.land_cover), str(row.hsg)), {})[str(row.parameter)] = float(row.value)
-    observed = {
-        key: (params["cn"], params["infiltration_fraction"])
-        for key, params in values.items()
-    }
-    assert observed == PLET_REFERENCE_VALUES
 
+def test_hydrology_helper_requires_explicit_user_lookup() -> None:
+    with pytest.raises(TypeError):
+        plet_hydrology_from_classifications("cropland", "B")
+
+
+def test_hydrology_helper_uses_user_supplied_values(tmp_path) -> None:
+    lookup_path = tmp_path / "custom_hydrology.csv"
+    pd.DataFrame(
+        [
+            {"land_cover": "cropland", "hsg": "B", "parameter": "cn", "value": 74.5},
+            {
+                "land_cover": "cropland",
+                "hsg": "B",
+                "parameter": "infiltration_fraction",
+                "value": 0.41,
+            },
+        ]
+    ).to_csv(lookup_path, index=False)
+
+    resolved = plet_hydrology_from_classifications(
+        "cropland", "B", lookup_path=lookup_path
+    )
+
+    assert resolved["cn"] == pytest.approx(74.5)
+    assert resolved["infiltration_fraction"] == pytest.approx(0.41)
 
 def test_plet_table_requires_land_cover_and_hsg_for_each_parcel() -> None:
     table = pd.DataFrame({"pid": ["*", "*"], "parameter": ["annual_precip_in", "land_cover"], "value": [42.0, "cropland"]})
@@ -87,13 +116,14 @@ def test_plet_parameter_loader_accepts_string_classifications(tmp_path) -> None:
 
 
 def test_hydrology_lookup_requires_both_parameters_for_every_pair(tmp_path) -> None:
-    table = pd.read_csv(PLET_HYDROLOGY_LOOKUP_PATH).iloc[:-1]
     path = tmp_path / "hydrology.csv"
+    _write_reference_lookup(path)
+    table = pd.read_csv(path).iloc[:-1]
     table.to_csv(path, index=False)
     with pytest.raises(ValueError, match="must define cn and infiltration_fraction"):
         _load_plet_hydrology_lookup(path, logging.getLogger("hydrology"))
 
 
-def test_feedlot_is_rejected_because_plet_requires_percent_paved() -> None:
+def test_feedlot_is_rejected_because_plet_requires_percent_paved(tmp_path) -> None:
     with pytest.raises(ValueError, match="Unsupported PLET land_cover"):
-        plet_hydrology_from_classifications("feedlot", "B")
+        plet_hydrology_from_classifications("feedlot", "B", lookup_path=tmp_path / "unused.csv")

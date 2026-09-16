@@ -18,6 +18,7 @@ import pandas as pd
 
 from .constants import (
     CFG_BMP_COST,
+    CFG_BMP_SEL,
     CFG_BMP_EFFICIENCY,
     CFG_BMP_LIMIT_N,
     CFG_BMP_LIMIT_USD,
@@ -516,14 +517,14 @@ def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
 
 
 def _load_plet_hydrology_records(
-    lookup_path: Optional[Union[str, Path]],
+    lookup_path: Union[str, Path],
 ) -> Dict[Tuple[str, str], Tuple[float, float]]:
     """Read and validate fixed PLET CN/infiltration records for deterministic helpers.
 
     Parameters
     ----------
-    lookup_path : Optional[Union[str, Path]]
-        Optional path to the PLET hydrology lookup table.
+    lookup_path : Union[str, Path]
+        Path to the user-supplied PLET hydrology lookup table.
 
     Returns
     -------
@@ -539,13 +540,12 @@ def _load_plet_hydrology_records(
         contains duplicate rows, or contains stochastic definitions.
     """
     from .plet_rusle import (
-        PLET_HYDROLOGY_LOOKUP_PATH,
         _PLET_DERIVED_PARAMETERS,
         canonical_parameter_name,
         normalize_plet_hsg,
         normalize_plet_land_cover,
     )
-    path = PLET_HYDROLOGY_LOOKUP_PATH if lookup_path is None else Path(lookup_path)
+    path = Path(lookup_path)
     if not path.exists():
         raise FileNotFoundError(f"PLET hydrology lookup table not found: {path}")
     table = read_csv_table(path)
@@ -715,6 +715,95 @@ def apply_config_defaults(cfg: Dict[str, Any]) -> None:
     _set_case_insensitive_default(cfg, CFG_BMP_FAIL_REDUCTION, DEFAULT_BMP_FAIL_REDUCTION)
     _set_case_insensitive_default(cfg, CFG_PARALLEL, {"n_jobs": 1})
     _set_case_insensitive_default(cfg, CFG_LOAD_GENERATION, {})
+
+
+_CONFIG_PATH_KEYS = (
+    CFG_DOMAIN,
+    CFG_PARCELS,
+    CFG_OUTLET_LOC,
+    CFG_PARCEL_OUT,
+    CFG_PARCEL_UP,
+    CFG_PARCEL_P,
+    CFG_POLLUTANT_LOAD_RATE,
+    CFG_BMP_EFFICIENCY,
+    CFG_BMP_COST,
+    CFG_BMP_SEL,
+    CFG_DELIVERY_RATIOS,
+    CFG_OUTLET_TARGET,
+    CFG_OUTLET_MEAN,
+    CFG_INPUT_DISTRIBUTIONS,
+    CFG_OUTPUTS,
+)
+
+_LOAD_GENERATION_PATH_KEYS = (
+    LOAD_PLET_INPUTS,
+    LOAD_HYDROLOGY_LOOKUP,
+    LOAD_RUSLE_INPUTS,
+    LOAD_CONCENTRATIONS,
+    LOAD_GROUNDWATER_CONCENTRATIONS,
+)
+
+
+def _resolve_config_path_value(value: Any, base_dir: Path) -> Any:
+    """Resolve one configured filesystem path relative to a config directory.
+
+    Scalar paths and sequences of paths are supported. Non-path values are
+    returned unchanged so this helper can be applied only to known path keys.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (str, Path)):
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = base_dir / path
+        return str(path.resolve())
+    if isinstance(value, list):
+        return [_resolve_config_path_value(item, base_dir) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_resolve_config_path_value(item, base_dir) for item in value)
+    return value
+
+
+def resolve_config_paths(cfg: Dict[str, Any], config_path: Union[str, Path]) -> Dict[str, Any]:
+    """Resolve configured file locations against the YAML file's directory.
+
+    This removes any dependency on the process working directory. Resolution
+    happens once in the parent process, before inputs are loaded and before
+    parallel scenario workers are launched. Absolute paths are preserved.
+
+    Parameters
+    ----------
+    cfg : dict[str, Any]
+        Normalized model configuration.
+    config_path : str or pathlib.Path
+        Path to the YAML file that supplied ``cfg``.
+
+    Returns
+    -------
+    dict[str, Any]
+        The same mapping object with known path-valued entries resolved to
+        absolute paths.
+    """
+    config_file = Path(config_path).expanduser().resolve()
+    base_dir = config_file.parent
+
+    for key in _CONFIG_PATH_KEYS:
+        value = ci_get(cfg, key)
+        if value is not None:
+            cfg[key] = _resolve_config_path_value(value, base_dir)
+
+    load_generation = ci_get(cfg, CFG_LOAD_GENERATION)
+    if isinstance(load_generation, dict):
+        normalized_load_generation = {str(key).lower(): value for key, value in load_generation.items()}
+        load_generation.clear()
+        load_generation.update(normalized_load_generation)
+        for key in _LOAD_GENERATION_PATH_KEYS:
+            if key in load_generation and load_generation[key] is not None:
+                load_generation[key] = _resolve_config_path_value(
+                    load_generation[key], base_dir
+                )
+
+    return cfg
 
 
 def normalize_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -953,7 +1042,13 @@ def _load_plet_hydrology_lookup(
 
 
 def _load_pollutant_concentrations(path: Any, pollutants: List[str], logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
-    """Load parcel pollutant concentration inputs.
+    """Load unified PLET pollutant concentration inputs.
+
+    Each row is identified by ``pid``, ``pollutant``, and ``pathway``.  PLET
+    mode recognizes exactly two concentration pathways: ``surface`` and
+    ``subsurface``.  The returned table retains the pathway column so it can be
+    split into the two existing runtime concentration tables without changing
+    downstream load-state behavior.
 
     Parameters
     ----------
@@ -969,51 +1064,70 @@ def _load_pollutant_concentrations(path: Any, pollutants: List[str], logger: Any
     Returns
     -------
     pandas.DataFrame or None
-        Filtered pollutant concentration table, or ``None`` when no path is
-        provided.
+        Filtered unified pollutant concentration table, or ``None`` when no
+        path is provided.
+
+    Raises
+    ------
+    ValueError
+        If ``pathway`` is missing or contains values other than ``surface`` or
+        ``subsurface``.
     """
     if path is None:
         return None
-    df = _merge_csvs(path, [COL_PID, COL_POLLUTANT], LOAD_CONCENTRATIONS, logger)
+    df = _merge_csvs(
+        path,
+        [COL_PID, COL_POLLUTANT, COL_PATHWAY],
+        LOAD_CONCENTRATIONS,
+        logger,
+    )
     df = _normalize_pollutant_column(df, COL_POLLUTANT, LOAD_CONCENTRATIONS, logger)
+    df = _normalize_pathway_column(df, LOAD_CONCENTRATIONS, logger)
     df[COL_PID] = df[COL_PID].astype(str)
     df = df[df[COL_POLLUTANT].isin(pollutants)].copy()
-    validate_unique_rows(df, [COL_PID, COL_POLLUTANT], LOAD_CONCENTRATIONS)
-    df = resolve_distribution_references(df, distribution_catalog, LOAD_CONCENTRATIONS)
-    validate_stats_rows(df, LOAD_CONCENTRATIONS)
-    return df
+
+    unexpected = sorted(set(df[COL_PATHWAY].astype(str)) - set(PLET_PATHWAY_VALUES))
+    if unexpected:
+        raise ValueError(
+            f"{LOAD_CONCENTRATIONS} recognizes only pathway labels 'surface' and "
+            f"'subsurface' in plet_rusle mode; unexpected={unexpected}"
+        )
+
+    validate_unique_rows(
+        df,
+        [COL_PID, COL_POLLUTANT, COL_PATHWAY],
+        LOAD_CONCENTRATIONS,
+    )
+
+    # The generic unit-inference layer interprets any pollutant row carrying a
+    # pathway as a pathway-specific load-rate row. Concentration rows now also
+    # carry pathway metadata, so resolve and validate their numeric definition
+    # without that metadata, then restore the pathway column unchanged.
+    pathways = df[COL_PATHWAY].reset_index(drop=True)
+    numeric_df = df.drop(columns=[COL_PATHWAY]).reset_index(drop=True)
+    numeric_df = resolve_distribution_references(
+        numeric_df, distribution_catalog, LOAD_CONCENTRATIONS
+    )
+    validate_stats_rows(numeric_df, LOAD_CONCENTRATIONS)
+    numeric_df.insert(2, COL_PATHWAY, pathways)
+    return numeric_df.reset_index(drop=True)
 
 
-def _load_groundwater_concentrations(path: Any, pollutants: List[str], logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
-    """Load optional parcel groundwater concentration inputs.
+def _split_plet_concentrations(
+    table: Optional[pd.DataFrame],
+) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+    """Split the unified concentration table into runtime pathway tables.
 
-    Parameters
-    ----------
-    path : Any
-        CSV file path or sequence of paths.
-    pollutants : list[str]
-        Pollutant names to retain.
-    logger : Any
-        Logger used for progress reporting.
-    distribution_catalog : Optional[pd.DataFrame]
-        Reusable distribution catalog used to resolve referenced statistics.
-
-    Returns
-    -------
-    pandas.DataFrame or None
-        Filtered groundwater concentration table, or ``None`` when no path is
-        provided.
+    The simulation historically carries surface and groundwater/subsurface
+    concentrations separately in its in-memory state.  Keeping that internal
+    representation avoids changing scenario-state and output behavior while
+    allowing users to maintain only one concentration input file.
     """
-    if path is None:
-        return None
-    df = _merge_csvs(path, [COL_PID, COL_POLLUTANT], LOAD_GROUNDWATER_CONCENTRATIONS, logger)
-    df = _normalize_pollutant_column(df, COL_POLLUTANT, LOAD_GROUNDWATER_CONCENTRATIONS, logger)
-    df[COL_PID] = df[COL_PID].astype(str)
-    df = df[df[COL_POLLUTANT].isin(pollutants)].copy()
-    validate_unique_rows(df, [COL_PID, COL_POLLUTANT], LOAD_GROUNDWATER_CONCENTRATIONS)
-    df = resolve_distribution_references(df, distribution_catalog, LOAD_GROUNDWATER_CONCENTRATIONS)
-    validate_stats_rows(df, LOAD_GROUNDWATER_CONCENTRATIONS)
-    return df
+    if table is None:
+        return None, None
+    surface = table[table[COL_PATHWAY] == "surface"].copy().reset_index(drop=True)
+    subsurface = table[table[COL_PATHWAY] == "subsurface"].copy().reset_index(drop=True)
+    return surface, subsurface
 
 
 def _load_pollutants(cfg: Dict[str, Any]) -> List[str]:
@@ -2326,13 +2440,18 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 load_generation.get(LOAD_RUSLE_INPUTS), LOAD_RUSLE_INPUTS, logger,
                 distribution_catalog,
             )
-            pollutant_concentrations = _load_pollutant_concentrations(
+            if LOAD_GROUNDWATER_CONCENTRATIONS in load_generation:
+                raise ValueError(
+                    "load_generation.groundwater_concentrations has been removed; "
+                    "put subsurface concentration rows in "
+                    "load_generation.pollutant_concentrations with pathway='subsurface'"
+                )
+            unified_concentrations = _load_pollutant_concentrations(
                 load_generation.get(LOAD_CONCENTRATIONS), pollutants, logger,
                 distribution_catalog,
             )
-            groundwater_concentrations = _load_groundwater_concentrations(
-                load_generation.get(LOAD_GROUNDWATER_CONCENTRATIONS), pollutants, logger,
-                distribution_catalog,
+            pollutant_concentrations, groundwater_concentrations = _split_plet_concentrations(
+                unified_concentrations
             )
             plet_inputs = _append_parameter_defaults(plet_inputs, pollutants)
             validate_plet_runtime_inputs(
@@ -2343,13 +2462,9 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 parcels[COL_PID].astype(str).tolist(),
                 pollutants,
             )
-            if any(p in {"TN", "TP"} for p in pollutants) and pollutant_concentrations is None:
+            if any(p in {"TN", "TP"} for p in pollutants) and unified_concentrations is None:
                 raise ValueError(
                     "load_generation.pollutant_concentrations is required for TN or TP in plet_rusle mode"
-                )
-            if any(p != "TSS" for p in pollutants) and groundwater_concentrations is None:
-                raise ValueError(
-                    "load_generation.groundwater_concentrations is required for non-TSS pollutants in plet_rusle mode"
                 )
             pollutant_load_rate = None
             pathways = list(PLET_PATHWAY_VALUES)
