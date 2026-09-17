@@ -6,8 +6,9 @@ import pandas as pd
 import pytest
 
 from src.bmp import _get_bmp_selection_probs
-from src.constants import COL_SELECTION_WEIGHT, DATA_CPS, DATA_PARCELS
-from src.input_config import _build_parcel_up_map, _load_parcel_selection
+from src.constants import DATA_CPS, DATA_PARCELS
+import src.input_config as input_config
+from src.input_config import _build_parcel_up_map
 from src.model import Model
 
 
@@ -26,24 +27,24 @@ class DummyLogger:
 
 def test_load_parcel_selection_rejects_empty_parcels() -> None:
     with pytest.raises(ValueError, match="No parcels available"):
-        _load_parcel_selection({}, pd.DataFrame(columns=["pid"]), DummyLogger())
+        input_config._load_parcel_selection({}, pd.DataFrame(columns=["pid"]), DummyLogger())
 
 
-def test_load_parcel_selection_normalizes_selection_weights() -> None:
-    parcels = pd.DataFrame(
-        {"pid": ["p1", "p2", "p3"], COL_SELECTION_WEIGHT: [1.0, 3.0, 1.0]}
-    )
-    loaded = _load_parcel_selection({}, parcels, DummyLogger())
+def test_load_parcel_selection_normalizes_selection_weights(monkeypatch) -> None:
+    parcels = pd.DataFrame({"pid": ["p1", "p2", "p3"]})
+    weights = pd.DataFrame({"pid": ["p1", "p2", "p3"], "value": [1.0, 3.0, 1.0]})
+    monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
+    loaded = input_config._load_parcel_selection({}, parcels, DummyLogger())
     probs = dict(zip(loaded["pid"].astype(str), loaded["probability"]))
     assert probs == pytest.approx({"p1": 0.2, "p2": 0.6, "p3": 0.2})
 
 
-def test_load_parcel_selection_rejects_negative_weight() -> None:
-    parcels = pd.DataFrame(
-        {"pid": ["p1", "p2"], COL_SELECTION_WEIGHT: [1.0, -1.0]}
-    )
+def test_load_parcel_selection_rejects_negative_weight(monkeypatch) -> None:
+    parcels = pd.DataFrame({"pid": ["p1", "p2"]})
+    weights = pd.DataFrame({"pid": ["p1", "p2"], "value": [1.0, -1.0]})
+    monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
     with pytest.raises(ValueError, match="finite and >= 0"):
-        _load_parcel_selection({}, parcels, DummyLogger())
+        input_config._load_parcel_selection({}, parcels, DummyLogger())
 
 def test_build_parcel_up_map_uses_normalized_edge_rows() -> None:
     upstream_rows = pd.DataFrame(

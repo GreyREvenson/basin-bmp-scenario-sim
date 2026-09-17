@@ -633,10 +633,10 @@ def _sample_plet_hydrology(
 ) -> Dict[str, Any]:
     """Sample CN and infiltration fraction for one parcel's PLET class pair.
 
-        Production ``plet_rusle`` runs require a user-supplied long-form hydrology
-        table stored in ``load_generation.hydrology_lookup``.  Each land-cover/HSG
-        pairing has one ``cn`` row and one ``infiltration_fraction`` row, and each
-        row may be a fixed value or a distribution.  Rows are sampled independently
+        Production ``plet_rusle`` runs assemble a validated hydrology table from
+        ``input_curve_number`` and ``input_infiltration_fraction`` in parcels.gpkg.
+        Each land-cover/HSG pairing has one row for each variable, and each row may
+        be a fixed value or a distribution. Rows are sampled independently
         for each parcel unless an explicit ``sample_group`` requests a shared draw.
 
         Parameters
@@ -667,7 +667,7 @@ def _sample_plet_hydrology(
     table = load_generation.get("_hydrology_lookup_table")
     if table is None or not isinstance(table, pd.DataFrame) or table.empty:
         raise ValueError(
-            "plet_rusle requires a validated load_generation.hydrology_lookup table"
+            "plet_rusle requires validated curve-number and infiltration-fraction input tables"
         )
 
     canonical_land_cover = normalize_plet_land_cover(land_cover)
@@ -684,7 +684,7 @@ def _sample_plet_hydrology(
         rows = subset[subset["parameter"].astype(str) == parameter]
         if len(rows) != 1:
             raise ValueError(
-                "hydrology_lookup must contain exactly one row for "
+                "PLET hydrology inputs must contain exactly one row for "
                 f"land_cover={canonical_land_cover}, hsg={canonical_hsg}, "
                 f"parameter={parameter}; found {len(rows)}"
             )
@@ -703,7 +703,7 @@ def _sample_plet_hydrology(
         )
         if not stats:
             raise ValueError(
-                f"hydrology_lookup has no value/distribution for "
+                f"PLET hydrology inputs have no value/distribution for "
                 f"{canonical_land_cover}/{canonical_hsg}/{parameter}"
             )
         variable = f"hydrology:{canonical_land_cover}:{canonical_hsg}:{parameter}"

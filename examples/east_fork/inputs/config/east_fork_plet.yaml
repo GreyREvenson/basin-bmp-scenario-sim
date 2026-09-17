@@ -16,12 +16,10 @@ input_distributions: ../misc/input_distributions.csv
 bmp_efficiency: ../bmps/bmp_efficiency_plet_static.csv
 bmp_cost: ../bmps/bmp_cost.csv
 
-# PLET/RUSLE parcel parameters and pollutant concentrations are read from
-# parcel_parameters and pollutant_concentrations inside parcels.gpkg.
-# The hydrology lookup remains a separate user-editable input.
+# Every parcel-side model variable is stored in its own input_* table
+# inside parcels.gpkg, including curve number and infiltration fraction.
 load_generation:
   mode: plet_rusle
-  hydrology_lookup: ../plet/plet_hydrology_lookup.csv
 
 n_scenarios: 1
 bmp_limit_n: 500

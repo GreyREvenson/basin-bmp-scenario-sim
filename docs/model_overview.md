@@ -61,7 +61,7 @@ If `e` is negative, the same equation represents an increase in load rather than
 
 ## Parcel-to-outlet evaluation
 
-`parcel_outlets` inside the consolidated parcel GeoPackage associates parcels with modeled outlets and may carry optional delivery-ratio columns. The optional `outlet_stats` table inside the outlet GeoPackage stores target and mean-load reference values used for decision-relevant trajectory metrics.
+`parcel_outlets` inside the consolidated parcel GeoPackage associates parcels with modeled outlets. Optional delivery-ratio variables are stored in dedicated parcel/outlet-keyed `input_*` tables. The optional `outlet_stats` table inside the outlet GeoPackage stores target and mean-load reference values used for decision-relevant trajectory metrics.
 
 The load-generation mode determines how baseline parcel loads are established. It does not change the overall parcel-selection, BMP-selection, routing, and outlet-evaluation framework.
 

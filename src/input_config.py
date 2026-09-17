@@ -46,7 +46,6 @@ from .constants import (
     LOAD_MODE_STATISTICAL,
     LOAD_MODE_PLET_RUSLE,
     LOAD_PLET_INPUTS,
-    LOAD_HYDROLOGY_LOOKUP,
     LOAD_RUSLE_INPUTS,
     LOAD_CONCENTRATIONS,
     LOAD_GROUNDWATER_CONCENTRATIONS,
@@ -59,7 +58,6 @@ from .constants import (
     COL_PID_UP,
     COL_POLLUTANT,
     COL_PROBABILITY,
-    COL_SELECTION_WEIGHT,
     COL_TARGET,
     COL_UNIT,
     COL_PATHWAY,
@@ -74,11 +72,16 @@ from .constants import (
     GPKG_PARCELS_LAYER,
     GPKG_PARCEL_UP_TABLE,
     GPKG_PARCEL_OUTLETS_TABLE,
-    GPKG_PARCEL_PARAMETERS_TABLE,
-    GPKG_POLLUTANT_LOAD_RATES_TABLE,
-    GPKG_POLLUTANT_CONCENTRATIONS_TABLE,
     GPKG_OUTLETS_LAYER,
     GPKG_OUTLET_STATS_TABLE,
+    PARCEL_PARAMETER_INPUT_TABLES,
+    GPKG_INPUT_SELECTION_WEIGHT,
+    GPKG_INPUT_CURVE_NUMBER,
+    GPKG_INPUT_INFILTRATION_FRACTION,
+    GPKG_INPUT_POLLUTANT_LOAD_RATE,
+    GPKG_INPUT_SURFACE_CONCENTRATION,
+    GPKG_INPUT_SUBSURFACE_CONCENTRATION,
+    GPKG_DELIVERY_RATIO_TABLES,
     RUSLE_PARAMETER_NAMES,
 )
 from .io_utils import read_csv_table, read_geodataframe, read_geopackage_table, read_parquet_table
@@ -109,6 +112,8 @@ from .input_validation import (
     validate_bmp_selection_table,
     validate_trajectory_table,
 )
+
+_PLET_HYDROLOGY_LABEL = "plet_hydrology_inputs"
 
 
 def _merge_csvs(
@@ -185,6 +190,116 @@ def _read_gpkg_input_table(
         frame = frame.drop(columns=["fid"])
     require_columns(frame, required_cols, f"{label} ({package}:{table_name})", logger)
     return frame.reset_index(drop=True)
+
+
+def _try_read_gpkg_input_table(
+    package_path: Union[str, Path],
+    table_name: str,
+    required_cols: Sequence[str],
+    label: str,
+    logger: Any,
+) -> Optional[pd.DataFrame]:
+    """Read an optional GeoPackage attribute table, returning ``None`` if absent."""
+    try:
+        return _read_gpkg_input_table(
+            package_path, table_name, required_cols, label, logger
+        )
+    except ValueError as exc:
+        if "requires table/layer" in str(exc):
+            return None
+        raise
+
+
+def _load_fixed_numeric_variable_table(
+    cfg: Dict[str, Any],
+    table_name: str,
+    key_cols: Sequence[str],
+    logger: Any,
+    *,
+    required: bool = False,
+    domain: Any = None,
+) -> Optional[pd.DataFrame]:
+    """Load a deterministic per-variable table using the standard input schema."""
+    package = ci_get(cfg, CFG_PARCELS)
+    reader = _read_gpkg_input_table if required else _try_read_gpkg_input_table
+    table = reader(package, table_name, list(key_cols), table_name, logger)
+    if table is None:
+        return None
+    if "value" not in table.columns:
+        raise ValueError(f"{table_name} requires a value column")
+    if DISTRIBUTION_ID in table.columns:
+        bad = table[DISTRIBUTION_ID].notna() & table[DISTRIBUTION_ID].astype(str).str.strip().ne("")
+        if bad.any():
+            raise ValueError(f"{table_name} is deterministic and does not allow distribution_id")
+    other_stats = [c for c in statistic_columns(table.columns) if str(c).lower() != "value"]
+    if other_stats and table[other_stats].notna().any(axis=1).any():
+        raise ValueError(f"{table_name} is deterministic and only allows fixed value")
+    table = table.copy()
+    table["value"] = pd.to_numeric(table["value"], errors="raise")
+    validate_unique_rows(table, list(key_cols), table_name)
+    if domain is not None:
+        validate_numeric_columns_in_domain(table, ["value"], domain, table_name)
+    return table.reset_index(drop=True)
+
+
+def _assemble_parcel_parameter_source(
+    cfg: Dict[str, Any],
+    logger: Any,
+) -> Optional[pd.DataFrame]:
+    """Assemble dedicated ``input_*`` parameter tables into the runtime long form."""
+    package = ci_get(cfg, CFG_PARCELS)
+    frames: List[pd.DataFrame] = []
+    for parameter, table_name in PARCEL_PARAMETER_INPUT_TABLES.items():
+        table = _try_read_gpkg_input_table(
+            package, table_name, [COL_PID], table_name, logger
+        )
+        if table is None:
+            continue
+        table = table.copy()
+        table.insert(1, "parameter", parameter)
+        frames.append(table)
+    if not frames:
+        return None
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _assemble_plet_hydrology_source(
+    cfg: Dict[str, Any],
+    logger: Any,
+) -> pd.DataFrame:
+    """Assemble CN and infiltration tables into the existing hydrology long form."""
+    package = ci_get(cfg, CFG_PARCELS)
+    specs = (
+        ("cn", GPKG_INPUT_CURVE_NUMBER),
+        ("infiltration_fraction", GPKG_INPUT_INFILTRATION_FRACTION),
+    )
+    frames: List[pd.DataFrame] = []
+    for parameter, table_name in specs:
+        table = _read_gpkg_input_table(
+            package, table_name, ["land_cover", "hsg"], table_name, logger
+        ).copy()
+        table.insert(2, "parameter", parameter)
+        frames.append(table)
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _assemble_plet_concentration_source(
+    cfg: Dict[str, Any],
+    logger: Any,
+) -> pd.DataFrame:
+    """Assemble dedicated surface/subsurface concentration variable tables."""
+    package = ci_get(cfg, CFG_PARCELS)
+    frames: List[pd.DataFrame] = []
+    for pathway, table_name in (
+        ("surface", GPKG_INPUT_SURFACE_CONCENTRATION),
+        ("subsurface", GPKG_INPUT_SUBSURFACE_CONCENTRATION),
+    ):
+        table = _read_gpkg_input_table(
+            package, table_name, [COL_PID, COL_POLLUTANT], table_name, logger
+        ).copy()
+        table.insert(2, COL_PATHWAY, pathway)
+        frames.append(table)
+    return pd.concat(frames, ignore_index=True, sort=False)
 
 
 def _load_table_source(
@@ -776,9 +891,7 @@ _CONFIG_PATH_KEYS = (
     CFG_OUTPUTS,
 )
 
-_LOAD_GENERATION_PATH_KEYS = (
-    LOAD_HYDROLOGY_LOOKUP,
-)
+_LOAD_GENERATION_PATH_KEYS: tuple[str, ...] = ()
 
 
 def _resolve_config_path_value(value: Any, base_dir: Path) -> Any:
@@ -967,7 +1080,8 @@ def _load_plet_hydrology_lookup(
     """
     if path is None:
         raise ValueError(
-            "load_generation.hydrology_lookup is required for mode='plet_rusle'"
+            "PLET hydrology requires input_curve_number and "
+            "input_infiltration_fraction in parcels.gpkg"
         )
     from .plet_rusle import (
         PLET_HSG_VALUES,
@@ -976,20 +1090,27 @@ def _load_plet_hydrology_lookup(
         normalize_plet_hsg,
         normalize_plet_land_cover,
     )
-    paths = [path] if isinstance(path, (str, Path)) else list(path)
-    frames: List[pd.DataFrame] = []
-    for item in paths:
-        logger.verbose(f"Reading {LOAD_HYDROLOGY_LOOKUP} from {item}")
-        frame = read_csv_table(item)
-        frame = normalize_columns(frame)
+    if isinstance(path, pd.DataFrame):
+        table = normalize_columns(path.copy())
         require_columns(
-            frame,
-            ["land_cover", "hsg", "parameter"],
-            f"{LOAD_HYDROLOGY_LOOKUP} ({item})",
-            logger,
+            table, ["land_cover", "hsg", "parameter"],
+            _PLET_HYDROLOGY_LABEL, logger
         )
-        frames.append(frame)
-    table = pd.concat(frames, ignore_index=True)
+    else:
+        paths = [path] if isinstance(path, (str, Path)) else list(path)
+        frames: List[pd.DataFrame] = []
+        for item in paths:
+            logger.verbose(f"Reading {_PLET_HYDROLOGY_LABEL} from {item}")
+            frame = read_csv_table(item)
+            frame = normalize_columns(frame)
+            require_columns(
+                frame,
+                ["land_cover", "hsg", "parameter"],
+                f"{_PLET_HYDROLOGY_LABEL} ({item})",
+                logger,
+            )
+            frames.append(frame)
+        table = pd.concat(frames, ignore_index=True)
     table["land_cover"] = table["land_cover"].map(normalize_plet_land_cover)
     table["hsg"] = table["hsg"].map(normalize_plet_hsg)
     table["parameter"] = table["parameter"].map(canonical_parameter_name)
@@ -998,16 +1119,16 @@ def _load_plet_hydrology_lookup(
     unexpected_parameters = sorted(set(table["parameter"]) - allowed_parameters)
     if unexpected_parameters:
         raise ValueError(
-            f"{LOAD_HYDROLOGY_LOOKUP} contains unsupported parameters: "
+            f"{_PLET_HYDROLOGY_LABEL} contains unsupported parameters: "
             f"{unexpected_parameters}; expected only cn and infiltration_fraction"
         )
 
     table = resolve_distribution_references(
-        table, distribution_catalog, LOAD_HYDROLOGY_LOOKUP
+        table, distribution_catalog, _PLET_HYDROLOGY_LABEL
     )
-    validate_stats_rows(table, LOAD_HYDROLOGY_LOOKUP)
+    validate_stats_rows(table, _PLET_HYDROLOGY_LABEL)
     validate_unique_rows(
-        table, ["land_cover", "hsg", "parameter"], LOAD_HYDROLOGY_LOOKUP
+        table, ["land_cover", "hsg", "parameter"], _PLET_HYDROLOGY_LABEL
     )
 
     expected = {
@@ -1023,14 +1144,14 @@ def _load_plet_hydrology_lookup(
     extra = sorted(supplied - expected)
     if missing or extra:
         raise ValueError(
-            f"{LOAD_HYDROLOGY_LOOKUP} must define cn and infiltration_fraction "
+            f"{_PLET_HYDROLOGY_LABEL} must define cn and infiltration_fraction "
             "for every supported land_cover x hsg pairing; "
             f"missing={missing}, unexpected={extra}"
         )
 
     validate_distribution_bounds(
         table,
-        LOAD_HYDROLOGY_LOOKUP,
+        _PLET_HYDROLOGY_LABEL,
         parameter_col="parameter",
         bounds={
             "cn": (1.0e-9, 100.0),
@@ -1277,30 +1398,57 @@ def _load_parcel_outlets(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
     )
 
 def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: Any) -> pd.DataFrame:
-    """Load selection weights from the ``parcels`` layer or use equal weights."""
-    del cfg, logger
+    """Load optional parcel selection weights from ``input_selection_weight``."""
     if parcels.empty:
         raise ValueError("No parcels available for selection")
-    if COL_SELECTION_WEIGHT not in parcels.columns:
+    table = _load_fixed_numeric_variable_table(
+        cfg, GPKG_INPUT_SELECTION_WEIGHT, [COL_PID], logger,
+        required=False, domain=NONNEGATIVE_DOMAIN,
+    )
+    parcel_ids = parcels[COL_PID].astype(str).tolist()
+    if table is None or table.empty:
         return pd.DataFrame({
-            COL_PID: parcels[COL_PID].astype(str).values,
+            COL_PID: parcel_ids,
             COL_PROBABILITY: np.full(len(parcels), 1.0 / len(parcels)),
         })
-    df = parcels[[COL_PID, COL_SELECTION_WEIGHT]].copy()
-    df[COL_PID] = df[COL_PID].astype(str)
-    weights = pd.to_numeric(df[COL_SELECTION_WEIGHT], errors="coerce")
-    invalid = (~np.isfinite(weights)) | (weights < 0.0)
-    if invalid.any():
-        preview = df.loc[invalid, [COL_PID, COL_SELECTION_WEIGHT]].head(5).to_dict(orient="records")
+    table = table.copy()
+    table[COL_PID] = table[COL_PID].astype(str).str.strip()
+    default_rows = table[table[COL_PID] == "*"]
+    if len(default_rows) > 1:
+        raise ValueError(f"{GPKG_INPUT_SELECTION_WEIGHT} may contain at most one pid='*' row")
+    default_value = None if default_rows.empty else float(default_rows.iloc[0]["value"])
+    exact = {
+        str(row[COL_PID]): float(row["value"])
+        for _, row in table[table[COL_PID] != "*"].iterrows()
+    }
+    unknown = sorted(set(exact) - set(parcel_ids))
+    if unknown:
         raise ValueError(
-            "parcels.selection_weight values must be finite and >= 0. "
-            f"Example rows: {preview}"
+            f"{GPKG_INPUT_SELECTION_WEIGHT} references parcel IDs not found after clipping: {unknown[:10]}"
         )
-    total = float(weights.sum())
+    weights = []
+    for pid in parcel_ids:
+        if pid in exact:
+            weights.append(exact[pid])
+        elif default_value is not None:
+            weights.append(default_value)
+        else:
+            raise ValueError(
+                f"{GPKG_INPUT_SELECTION_WEIGHT} has no value for pid={pid}; "
+                "supply the parcel explicitly or add pid='*'"
+            )
+    weights_arr = np.asarray(weights, dtype=float)
+    if ((~np.isfinite(weights_arr)) | (weights_arr < 0.0)).any():
+        raise ValueError(
+            f"{GPKG_INPUT_SELECTION_WEIGHT} values must be finite and >= 0"
+        )
+    total = float(weights_arr.sum())
     if total <= 0.0:
-        raise ValueError("parcels.selection_weight values sum to zero or negative")
-    df[COL_PROBABILITY] = weights.astype(float) / total
-    return df[[COL_PID, COL_PROBABILITY]].reset_index(drop=True)
+        raise ValueError(f"{GPKG_INPUT_SELECTION_WEIGHT} values sum to zero or negative")
+    return pd.DataFrame({
+        COL_PID: parcel_ids,
+        COL_PROBABILITY: weights_arr / total,
+    })
 
 def _load_outlet_loc(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
     """Load the spatial ``outlets`` layer from the consolidated outlet GeoPackage."""
@@ -1354,27 +1502,50 @@ def _load_optional_outlet_stats(
     return df[list(required_cols)].reset_index(drop=True)
 
 def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataFrame]:
-    """Load optional delivery ratios from the ``parcel_outlets`` table."""
-    required_ratio_cols = [
-        COL_SDR_F_TO_S, COL_SDR_S_TO_O, COL_NDR_F_TO_S, COL_NDR_S_TO_O
-    ]
-    table = _read_gpkg_input_table(
-        ci_get(cfg, CFG_PARCELS),
-        GPKG_PARCEL_OUTLETS_TABLE,
-        [COL_PID, COL_OID],
-        CFG_DELIVERY_RATIOS,
-        logger,
-    )
-    present = [column for column in required_ratio_cols if column in table.columns]
-    if not present:
-        logger.verbose("parcel_outlets has no delivery-ratio columns; using neutral defaults")
-        return None
-    missing = [column for column in required_ratio_cols if column not in table.columns]
-    if missing:
-        raise ValueError(
-            f"parcel_outlets supplies some delivery-ratio columns but is missing {missing}"
+    """Load the four parcel-to-outlet delivery variables from dedicated tables."""
+    base = _load_parcel_outlets(cfg, logger)[[COL_PID, COL_OID]].copy()
+    base[COL_PID] = base[COL_PID].astype(str).str.strip()
+    base[COL_OID] = base[COL_OID].astype(str).str.strip()
+    result = base.copy()
+    any_supplied = False
+    valid_pairs = set(zip(base[COL_PID], base[COL_OID]))
+
+    for column, table_name in GPKG_DELIVERY_RATIO_TABLES.items():
+        table = _load_fixed_numeric_variable_table(
+            cfg, table_name, [COL_PID, COL_OID], logger,
+            required=False, domain=FRACTION_DOMAIN,
         )
-    return table[[COL_PID, COL_OID, *required_ratio_cols]].copy()
+        if table is None or table.empty:
+            result[column] = 1.0
+            continue
+        any_supplied = True
+        table = table.copy()
+        table[COL_PID] = table[COL_PID].astype(str).str.strip()
+        table[COL_OID] = table[COL_OID].astype(str).str.strip()
+        defaults = table[(table[COL_PID] == "*") & (table[COL_OID] == "*")]
+        if len(defaults) > 1:
+            raise ValueError(f"{table_name} may contain at most one (*, *) default row")
+        default = 1.0 if defaults.empty else float(defaults.iloc[0]["value"])
+        exact_rows = table[~((table[COL_PID] == "*") & (table[COL_OID] == "*"))]
+        bad_wildcards = exact_rows[(exact_rows[COL_PID] == "*") | (exact_rows[COL_OID] == "*")]
+        if not bad_wildcards.empty:
+            raise ValueError(
+                f"{table_name} supports either exact pid/oid rows or one (*, *) default row"
+            )
+        exact = {
+            (str(row[COL_PID]), str(row[COL_OID])): float(row["value"])
+            for _, row in exact_rows.iterrows()
+        }
+        unknown = sorted(set(exact) - valid_pairs)
+        if unknown:
+            raise ValueError(
+                f"{table_name} references parcel/outlet relationships not present in parcel_outlets: {unknown[:10]}"
+            )
+        result[column] = [exact.get(pair, default) for pair in zip(result[COL_PID], result[COL_OID])]
+
+    if not any_supplied:
+        logger.verbose("No delivery-ratio input tables present; using neutral defaults")
+    return result.reset_index(drop=True)
 
 def _efficiency_stat_columns(df: pd.DataFrame) -> List[str]:
     """Return columns that can define an efficiency distribution.
@@ -1841,7 +2012,7 @@ def _load_pollutant_load_rate(
     """Load statistical parcel pollutant load rates from ``parcels.gpkg``."""
     df = _read_gpkg_input_table(
         ci_get(cfg, CFG_PARCELS),
-        GPKG_POLLUTANT_LOAD_RATES_TABLE,
+        GPKG_INPUT_POLLUTANT_LOAD_RATE,
         [COL_PID, COL_POLLUTANT],
         CFG_POLLUTANT_LOAD_RATE,
         logger,
@@ -1855,7 +2026,7 @@ def _load_pollutant_load_rate(
         df, parcels[COL_PID].astype(str).tolist(), pollutants
     )
     if df.empty:
-        raise ValueError("pollutant_load_rates has no records for specified parcels+pollutants")
+        raise ValueError(f"{GPKG_INPUT_POLLUTANT_LOAD_RATE} has no records for specified parcels+pollutants")
     validate_stats_rows(df, CFG_POLLUTANT_LOAD_RATE)
     return df
 
@@ -2105,13 +2276,11 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         pollutant_concentrations = None
         groundwater_concentrations = None
         if load_mode == LOAD_MODE_PLET_RUSLE:
-            package_parameters = _read_gpkg_input_table(
-                ci_get(cfg, CFG_PARCELS),
-                GPKG_PARCEL_PARAMETERS_TABLE,
-                [COL_PID, "parameter"],
-                "parcel_parameters",
-                logger,
-            )
+            package_parameters = _assemble_parcel_parameter_source(cfg, logger)
+            if package_parameters is None:
+                raise ValueError(
+                    "plet_rusle mode requires dedicated input_* parameter tables in parcels.gpkg"
+                )
             from .plet_rusle import canonical_parameter_name
             canonical_names = package_parameters["parameter"].map(canonical_parameter_name)
             rusle_mask = canonical_names.isin(set(RUSLE_PARAMETER_NAMES))
@@ -2127,10 +2296,10 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             )
             if plet_inputs is None:
                 raise ValueError(
-                    "plet_rusle mode requires parcel_parameters in the parcels GeoPackage"
+                    "plet_rusle mode requires dedicated PLET input_* tables in parcels.gpkg"
                 )
             plet_hydrology_lookup = _load_plet_hydrology_lookup(
-                load_generation.get(LOAD_HYDROLOGY_LOOKUP),
+                _assemble_plet_hydrology_source(cfg, logger),
                 logger,
                 distribution_catalog,
             )
@@ -2139,13 +2308,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 rusle_source, LOAD_RUSLE_INPUTS, logger, distribution_catalog
             )
             unified_concentrations = _load_pollutant_concentrations(
-                _read_gpkg_input_table(
-                    ci_get(cfg, CFG_PARCELS),
-                    GPKG_POLLUTANT_CONCENTRATIONS_TABLE,
-                    [COL_PID, COL_POLLUTANT, COL_PATHWAY],
-                    LOAD_CONCENTRATIONS,
-                    logger,
-                ),
+                _assemble_plet_concentration_source(cfg, logger),
                 pollutants,
                 logger,
                 distribution_catalog,

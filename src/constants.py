@@ -58,7 +58,6 @@ CFG_LOAD_GENERATION = "load_generation"
 LOAD_MODE_STATISTICAL = "statistical"
 LOAD_MODE_PLET_RUSLE = "plet_rusle"
 LOAD_PLET_INPUTS = "plet_inputs"
-LOAD_HYDROLOGY_LOOKUP = "hydrology_lookup"
 LOAD_RUSLE_INPUTS = "rusle_inputs"
 LOAD_CONCENTRATIONS = "pollutant_concentrations"
 LOAD_GROUNDWATER_CONCENTRATIONS = "groundwater_concentrations"
@@ -144,18 +143,48 @@ PLET_PARAMETER_ALIASES = {
 }
 
 
-# Canonical tables/layers in consolidated GeoPackage inputs
+# Canonical tables/layers in consolidated GeoPackage inputs.
+# Structural tables have no ``input_`` prefix. Every user-supplied parcel-side
+# model variable is stored in its own ``input_*`` table.
 GPKG_PARCELS_LAYER = "parcels"
 GPKG_PARCEL_UP_TABLE = "parcel_up"
 GPKG_PARCEL_OUTLETS_TABLE = "parcel_outlets"
-GPKG_PARCEL_PARAMETERS_TABLE = "parcel_parameters"
-GPKG_POLLUTANT_LOAD_RATES_TABLE = "pollutant_load_rates"
-GPKG_POLLUTANT_CONCENTRATIONS_TABLE = "pollutant_concentrations"
 GPKG_OUTLETS_LAYER = "outlets"
 GPKG_OUTLET_STATS_TABLE = "outlet_stats"
 
-# Parameters stored in the shared parcel_parameters table that are interpreted
-# as RUSLE/sediment inputs. All other rows are interpreted as PLET inputs.
+# Standard per-variable parcel input tables. Values in these tables all use the
+# same fixed-value/distribution columns; only their key columns differ.
+PARCEL_PARAMETER_INPUT_TABLES = {
+    "annual_precip_in": "input_annual_precip_in",
+    "rain_days": "input_rain_days",
+    "rain_correction_fraction": "input_rain_correction_fraction",
+    "runoff_day_fraction": "input_runoff_day_fraction",
+    "land_cover": "input_land_cover",
+    "hsg": "input_hsg",
+    "ia_ratio": "input_ia_ratio",
+    "r": "input_rusle_r",
+    "k": "input_rusle_k",
+    "ls": "input_rusle_ls",
+    "c": "input_rusle_c",
+    "p": "input_rusle_p",
+    "sdr": "input_sediment_delivery_ratio",
+    "sediment_n_pct": "input_sediment_n_pct",
+    "sediment_p_pct": "input_sediment_p_pct",
+    "enrichment_ratio": "input_enrichment_ratio",
+}
+GPKG_INPUT_SELECTION_WEIGHT = "input_selection_weight"
+GPKG_INPUT_CURVE_NUMBER = "input_curve_number"
+GPKG_INPUT_INFILTRATION_FRACTION = "input_infiltration_fraction"
+GPKG_INPUT_POLLUTANT_LOAD_RATE = "input_pollutant_load_rate"
+GPKG_INPUT_SURFACE_CONCENTRATION = "input_surface_concentration"
+GPKG_INPUT_SUBSURFACE_CONCENTRATION = "input_subsurface_concentration"
+GPKG_DELIVERY_RATIO_TABLES = {
+    "sdr_f_to_s": "input_sdr_f_to_s",
+    "sdr_s_to_o": "input_sdr_s_to_o",
+    "ndr_f_to_s": "input_ndr_f_to_s",
+    "ndr_s_to_o": "input_ndr_s_to_o",
+}
+
 RUSLE_PARAMETER_NAMES = (
     "r", "k", "ls", "c", "p", "sdr",
     "sediment_n_pct", "sediment_p_pct", "enrichment_ratio",

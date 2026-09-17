@@ -21,9 +21,9 @@ load_generation:
   mode: statistical
 ```
 
-The load-rate data themselves are stored in the `pollutant_load_rates` table inside the configured parcel GeoPackage. There is no separate pollutant-load-rate path in YAML.
+## `input_pollutant_load_rate`
 
-## `pollutant_load_rates` table
+The statistical load-rate variable is stored in the `input_pollutant_load_rate` table inside `parcels.gpkg`.
 
 The natural key is parcel × pollutant, optionally extended by pathway.
 
@@ -38,9 +38,9 @@ pid | pollutant | distribution_id | units
 Example pathway-aware rows:
 
 ```text
-pid | pollutant | pathway            | mean | sd | units
-*   | TN        | surface            | 8.0  | 1.5| kg/ha/year
-*   | TN        | shallow subsurface | 2.0  | 0.5| kg/ha/year
+pid | pollutant | pathway            | mean | sd  | units
+*   | TN        | surface            | 8.0  | 1.5 | kg/ha/year
+*   | TN        | shallow subsurface | 2.0  | 0.5 | kg/ha/year
 ```
 
 `pid="*"` provides defaults; exact parcel rows override matching wildcard rows.
@@ -56,8 +56,8 @@ pollutant_load_rate_pathway_fractions:
   tile: 0.10
 ```
 
-Fractions must match the active efficiency pathways and sum to 1.0.
+Fractions must match active efficiency pathways and sum to `1.0`.
 
 ## Parcel selection
 
-Parcel-selection weighting is no longer a separate file. Put optional `selection_weight` values directly on the spatial `parcels` layer. If that column is absent, selection is uniform across modeled parcels.
+Optional parcel-selection weights are stored in `input_selection_weight`, not on the spatial `parcels` layer. The table is keyed by `pid` and uses deterministic `value` entries. If the table is absent, parcel selection is uniform.

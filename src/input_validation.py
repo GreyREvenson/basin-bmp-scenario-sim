@@ -669,9 +669,9 @@ def validate_plet_input_table(table: pd.DataFrame, parcel_ids: Sequence[str]) ->
     )
     if supplied_derived:
         raise ValueError(
-            "PLET parcel inputs may not specify "
-            f"{supplied_derived}; define cn and infiltration_fraction in the required "
-            "load_generation.hydrology_lookup table instead"
+            "PLET parcel parameter tables may not specify "
+            f"{supplied_derived}; use input_curve_number and "
+            "input_infiltration_fraction in parcels.gpkg instead"
         )
     classification_mask = normalized["parameter"].isin(PLET_CLASSIFICATION_PARAMETERS)
     if classification_mask.any() and "value" not in normalized.columns:
@@ -833,14 +833,14 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         )
     load_generation = ci_get(cfg, "load_generation")
     if isinstance(load_generation, dict):
-        legacy_load_keys = {"plet_inputs", "rusle_inputs", "pollutant_concentrations", "groundwater_concentrations"}
+        legacy_load_keys = {"plet_inputs", "rusle_inputs", "pollutant_concentrations", "groundwater_concentrations", "hydrology_lookup"}
         supplied_load_legacy = sorted(
             key for key in legacy_load_keys if ci_get(load_generation, key) is not None
         )
         if supplied_load_legacy:
             raise ValueError(
                 "Legacy load_generation file keys are no longer supported: "
-                f"{supplied_load_legacy}. Store these tables in the parcels GeoPackage."
+                f"{supplied_load_legacy}. Store each variable in its dedicated input_* table in parcels.gpkg."
             )
 
     n_scenarios_raw = ci_get(cfg, CFG_N_SCENARIOS)

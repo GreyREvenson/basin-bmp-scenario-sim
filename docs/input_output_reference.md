@@ -4,57 +4,33 @@
 
 ## Physical input files
 
-A typical model run uses these physical inputs:
+A typical run uses:
 
 ```text
 inputs/
-  config/
-    model.yaml
-  domain/
-    domain.gpkg
-  parcels/
-    parcels.gpkg
-  outlets/
-    outlets.gpkg
-  plet/
-    plet_hydrology_lookup.csv       # plet_rusle only
-  bmps/
-    bmp_efficiency.csv
-    bmp_cost.csv                    # optional
-  misc/
-    input_distributions.csv         # optional
+  config/model.yaml
+  domain/domain.gpkg
+  parcels/parcels.gpkg
+  outlets/outlets.gpkg
+  bmps/bmp_efficiency.csv
+  bmps/bmp_cost.csv              # optional
+  misc/input_distributions.csv   # optional
 ```
 
-Parcel and outlet data are consolidated into GeoPackages. The model does not accept separate `parcel_out`, `parcel_up`, `parcel_p`, `pollutant_load_rate`, `outlet_loc`, `outlet_target`, `outlet_mean`, or delivery-ratio file paths.
+Parcel-side model variables are stored inside `parcels.gpkg`. The GeoPackage file may be renamed or moved; update only the YAML `parcels` path. Internal table names are the model schema.
 
 ## `parcels.gpkg`
 
-The file path is configured with:
+### Structural tables
 
-```yaml
-parcels: ../parcels/parcels.gpkg
-```
-
-The filename and location are arbitrary. The internal table/layer names below are the model schema.
-
-### `parcels` — required spatial layer
-
-One feature per modeled parcel.
-
-Required columns:
+`parcels` is the required spatial layer. It contains only parcel identity and geometry:
 
 - `pid` — unique parcel identifier.
-- geometry — parcel polygon/multipolygon geometry.
-
-Optional columns:
-
-- `selection_weight` — finite nonnegative weight used to derive parcel-selection probabilities. If absent, all modeled parcels receive equal selection probability. At least one weight must be positive when the column is present.
+- geometry — polygon/multipolygon geometry.
 
 Parcel area and perimeter are derived from geometry after clipping to the domain.
 
-### `parcel_up` — optional attribute table
-
-Normalized directed parcel connectivity:
+`parcel_up` is an optional attribute table with one upstream edge per row:
 
 ```text
 pid | pid_up
@@ -62,33 +38,90 @@ P3  | P1
 P3  | P2
 ```
 
-Each row is one edge. Wildcards and comma-separated lists are not supported. If the table is absent, all parcels are treated as having no upstream parcels.
-
-### `parcel_outlets` — required attribute table
-
-Normalized parcel-to-outlet relationships:
+`parcel_outlets` is required and contains one parcel-to-outlet relationship per row:
 
 ```text
 pid | oid
 P1  | O1
 P1  | O2
-P2  | O2
 ```
 
-Each row is one relationship. Every referenced `pid` must exist in `parcels`; every referenced `oid` must exist in the `outlets` layer.
+The structural tables do not contain modeled input variables.
 
-Optional delivery-ratio columns may be included directly on the same relationship table:
+## One variable per `input_*` table
 
-- `sdr_f_to_s`
-- `sdr_s_to_o`
-- `ndr_f_to_s`
-- `ndr_s_to_o`
+Every parcel-side user input variable has its own GeoPackage attribute table. Numeric tables use the same standardized value/distribution columns:
 
-If none are present, neutral values of 1.0 are used. If delivery ratios are supplied, all four columns are required and values must lie in `[0, 1]`.
+```text
+value, distribution_id, mean, sd, min,
+p05, p10, p25, p50, p75, p90, p95, max,
+sample_group, units, notes
+```
 
-### `pollutant_load_rates` — required in statistical mode
+Only the columns needed to define a row need values. A row must define either a fixed `value`, a `distribution_id`, or a valid inline distribution. See [Standardized numeric inputs and distributions](input_distributions.md).
 
-Long-form parcel pollutant load-rate rows using the common numeric/distribution schema.
+Most parcel-specific variable tables are keyed by `pid`. `pid="*"` supplies a default; an exact `pid` row overrides the default.
+
+### Parcel selection
+
+`input_selection_weight`
+
+```text
+pid | value | units | notes
+```
+
+Weights are deterministic, finite, and nonnegative. If the table is absent, parcel selection is uniform. A `pid="*"` row may supply a default.
+
+### PLET parcel variables
+
+Each of these tables is keyed by `pid`:
+
+- `input_annual_precip_in`
+- `input_rain_days`
+- `input_rain_correction_fraction`
+- `input_runoff_day_fraction`
+- `input_land_cover`
+- `input_hsg`
+- `input_ia_ratio`
+
+`input_land_cover` and `input_hsg` are categorical and therefore require fixed `value` entries; distributions are not allowed.
+
+### Curve number and infiltration fraction
+
+PLET hydrology assumptions are user inputs stored in the same parcel GeoPackage:
+
+- `input_curve_number`
+- `input_infiltration_fraction`
+
+These two tables are keyed by:
+
+```text
+land_cover | hsg
+```
+
+and then use the standard numeric/distribution columns. Every supported land-cover × HSG pair must have both a curve-number definition and an infiltration-fraction definition. Either variable may be fixed or stochastic.
+
+There is no separate `hydrology_lookup` file or source-code fallback.
+
+### RUSLE and sediment variables
+
+Each table is keyed by `pid`:
+
+- `input_rusle_r`
+- `input_rusle_k`
+- `input_rusle_ls`
+- `input_rusle_c`
+- `input_rusle_p`
+- `input_sediment_delivery_ratio`
+- `input_sediment_n_pct`
+- `input_sediment_p_pct`
+- `input_enrichment_ratio`
+
+The loader assembles these tables into the existing runtime RUSLE parameter representation before scenario execution.
+
+### Statistical load rate
+
+`input_pollutant_load_rate` is required in statistical mode.
 
 Keys:
 
@@ -96,34 +129,39 @@ Keys:
 - `pollutant`
 - optional `pathway`
 
-`pid="*"` may define defaults for all parcels; exact parcel rows override matching defaults.
+The table uses the common numeric/distribution schema. `pid="*"` defaults and parcel-specific overrides are supported.
 
-### `parcel_parameters` — required in `plet_rusle` mode
+### PLET pollutant concentrations
 
-One combined long-form table for parcel PLET and RUSLE parameters.
+PLET/RUSLE uses two separate input variables:
+
+- `input_surface_concentration`
+- `input_subsurface_concentration`
+
+Both are keyed by:
+
+```text
+pid | pollutant
+```
+
+and use the common numeric/distribution schema. The pathway is implied by the table name rather than stored in a `pathway` column.
+
+### Delivery-ratio variables
+
+The parcel-to-outlet relationship remains in `parcel_outlets`. Each optional delivery variable is stored separately:
+
+- `input_sdr_f_to_s`
+- `input_sdr_s_to_o`
+- `input_ndr_f_to_s`
+- `input_ndr_s_to_o`
 
 Keys:
 
-- `pid`
-- `parameter`
+```text
+pid | oid
+```
 
-The table uses the common numeric/distribution columns. `pid="*"` defaults and parcel-specific overrides are supported.
-
-PLET parameters include climate terms and the fixed `land_cover` and `hsg` classifications. Curve number (`cn`) and `infiltration_fraction` do **not** belong here; they come from the separately configured hydrology lookup.
-
-RUSLE parameters (`r`, `k`, `ls`, `c`, `p`, `sdr`, `sediment_n_pct`, `sediment_p_pct`, and `enrichment_ratio`) live in this same table. A parcel using RUSLE must have the required complete factor set.
-
-### `pollutant_concentrations` — required in `plet_rusle` mode
-
-Unified PLET concentration table.
-
-Keys:
-
-- `pid`
-- `pollutant`
-- `pathway`
-
-`pathway` must be either `surface` or `subsurface`. Numeric rows use the common fixed-value/distribution schema. `pid="*"` defaults and parcel-specific overrides are resolved independently by pollutant and pathway.
+These are deterministic fractions in `[0, 1]`. An exact parcel/outlet row overrides an optional global `pid="*", oid="*"` default. If a table is absent, the neutral value `1.0` is used.
 
 ## `outlets.gpkg`
 
@@ -133,65 +171,25 @@ Configured with:
 outlets: ../outlets/outlets.gpkg
 ```
 
-### `outlets` — required spatial layer
+`outlets` is the required spatial layer with unique `oid` and point geometry.
 
-Required columns:
-
-- `oid` — unique outlet identifier.
-- geometry — outlet point geometry.
-
-Other descriptive metadata columns are allowed.
-
-### `outlet_stats` — optional attribute table
-
-One row per outlet × pollutant:
-
-```text
-oid | pollutant | target | mean
-O1  | TN        | ...    | ...
-O1  | TP        | ...    | ...
-```
-
-`target` and `mean` are optional columns. The model uses whichever are present and nonblank. Values must be nonnegative.
-
-## User-supplied PLET hydrology lookup
-
-`load_generation.hydrology_lookup` remains a separate CSV and is required in `plet_rusle` mode.
-
-It defines `cn` and `infiltration_fraction` for each supported land-cover × HSG pairing. Either parameter may be fixed or stochastic using the common distribution schema. There is no source-code fallback; the active configured table controls the values used in the run.
+`outlet_stats` is an optional attribute table keyed by `oid × pollutant` with optional nonnegative `target` and `mean` columns.
 
 ## Other CSV inputs
 
-### `input_distributions`
+`input_distributions` is an optional reusable distribution catalog keyed by `distribution_id`.
 
-Optional reusable distribution catalog keyed by `distribution_id`.
+`bmp_efficiency` defines BMP efficiency values/distributions by CPS, pollutant, and pathway where applicable.
 
-### `bmp_efficiency`
+`bmp_cost` is optional and defines BMP cost inputs.
 
-BMP efficiency values/distributions by CPS, pollutant, and pathway where applicable.
+## Canonical outputs
 
-### `bmp_cost`
-
-Optional BMP cost values/distributions. The cost unit remains required because cost scaling depends on it.
-
-## Common numeric schema
-
-Numeric rows use some combination of:
-
-```text
-value, distribution_id, mean, sd, min, p05, p50, p95, max
-```
-
-Additional percentile columns such as `p10`, `p25`, `p75`, and `p90` are supported where valid. See [Standardized numeric inputs and distributions](input_distributions.md).
-
-## Output directory
-
-Canonical outputs below the configured `outputs` directory include:
+Below the configured `outputs` directory, the model writes:
 
 - `bmps/s{scenario}.parquet`
 - `parcels/s{scenario}.parquet`
 - `load_parameters/s{scenario}.parquet` for PLET/RUSLE diagnostics
 - `scenario_metrics/s{scenario}.parquet`
 - `outlet_trajectories/all_scenarios.parquet`
-- `log.txt` and scenario logs
-- summary plot files
+- logs and summary plots

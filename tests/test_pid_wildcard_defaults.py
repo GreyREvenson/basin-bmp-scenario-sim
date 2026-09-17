@@ -12,12 +12,11 @@ from src.constants import (
     COL_PROBABILITY,
     COL_SDR_F_TO_S,
     COL_SDR_S_TO_O,
-    COL_SELECTION_WEIGHT,
 )
+import src.input_config as input_config
 from src.input_config import (
     _build_parcel_up_map,
     _complete_delivery_ratio_defaults,
-    _load_parcel_selection,
 )
 
 
@@ -32,21 +31,19 @@ class RecordingLogger:
         pass
 
 
-def test_selection_weight_is_stored_on_parcel_rows_and_normalized() -> None:
-    parcels = pd.DataFrame(
-        {
-            COL_PID: ["A", "B", "C"],
-            COL_SELECTION_WEIGHT: [1.0, 2.0, 1.0],
-        }
-    )
-    loaded = _load_parcel_selection({}, parcels, RecordingLogger())
+def test_selection_weight_table_is_normalized(monkeypatch) -> None:
+    parcels = pd.DataFrame({COL_PID: ["A", "B", "C"]})
+    weights = pd.DataFrame({COL_PID: ["A", "B", "C"], "value": [1.0, 2.0, 1.0]})
+    monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
+    loaded = input_config._load_parcel_selection({}, parcels, RecordingLogger())
     assert loaded[COL_PID].tolist() == ["A", "B", "C"]
     assert loaded[COL_PROBABILITY].tolist() == pytest.approx([0.25, 0.50, 0.25])
 
 
-def test_missing_selection_weight_means_equal_weights() -> None:
+def test_missing_selection_weight_means_equal_weights(monkeypatch) -> None:
     parcels = pd.DataFrame({COL_PID: ["A", "B", "C"]})
-    loaded = _load_parcel_selection({}, parcels, RecordingLogger())
+    monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: None)
+    loaded = input_config._load_parcel_selection({}, parcels, RecordingLogger())
     assert loaded[COL_PROBABILITY].tolist() == pytest.approx([1 / 3, 1 / 3, 1 / 3])
 
 

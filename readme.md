@@ -26,7 +26,7 @@ The model provides two alternative ways to establish baseline parcel pollutant l
 | Feature | Default statistical mode | `plet_rusle` mode |
 |---|---|---|
 | Baseline pollutant generation | User supplies parcel pollutant load-rate values/distributions | Model calculates loads from PLET-style hydrology, concentrations, and optional RUSLE |
-| Statistical parcel input | `pollutant_load_rates` table in `parcels.gpkg` | Not used |
+| Statistical parcel input | `input_pollutant_load_rate` table in `parcels.gpkg` | Not used |
 | Pollutant pathways | User-defined | Fixed to `surface` and `subsurface` |
 | Runoff and infiltration modeled | No | Yes |
 | Curve Number | Not used | Required user input by land-cover × HSG pairing |
@@ -99,13 +99,12 @@ Both modes use consolidated parcel and outlet GeoPackages:
     n_scenarios: 1000
     bmp_limit_n: 200
 
-In statistical mode, parcel loads come from the `pollutant_load_rates` table inside `parcels.gpkg`. PLET/RUSLE mode is enabled explicitly and adds only the user-controlled hydrology lookup path:
+In statistical mode, parcel loads come from `input_pollutant_load_rate` inside `parcels.gpkg`. PLET/RUSLE mode is enabled explicitly:
 
     load_generation:
       mode: plet_rusle
-      hydrology_lookup: ../plet/plet_hydrology_lookup.csv
 
-The same parcel GeoPackage then supplies `parcel_parameters` and unified `pollutant_concentrations` tables.
+Every parcel-side model variable then comes from its own `input_*` table in the same GeoPackage. Curve number and infiltration fraction are user-owned tables (`input_curve_number` and `input_infiltration_fraction`), and surface/subsurface concentrations are stored separately.
 
 See the docs below for complete examples and mode-specific requirements.
 
@@ -149,7 +148,7 @@ For reproducible scientific analyses, archive or record:
 
 - the repository commit or release
 - the configuration YAML
-- all input data files, including any distribution catalog and PLET hydrology lookup
+- all input data files, including the parcel GeoPackage and any distribution catalog
 - the random seed
 - the Python environment and dependency versions
 - the generated logs
@@ -159,7 +158,7 @@ For reproducible scientific analyses, archive or record:
 
 The model is a scenario and uncertainty framework, not a substitute for a calibrated process-based watershed model where detailed temporal hydrology, water-quality transformation, or in-stream processes are required. Results depend on the validity of the supplied probability distributions, pathway definitions, BMP efficiencies, routing assumptions, and, in `plet_rusle` mode, the PLET/RUSLE parameterization, including the user-supplied Curve Number and infiltration-fraction assumptions.
 
-BMP efficiencies are applied serially to the current remaining load. Parcel-to-outlet routing may use optional delivery-ratio columns stored directly on the `parcel_outlets` table, but the simulator does not independently resolve all physical fate and transport processes between a parcel and an outlet.
+BMP efficiencies are applied serially to the current remaining load. Parcel-to-outlet routing may use optional dedicated delivery-ratio `input_*` tables keyed by parcel and outlet, but the simulator does not independently resolve all physical fate and transport processes between a parcel and an outlet.
 
 When both BMP-count and cost limits are configured, the scenario uses an OR stopping rule: no additional BMPs are added once either limit has been reached or exceeded.
 

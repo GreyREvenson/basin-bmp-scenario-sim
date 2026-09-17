@@ -7,11 +7,9 @@ import yaml
 from src.constants import (
     CFG_BMP_EFFICIENCY,
     CFG_DOMAIN,
-    CFG_LOAD_GENERATION,
     CFG_OUTPUTS,
     CFG_PARCELS,
     CFG_OUTLETS,
-    LOAD_HYDROLOGY_LOOKUP,
 )
 from src.input_config import normalize_config, resolve_config_paths
 from src.io_utils import read_config
@@ -32,10 +30,7 @@ def test_resolve_config_paths_uses_yaml_directory_not_cwd(tmp_path, monkeypatch)
                 "outlets": "../inputs/outlets.gpkg",
                 "bmp_efficiency": "../inputs/bmp.csv",
                 "outputs": "../outputs/run_1",
-                "load_generation": {
-                    "mode": "plet_rusle",
-                    "hydrology_lookup": "../inputs/hydrology.csv",
-                },
+                "load_generation": {"mode": "plet_rusle"},
             },
             sort_keys=False,
         ),
@@ -54,9 +49,6 @@ def test_resolve_config_paths_uses_yaml_directory_not_cwd(tmp_path, monkeypatch)
     assert Path(cfg[CFG_OUTLETS]) == (input_dir / "outlets.gpkg").resolve()
     assert Path(cfg[CFG_BMP_EFFICIENCY]) == (input_dir / "bmp.csv").resolve()
     assert Path(cfg[CFG_OUTPUTS]) == (tmp_path / "project" / "outputs" / "run_1").resolve()
-    assert Path(cfg[CFG_LOAD_GENERATION][LOAD_HYDROLOGY_LOOKUP]) == (
-        input_dir / "hydrology.csv"
-    ).resolve()
 
 
 def test_moving_input_only_requires_yaml_path_change(tmp_path) -> None:

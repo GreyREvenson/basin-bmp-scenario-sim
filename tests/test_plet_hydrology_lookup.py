@@ -96,7 +96,7 @@ def test_plet_table_requires_land_cover_and_hsg_for_each_parcel() -> None:
 @pytest.mark.parametrize("parameter", ["cn", "curve_number", "infiltration_fraction"])
 def test_plet_table_rejects_hydrology_parameters_in_parcel_table(parameter: str) -> None:
     table = pd.DataFrame({"pid": ["*", "*", "*"], "parameter": ["land_cover", "hsg", parameter], "value": ["cropland", "B", 78.0]})
-    with pytest.raises(ValueError, match="hydrology_lookup"):
+    with pytest.raises(ValueError, match="input_curve_number"):
         validate_plet_input_table(table, ["p1"])
 
 

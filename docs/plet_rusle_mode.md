@@ -19,74 +19,64 @@ input_distributions: ../misc/input_distributions.csv
 
 load_generation:
   mode: plet_rusle
-  hydrology_lookup: ../plet/plet_hydrology_lookup.csv
 ```
 
-PLET/RUSLE parcel inputs are stored in the consolidated parcel GeoPackage rather than configured as separate files.
+All parcel-side PLET/RUSLE inputs live in dedicated `input_*` tables inside `parcels.gpkg`. No PLET parcel-input path or hydrology-lookup path is configured in YAML.
 
-## `parcel_parameters`
+## Parcel PLET tables
 
-The `parcel_parameters` table combines the former PLET and RUSLE long-form parameter tables. Each row is keyed by `pid` and `parameter` and uses the standard fixed-value/distribution columns.
+Each variable gets its own table keyed by `pid`:
 
-PLET inputs include:
+- `input_annual_precip_in`
+- `input_rain_days`
+- `input_rain_correction_fraction`
+- `input_runoff_day_fraction`
+- `input_land_cover`
+- `input_hsg`
+- `input_ia_ratio`
 
-- `annual_precip_in`
-- `rain_days`
-- `rain_correction_fraction`
-- `runoff_day_fraction`
-- `land_cover`
-- `hsg`
-- optional supported PLET parameters such as `ia_ratio`
+Numeric tables use the standard fixed-value/distribution schema. `input_land_cover` and `input_hsg` require fixed categorical values. `pid="*"` defaults are supported.
 
-`land_cover` and `hsg` are fixed classifications. `cn` and `infiltration_fraction` must not be supplied as parcel parameters; they are resolved from the hydrology lookup.
+## User-controlled hydrology
 
-RUSLE parameters live in the same table:
-
-- `r`
-- `k`
-- `ls`
-- `c`
-- `p`
-- `sdr`
-- `sediment_n_pct`
-- `sediment_p_pct`
-- `enrichment_ratio`
-
-`pid="*"` may supply defaults, with parcel-specific rows overriding defaults.
-
-## Hydrology lookup
-
-`load_generation.hydrology_lookup` is a separate, required user input. It defines both `cn` and `infiltration_fraction` for supported land-cover × HSG pairs.
-
-Both may be fixed values or probability distributions. This table deliberately remains outside the source tree and outside the parcel GeoPackage so a user can replace hydrologic assumptions independently for a run.
-
-## `pollutant_concentrations`
-
-The parcel GeoPackage contains one unified concentration table with:
+Curve number and infiltration fraction are also separate user-input tables inside `parcels.gpkg`:
 
 ```text
-pid | pollutant | pathway | ...numeric/distribution columns...
+input_curve_number
+input_infiltration_fraction
 ```
 
-`pathway` must be:
+Both are keyed by `land_cover × hsg` and use the same numeric/distribution schema as other numeric inputs. Every supported pair must be covered by both tables.
 
-- `surface` — combined with PLET runoff volume.
-- `subsurface` — combined with PLET infiltration volume.
+These are the values actually used by PLET. They may be fixed or distributions. There is no source-code fallback and no external `hydrology_lookup` configuration key.
 
-Surface concentrations are required for TN and TP and for TSS when complete RUSLE sediment inputs are unavailable. Subsurface concentrations are required for modeled non-TSS pollutants.
+## RUSLE/sediment tables
+
+- `input_rusle_r`
+- `input_rusle_k`
+- `input_rusle_ls`
+- `input_rusle_c`
+- `input_rusle_p`
+- `input_sediment_delivery_ratio`
+- `input_sediment_n_pct`
+- `input_sediment_p_pct`
+- `input_enrichment_ratio`
+
+The input layer assembles these dedicated tables into the existing runtime RUSLE parameter table, so the simulation equations and parallel scenario execution remain unchanged.
+
+## Pollutant concentrations
+
+Surface and subsurface concentrations are distinct variables:
+
+```text
+input_surface_concentration
+input_subsurface_concentration
+```
+
+Each table is keyed by `pid × pollutant` and uses the common numeric/distribution schema. `pid="*"` supplies defaults.
+
+Surface concentrations are required for TN and TP and for TSS when complete RUSLE inputs are unavailable. Subsurface concentrations are required for modeled non-TSS pollutants.
 
 ## BMP pathways
 
-Production pathways are fixed to `surface` and `subsurface`. Surface BMP efficiencies are required. Missing correctly labeled subsurface efficiencies are completed with zero and logged.
-
-## Removed inputs
-
-The following are not part of the consolidated interface:
-
-- separate `plet_inputs` path
-- separate `rusle_inputs` path
-- separate `pollutant_concentrations` path
-- `pathway_mode`
-- `watershed_area_mi2` and equivalent spellings
-
-The user-controlled hydrology lookup remains the sole source of curve-number and infiltration-fraction assumptions.
+PLET/RUSLE production pathways are fixed to `surface` and `subsurface`. Surface BMP efficiencies are required. Missing correctly labeled subsurface efficiencies are completed with zero and logged.
