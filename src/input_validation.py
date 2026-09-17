@@ -821,6 +821,28 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         If a configuration value is non-finite, non-integral where an integer
         is required, or outside its allowed physical range.
     """
+    legacy_top_level = {
+        "outlet_loc", "parcel_out", "parcel_up", "parcel_p",
+        "pollutant_load_rate", "delivery_ratios", "outlet_target", "outlet_mean",
+    }
+    supplied_legacy = sorted(key for key in legacy_top_level if ci_get(cfg, key) is not None)
+    if supplied_legacy:
+        raise ValueError(
+            "Legacy per-file parcel/outlet configuration keys are no longer supported: "
+            f"{supplied_legacy}. Use the consolidated 'parcels' and 'outlets' GeoPackages."
+        )
+    load_generation = ci_get(cfg, "load_generation")
+    if isinstance(load_generation, dict):
+        legacy_load_keys = {"plet_inputs", "rusle_inputs", "pollutant_concentrations", "groundwater_concentrations"}
+        supplied_load_legacy = sorted(
+            key for key in legacy_load_keys if ci_get(load_generation, key) is not None
+        )
+        if supplied_load_legacy:
+            raise ValueError(
+                "Legacy load_generation file keys are no longer supported: "
+                f"{supplied_load_legacy}. Store these tables in the parcels GeoPackage."
+            )
+
     n_scenarios_raw = ci_get(cfg, CFG_N_SCENARIOS)
     n_scenarios = validate_scalar_in_domain(
         n_scenarios_raw, POSITIVE_DOMAIN, CFG_N_SCENARIOS

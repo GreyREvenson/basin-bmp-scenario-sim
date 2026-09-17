@@ -26,7 +26,7 @@ The model provides two alternative ways to establish baseline parcel pollutant l
 | Feature | Default statistical mode | `plet_rusle` mode |
 |---|---|---|
 | Baseline pollutant generation | User supplies parcel pollutant load-rate values/distributions | Model calculates loads from PLET-style hydrology, concentrations, and optional RUSLE |
-| Statistical parcel input | `pollutant_load_rate` | Not used |
+| Statistical parcel input | `pollutant_load_rates` table in `parcels.gpkg` | Not used |
 | Pollutant pathways | User-defined | Fixed to `surface` and `subsurface` |
 | Runoff and infiltration modeled | No | Yes |
 | Curve Number | Not used | Required user input by land-cover × HSG pairing |
@@ -84,29 +84,28 @@ Example command:
 
     python run_model.py config.yaml
 
-Statistical mode is the default:
+Both modes use consolidated parcel and outlet GeoPackages:
+
+    domain: ../domain/domain.gpkg
+    parcels: ../parcels/parcels.gpkg
+    outlets: ../outlets/outlets.gpkg
 
     pollutants: [TN, TP, TSS]
     cps: [340, 329, 590]
 
-    input_distributions: ./inputs/input_distributions.csv
-
-    pollutant_load_rate: ./inputs/pollutant_load_rate.csv
-    bmp_efficiency: ./inputs/bmp_efficiency.csv
+    input_distributions: ../misc/input_distributions.csv
+    bmp_efficiency: ../bmps/bmp_efficiency.csv
 
     n_scenarios: 1000
     bmp_limit_n: 200
 
-PLET/RUSLE mode is enabled explicitly and requires a hydrology table:
-
-    input_distributions: ./inputs/plet/input_distributions.csv
+In statistical mode, parcel loads come from the `pollutant_load_rates` table inside `parcels.gpkg`. PLET/RUSLE mode is enabled explicitly and adds only the user-controlled hydrology lookup path:
 
     load_generation:
       mode: plet_rusle
-      plet_inputs: ./inputs/plet/plet_inputs.csv
-      hydrology_lookup: ./inputs/plet/plet_hydrology_lookup.csv
-      rusle_inputs: ./inputs/plet/rusle_inputs.csv
-      pollutant_concentrations: ./inputs/plet/pollutant_concentrations.csv  # rows use pathway=surface/subsurface
+      hydrology_lookup: ../plet/plet_hydrology_lookup.csv
+
+The same parcel GeoPackage then supplies `parcel_parameters` and unified `pollutant_concentrations` tables.
 
 See the docs below for complete examples and mode-specific requirements.
 
@@ -126,9 +125,8 @@ See the docs below for complete examples and mode-specific requirements.
 Inputs shared by both modes generally include:
 
 - watershed/domain geometry
-- parcel polygons
-- outlet locations
-- parcel-to-outlet mapping
+- one consolidated parcel GeoPackage containing parcel geometry, parcel-to-outlet relationships, and mode-specific parcel tables
+- one consolidated outlet GeoPackage containing outlet geometry and optional outlet statistics
 - modeled pollutants
 - configured BMP or conservation-practice CPS codes
 - BMP-efficiency statistics
@@ -161,7 +159,7 @@ For reproducible scientific analyses, archive or record:
 
 The model is a scenario and uncertainty framework, not a substitute for a calibrated process-based watershed model where detailed temporal hydrology, water-quality transformation, or in-stream processes are required. Results depend on the validity of the supplied probability distributions, pathway definitions, BMP efficiencies, routing assumptions, and, in `plet_rusle` mode, the PLET/RUSLE parameterization, including the user-supplied Curve Number and infiltration-fraction assumptions.
 
-BMP efficiencies are applied serially to the current remaining load. Parcel-to-outlet routing may use optional delivery ratios, but the simulator does not independently resolve all physical fate and transport processes between a parcel and an outlet.
+BMP efficiencies are applied serially to the current remaining load. Parcel-to-outlet routing may use optional delivery-ratio columns stored directly on the `parcel_outlets` table, but the simulator does not independently resolve all physical fate and transport processes between a parcel and an outlet.
 
 When both BMP-count and cost limits are configured, the scenario uses an OR stopping rule: no additional BMPs are added once either limit has been reached or exceeded.
 

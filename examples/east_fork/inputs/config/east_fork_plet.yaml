@@ -1,42 +1,34 @@
 # East Fork comparison run using PLET/RUSLE load generation
-verbose: False
+verbose: True
 outputs: ../../outputs/plet/run_1
-
 random_seed: 42
 
 domain: ../domain/domain.gpkg
 parcels: ../parcels/parcels.gpkg
-outlet_loc: ../outlets/outlet_loc.gpkg
+outlets: ../outlets/outlets.gpkg
 
-parcel_out: ../parcels/parcel_out.csv
-parcel_up: ../parcels/parcel_up.csv
-parcel_p: ../parcels/parcel_p.csv
 pollutants: ["TN", "TP", "TSS"]
 cps: [340, 329, 590, 412, 656]
 
-# Optional catalog for reusable fixed values or distributions. Any numeric
-# input row can reference a distribution_id from this file.
+# Optional catalog for reusable fixed values or distributions.
 input_distributions: ../misc/input_distributions.csv
 
 bmp_efficiency: ../bmps/bmp_efficiency_plet_static.csv
 bmp_cost: ../bmps/bmp_cost.csv
 
+# PLET/RUSLE parcel parameters and pollutant concentrations are read from
+# parcel_parameters and pollutant_concentrations inside parcels.gpkg.
+# The hydrology lookup remains a separate user-editable input.
 load_generation:
   mode: plet_rusle
-  plet_inputs: ../parcels/plet_inputs.csv
-  hydrology_lookup: ../parcels/plet_hydrology_lookup.csv
-  rusle_inputs: ../parcels/rusle_inputs_static.csv
-  pollutant_concentrations: ../parcels/pollutant_concentrations.csv
+  hydrology_lookup: ../plet/plet_hydrology_lookup.csv
 
-outlet_target: ../outlets/outlet_target.csv
-outlet_mean: ../outlets/outlet_mean.csv
-
-n_scenarios: 500
+n_scenarios: 1
 bmp_limit_n: 500
 buffer_depth_ft: 35
 
 parallel:
-  n_jobs: 10
+  n_jobs: 1
 
 bmp_sel_prob_via_costs: False
 bmp_fail_rate: 0.25

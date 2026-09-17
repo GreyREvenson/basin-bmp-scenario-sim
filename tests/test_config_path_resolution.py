@@ -9,7 +9,8 @@ from src.constants import (
     CFG_DOMAIN,
     CFG_LOAD_GENERATION,
     CFG_OUTPUTS,
-    LOAD_CONCENTRATIONS,
+    CFG_PARCELS,
+    CFG_OUTLETS,
     LOAD_HYDROLOGY_LOOKUP,
 )
 from src.input_config import normalize_config, resolve_config_paths
@@ -27,12 +28,13 @@ def test_resolve_config_paths_uses_yaml_directory_not_cwd(tmp_path, monkeypatch)
         yaml.safe_dump(
             {
                 "domain": "../inputs/domain.gpkg",
+                "parcels": "../inputs/parcels.gpkg",
+                "outlets": "../inputs/outlets.gpkg",
                 "bmp_efficiency": "../inputs/bmp.csv",
                 "outputs": "../outputs/run_1",
                 "load_generation": {
                     "mode": "plet_rusle",
                     "hydrology_lookup": "../inputs/hydrology.csv",
-                    "pollutant_concentrations": "../inputs/concentrations.csv",
                 },
             },
             sort_keys=False,
@@ -48,13 +50,12 @@ def test_resolve_config_paths_uses_yaml_directory_not_cwd(tmp_path, monkeypatch)
     resolve_config_paths(cfg, config_path)
 
     assert Path(cfg[CFG_DOMAIN]) == (input_dir / "domain.gpkg").resolve()
+    assert Path(cfg[CFG_PARCELS]) == (input_dir / "parcels.gpkg").resolve()
+    assert Path(cfg[CFG_OUTLETS]) == (input_dir / "outlets.gpkg").resolve()
     assert Path(cfg[CFG_BMP_EFFICIENCY]) == (input_dir / "bmp.csv").resolve()
     assert Path(cfg[CFG_OUTPUTS]) == (tmp_path / "project" / "outputs" / "run_1").resolve()
     assert Path(cfg[CFG_LOAD_GENERATION][LOAD_HYDROLOGY_LOOKUP]) == (
         input_dir / "hydrology.csv"
-    ).resolve()
-    assert Path(cfg[CFG_LOAD_GENERATION][LOAD_CONCENTRATIONS]) == (
-        input_dir / "concentrations.csv"
     ).resolve()
 
 

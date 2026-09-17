@@ -368,7 +368,7 @@ class Model:
             self.parcel_selection_ids = sel["pid"].astype(str).tolist()
             self.parcel_selection_probs = sel["probability"].astype(float).values
             self.selection_source_idxs = [self.pid_to_index[pid] for pid in self.parcel_selection_ids]
-            # ``parcel_p`` defines only the BMP-placement universe.  Hydrologic
+            # parcel selection weights define only the BMP-placement universe.  Hydrologic
             # state remains indexed to every modeled parcel so upstream parcels
             # continue to contribute loads to downstream structural practices
             # even when those upstream parcels are not themselves BMP-eligible.
@@ -497,7 +497,7 @@ class Model:
             parcel_perim_m=np.asarray(self.parcel_perim_m, dtype=float),
             parcel_out_oids=self.parcel_out_oids,
             parcel_up_idxs=self.parcel_up_idxs,
-            # BMP placement remains restricted to the parcel_p universe.  The
+            # BMP placement remains restricted to the parcel-selection universe.  The
             # selection position is translated to a full parcel index through
             # selection_source_idxs inside the scenario loop.
             parcel_selection_ids=self.parcel_selection_ids,

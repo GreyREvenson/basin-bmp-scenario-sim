@@ -14,9 +14,15 @@ from src.input_validation import validate_plet_runtime_inputs
 from src.model import _bmp_impacted_parcel_indices
 
 
-def test_comma_separated_upstream_ids_are_all_resolved() -> None:
-    """Protect the historical multi-upstream ``pid_up`` parsing regression."""
-    upstream = pd.DataFrame([{"pid": "10", "pid_up": "1, 2,3"}])
+def test_normalized_upstream_edges_are_all_resolved() -> None:
+    """Each parcel-to-upstream relationship is represented by one row."""
+    upstream = pd.DataFrame(
+        [
+            {"pid": "10", "pid_up": "1"},
+            {"pid": "10", "pid_up": "2"},
+            {"pid": "10", "pid_up": "3"},
+        ]
+    )
 
     parcel_up_map = _build_parcel_up_map(upstream, ["1", "2", "3", "10"])
 
@@ -74,14 +80,13 @@ def _patch_loader_preamble(monkeypatch) -> None:
     monkeypatch.setattr(
         input_config,
         "_load_parcel_graph",
-        lambda cfg, logger: pd.DataFrame({"pid": ["P1"], "pid_up": [np.nan]}),
+        lambda cfg, logger: pd.DataFrame(columns=["pid", "pid_up"]),
     )
     monkeypatch.setattr(
         input_config,
         "_load_parcel_outlets",
-        lambda cfg, logger: pd.DataFrame({"pid": ["P1"], "oids": ["O1"]}),
+        lambda cfg, logger: pd.DataFrame({"pid": ["P1"], "oid": ["O1"]}),
     )
-    monkeypatch.setattr(input_config, "_expand_pid_defaults", lambda df, *args, **kwargs: df)
     monkeypatch.setattr(
         input_config,
         "_load_parcel_selection",

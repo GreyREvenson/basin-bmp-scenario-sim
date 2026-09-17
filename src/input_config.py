@@ -32,13 +32,8 @@ from .constants import (
     CFG_DELIVERY_RATIOS,
     CFG_DOMAIN,
     CFG_N_SCENARIOS,
-    CFG_OUTLET_LOC,
-    CFG_OUTLET_MEAN,
-    CFG_OUTLET_TARGET,
+    CFG_OUTLETS,
     CFG_PARALLEL,
-    CFG_PARCEL_OUT,
-    CFG_PARCEL_P,
-    CFG_PARCEL_UP,
     CFG_PARCELS,
     CFG_POLLUTANT_LOAD_RATE,
     CFG_POLLUTANTS,
@@ -60,11 +55,11 @@ from .constants import (
     COL_CPS,
     COL_MEAN,
     COL_OID,
-    COL_OIDS,
     COL_PID,
     COL_PID_UP,
     COL_POLLUTANT,
     COL_PROBABILITY,
+    COL_SELECTION_WEIGHT,
     COL_TARGET,
     COL_UNIT,
     COL_PATHWAY,
@@ -76,8 +71,17 @@ from .constants import (
     COL_SDR_S_TO_O,
     COL_NDR_F_TO_S,
     COL_NDR_S_TO_O,
+    GPKG_PARCELS_LAYER,
+    GPKG_PARCEL_UP_TABLE,
+    GPKG_PARCEL_OUTLETS_TABLE,
+    GPKG_PARCEL_PARAMETERS_TABLE,
+    GPKG_POLLUTANT_LOAD_RATES_TABLE,
+    GPKG_POLLUTANT_CONCENTRATIONS_TABLE,
+    GPKG_OUTLETS_LAYER,
+    GPKG_OUTLET_STATS_TABLE,
+    RUSLE_PARAMETER_NAMES,
 )
-from .io_utils import read_csv_table, read_geodataframe, read_parquet_table
+from .io_utils import read_csv_table, read_geodataframe, read_geopackage_table, read_parquet_table
 from .utils import ci_get, normalize_columns, normalize_pollutant_label
 from .logging_utils import log_scope
 from .input_distributions import (
@@ -151,6 +155,50 @@ def _merge_csvs(
         logger.warning(f"Duplicate rows detected in {label}; keeping first occurrence")
         out = out.drop_duplicates(subset=dedup_subset, keep="first")
     return out
+
+
+def _read_gpkg_input_table(
+    package_path: Union[str, Path],
+    table_name: str,
+    required_cols: Sequence[str],
+    label: str,
+    logger: Any,
+) -> pd.DataFrame:
+    """Read one named attribute table from a consolidated GeoPackage input.
+
+    The GeoPackage is a physical container only: each logical dataset retains
+    its own normalized relational table and downstream model contracts remain
+    unchanged.
+    """
+    package = Path(package_path)
+    if not package.exists():
+        raise FileNotFoundError(f"{label} GeoPackage not found: {package}")
+    logger.verbose(f"Reading {label} from {package} layer={table_name}")
+    try:
+        frame = read_geopackage_table(package, table_name)
+    except Exception as exc:
+        raise ValueError(
+            f"{label} requires table/layer '{table_name}' in {package}"
+        ) from exc
+    frame = normalize_columns(pd.DataFrame(frame))
+    if "fid" in frame.columns:
+        frame = frame.drop(columns=["fid"])
+    require_columns(frame, required_cols, f"{label} ({package}:{table_name})", logger)
+    return frame.reset_index(drop=True)
+
+
+def _load_table_source(
+    source: Any,
+    required_cols: Sequence[str],
+    label: str,
+    logger: Any,
+) -> pd.DataFrame:
+    """Load a logical input table from either an in-memory frame or CSV path(s)."""
+    if isinstance(source, pd.DataFrame):
+        frame = normalize_columns(source.copy())
+        require_columns(frame, required_cols, label, logger)
+        return frame.reset_index(drop=True)
+    return _merge_csvs(source, required_cols, label, logger)
 
 
 def load_bmp_selection_probabilities(
@@ -720,27 +768,16 @@ def apply_config_defaults(cfg: Dict[str, Any]) -> None:
 _CONFIG_PATH_KEYS = (
     CFG_DOMAIN,
     CFG_PARCELS,
-    CFG_OUTLET_LOC,
-    CFG_PARCEL_OUT,
-    CFG_PARCEL_UP,
-    CFG_PARCEL_P,
-    CFG_POLLUTANT_LOAD_RATE,
+    CFG_OUTLETS,
     CFG_BMP_EFFICIENCY,
     CFG_BMP_COST,
     CFG_BMP_SEL,
-    CFG_DELIVERY_RATIOS,
-    CFG_OUTLET_TARGET,
-    CFG_OUTLET_MEAN,
     CFG_INPUT_DISTRIBUTIONS,
     CFG_OUTPUTS,
 )
 
 _LOAD_GENERATION_PATH_KEYS = (
-    LOAD_PLET_INPUTS,
     LOAD_HYDROLOGY_LOOKUP,
-    LOAD_RUSLE_INPUTS,
-    LOAD_CONCENTRATIONS,
-    LOAD_GROUNDWATER_CONCENTRATIONS,
 )
 
 
@@ -835,30 +872,17 @@ def normalize_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
-def _load_parameter_stats_table(path: Any, label: str, logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
-    """Load a parcel parameter statistics table.
-
-    Parameters
-    ----------
-    path : Any
-        CSV file path or sequence of paths.
-    label : str
-        Dataset label used in logs and errors.
-    logger : Any
-        Logger used for progress reporting.
-    distribution_catalog : Optional[pd.DataFrame]
-        Reusable distribution catalog used to resolve referenced statistics.
-
-    Returns
-    -------
-    pandas.DataFrame or None
-        Loaded parameter statistics table, or ``None`` when no path is
-        provided.
-    """
-    if path is None:
+def _load_parameter_stats_table(
+    source: Any,
+    label: str,
+    logger: Any,
+    distribution_catalog: Optional[pd.DataFrame] = None,
+) -> Optional[pd.DataFrame]:
+    """Load a parcel parameter statistics table from a frame or CSV path(s)."""
+    if source is None:
         return None
     from .plet_rusle import canonical_parameter_name
-    df = _merge_csvs(path, [COL_PID, "parameter"], label, logger)
+    df = _load_table_source(source, [COL_PID, "parameter"], label, logger)
     df[COL_PID] = df[COL_PID].astype(str)
     df["parameter"] = df["parameter"].map(canonical_parameter_name)
     validate_unique_rows(df, [COL_PID, "parameter"], label)
@@ -868,42 +892,16 @@ def _load_parameter_stats_table(path: Any, label: str, logger: Any, distribution
 
 
 def _load_plet_parameter_table(
-    path: Any,
+    source: Any,
     parcel_ids: Sequence[str],
     logger: Any,
     distribution_catalog: Optional[pd.DataFrame] = None,
 ) -> Optional[pd.DataFrame]:
-    """Load PLET numeric parameters and required categorical classifications.
-
-    Unlike the general parameter loader, this function permits fixed string
-    values for ``land_cover`` and ``hsg`` while retaining the existing
-    distribution-statistics behavior for all numeric parameters.
-
-    Parameters
-    ----------
-    path : Any
-        CSV file path or sequence of paths.
-    parcel_ids : sequence of str
-        Parcel identifiers that may be selected by the model.
-    logger : Any
-        Logger used for progress reporting.
-    distribution_catalog : Optional[pd.DataFrame]
-        Reusable distribution catalog used to resolve referenced statistics.
-
-    Returns
-    -------
-    pandas.DataFrame or None
-        Validated PLET parameter table, or ``None`` when no path is provided.
-
-    Raises
-    ------
-    ValueError
-        If fixed PLET land-cover or HSG classifications are supplied as distributions.
-    """
-    if path is None:
+    """Load PLET numeric parameters and fixed land-cover/HSG classifications."""
+    if source is None:
         return None
     from .plet_rusle import canonical_parameter_name, PLET_CLASSIFICATION_PARAMETERS
-    df = _merge_csvs(path, [COL_PID, "parameter"], LOAD_PLET_INPUTS, logger)
+    df = _load_table_source(source, [COL_PID, "parameter"], LOAD_PLET_INPUTS, logger)
     df[COL_PID] = df[COL_PID].astype(str)
     df["parameter"] = df["parameter"].map(canonical_parameter_name)
     validate_unique_rows(df, [COL_PID, "parameter"], LOAD_PLET_INPUTS)
@@ -915,7 +913,8 @@ def _load_plet_parameter_table(
         if bad.any():
             raise ValueError("PLET land_cover and hsg are classifications and must use fixed value, not distribution_id")
     categorical_stat_cols = [
-        col for col in statistic_columns(categorical_rows.columns) if str(col).strip().lower() != "value"
+        col for col in statistic_columns(categorical_rows.columns)
+        if str(col).strip().lower() != "value"
     ]
     if categorical_stat_cols and not categorical_rows.empty:
         bad_stats = categorical_rows[categorical_stat_cols].notna().any(axis=1)
@@ -1041,42 +1040,17 @@ def _load_plet_hydrology_lookup(
     return table.reset_index(drop=True)
 
 
-def _load_pollutant_concentrations(path: Any, pollutants: List[str], logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
-    """Load unified PLET pollutant concentration inputs.
-
-    Each row is identified by ``pid``, ``pollutant``, and ``pathway``.  PLET
-    mode recognizes exactly two concentration pathways: ``surface`` and
-    ``subsurface``.  The returned table retains the pathway column so it can be
-    split into the two existing runtime concentration tables without changing
-    downstream load-state behavior.
-
-    Parameters
-    ----------
-    path : Any
-        CSV file path or sequence of paths.
-    pollutants : list[str]
-        Pollutant names to retain.
-    logger : Any
-        Logger used for progress reporting.
-    distribution_catalog : Optional[pd.DataFrame]
-        Reusable distribution catalog used to resolve referenced statistics.
-
-    Returns
-    -------
-    pandas.DataFrame or None
-        Filtered unified pollutant concentration table, or ``None`` when no
-        path is provided.
-
-    Raises
-    ------
-    ValueError
-        If ``pathway`` is missing or contains values other than ``surface`` or
-        ``subsurface``.
-    """
-    if path is None:
+def _load_pollutant_concentrations(
+    source: Any,
+    pollutants: List[str],
+    logger: Any,
+    distribution_catalog: Optional[pd.DataFrame] = None,
+) -> Optional[pd.DataFrame]:
+    """Load the unified surface/subsurface concentration table."""
+    if source is None:
         return None
-    df = _merge_csvs(
-        path,
+    df = _load_table_source(
+        source,
         [COL_PID, COL_POLLUTANT, COL_PATHWAY],
         LOAD_CONCENTRATIONS,
         logger,
@@ -1085,25 +1059,16 @@ def _load_pollutant_concentrations(path: Any, pollutants: List[str], logger: Any
     df = _normalize_pathway_column(df, LOAD_CONCENTRATIONS, logger)
     df[COL_PID] = df[COL_PID].astype(str)
     df = df[df[COL_POLLUTANT].isin(pollutants)].copy()
-
-    unexpected = sorted(set(df[COL_PATHWAY].astype(str)) - set(PLET_PATHWAY_VALUES))
-    if unexpected:
+    invalid_pathways = sorted(set(df[COL_PATHWAY]) - set(PLET_PATHWAY_VALUES))
+    if invalid_pathways:
         raise ValueError(
-            f"{LOAD_CONCENTRATIONS} recognizes only pathway labels 'surface' and "
-            f"'subsurface' in plet_rusle mode; unexpected={unexpected}"
+            f"{LOAD_CONCENTRATIONS} contains unsupported pathways {invalid_pathways}; "
+            f"expected only {list(PLET_PATHWAY_VALUES)}"
         )
-
     validate_unique_rows(
-        df,
-        [COL_PID, COL_POLLUTANT, COL_PATHWAY],
-        LOAD_CONCENTRATIONS,
+        df, [COL_PID, COL_POLLUTANT, COL_PATHWAY], LOAD_CONCENTRATIONS
     )
-
-    # The generic unit-inference layer interprets any pollutant row carrying a
-    # pathway as a pathway-specific load-rate row. Concentration rows now also
-    # carry pathway metadata, so resolve and validate their numeric definition
-    # without that metadata, then restore the pathway column unchanged.
-    pathways = df[COL_PATHWAY].reset_index(drop=True)
+    pathways = df[COL_PATHWAY].copy().reset_index(drop=True)
     numeric_df = df.drop(columns=[COL_PATHWAY]).reset_index(drop=True)
     numeric_df = resolve_distribution_references(
         numeric_df, distribution_catalog, LOAD_CONCENTRATIONS
@@ -1187,7 +1152,10 @@ def _load_domain(cfg: Dict[str, Any], logger: Any) -> gpd.GeoDataFrame:
     geopandas.GeoDataFrame
         Domain boundary in a projected CRS with lowercase columns.
     """
-    domain_path = Path(ci_get(cfg, CFG_DOMAIN))
+    raw_domain = ci_get(cfg, CFG_DOMAIN)
+    if raw_domain is None:
+        raise ValueError("domain is required")
+    domain_path = Path(raw_domain)
     if not domain_path.exists():
         raise FileNotFoundError(f"Domain not found: {domain_path}")
     domain = read_geodataframe(domain_path)
@@ -1196,41 +1164,31 @@ def _load_domain(cfg: Dict[str, Any], logger: Any) -> gpd.GeoDataFrame:
 
 
 def _load_parcels(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
-    """Load parcels, clip them to the domain, and compute geometry metrics.
-
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Configuration mapping.
-    domain : geopandas.GeoDataFrame
-        Domain boundary used for clipping.
-    logger : Any
-        Logger used for progress reporting.
-
-    Returns
-    -------
-    geopandas.GeoDataFrame
-        Parcel dataframe with area and perimeter columns.
-
-    Raises
-    ------
-    ValueError
-        If the parcel file is missing required columns, becomes empty after
-        clipping, or contains duplicate parcel IDs.
-    """
-    parcels_path = Path(ci_get(cfg, CFG_PARCELS))
+    """Load the spatial ``parcels`` layer from the consolidated parcel GeoPackage."""
+    raw_parcels = ci_get(cfg, CFG_PARCELS)
+    if raw_parcels is None:
+        raise ValueError("parcels is required and must point to the consolidated parcels GeoPackage")
+    parcels_path = Path(raw_parcels)
     if not parcels_path.exists():
-        raise FileNotFoundError(f"Parcels not found: {parcels_path}")
-    parcels = read_geodataframe(parcels_path)
+        raise FileNotFoundError(f"Parcels GeoPackage not found: {parcels_path}")
+    try:
+        parcels = read_geodataframe(parcels_path, layer=GPKG_PARCELS_LAYER)
+    except Exception as exc:
+        raise ValueError(
+            f"Parcels GeoPackage must contain spatial layer '{GPKG_PARCELS_LAYER}': {parcels_path}"
+        ) from exc
     parcels = _ensure_projected(parcels, logger)
     parcels = gpd.overlay(parcels, domain, how="intersection")
     parcels = parcels.rename(columns={c: c.lower() for c in parcels.columns})
-    if "pid" not in parcels.columns:
-        raise ValueError("Parcels must include a 'pid' column")
+    if COL_PID not in parcels.columns:
+        raise ValueError("Parcels layer must include a 'pid' column")
     if parcels.empty:
         raise ValueError("No parcels remain after clipping to the domain")
-    if parcels["pid"].astype(str).duplicated().any():
-        dup_pids = sorted(parcels.loc[parcels["pid"].astype(str).duplicated(), "pid"].astype(str).unique().tolist())
+    if parcels[COL_PID].astype(str).duplicated().any():
+        dup_pids = sorted(
+            parcels.loc[parcels[COL_PID].astype(str).duplicated(), COL_PID]
+            .astype(str).unique().tolist()
+        )
         raise ValueError(f"Parcel IDs must be unique after clipping; duplicates found: {dup_pids}")
     parcels["area_m2"] = parcels.geometry.area
     parcels["perim_m"] = parcels.geometry.length
@@ -1240,452 +1198,183 @@ def _load_parcels(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) ->
     )
     return parcels
 
-
 def _load_parcel_graph(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
-    """Load parcel-to-parcel upstream relationships.
-
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Configuration mapping.
-    logger : Any
-        Logger used for progress reporting.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Table describing which parcels flow into which others.
-    """
-    up_path = Path(ci_get(cfg, CFG_PARCEL_UP))
-    if not up_path.exists():
-        raise FileNotFoundError(f"{CFG_PARCEL_UP} not found: {up_path}")
-    df = _merge_csvs(up_path, [COL_PID, COL_PID_UP], CFG_PARCEL_UP, logger)
-    return df
-
+    """Load optional normalized parcel-to-parcel upstream edges from ``parcels.gpkg``."""
+    package = ci_get(cfg, CFG_PARCELS)
+    try:
+        return _read_gpkg_input_table(
+            package,
+            GPKG_PARCEL_UP_TABLE,
+            [COL_PID, COL_PID_UP],
+            GPKG_PARCEL_UP_TABLE,
+            logger,
+        )
+    except ValueError as exc:
+        if "requires table/layer" in str(exc):
+            logger.verbose(
+                "parcel_up table not present; treating all parcels as having no upstream parcels"
+            )
+            return pd.DataFrame(columns=[COL_PID, COL_PID_UP])
+        raise
 
 def _build_parcel_up_map(
     upstream_rows: pd.DataFrame,
     parcel_ids: Sequence[str],
 ) -> Dict[str, List[str]]:
-    """Build a validated mapping of parcels to upstream parcel IDs.
-
-    Each ``pid_up`` cell may contain one ID, a comma-separated list of IDs, or
-    no value. A single ``pid='*'`` row with a blank ``pid_up`` may be used to
-    declare the watershed-wide default of no upstream parcels; explicit parcel
-    rows then provide exceptions. IDs are stripped of surrounding whitespace,
-    deduplicated while preserving their input order, and checked against the
-    loaded parcel set.
-
-    Parameters
-    ----------
-    upstream_rows : pandas.DataFrame
-        Parcel graph table containing ``pid`` and ``pid_up`` columns.
-    parcel_ids : sequence of str
-        Valid parcel IDs after the parcel layer has been clipped to the model
-        domain.
-
-    Returns
-    -------
-    dict[str, list[str]]
-        Upstream parcel IDs keyed by receiving parcel ID.
-
-    Raises
-    ------
-    ValueError
-        If a receiving or upstream parcel ID is missing from the loaded parcel
-        set, a graph row has a blank receiving parcel ID, or a wildcard row is
-        malformed.
-    """
+    """Build the parcel-upstream graph from normalized one-edge-per-row input."""
     ordered_pids = [str(pid).strip() for pid in parcel_ids]
     valid_pids = set(ordered_pids)
     parcel_up_map: Dict[str, List[str]] = {pid: [] for pid in ordered_pids}
     seen_by_pid = {pid: set() for pid in ordered_pids}
-    unknown_pids = set()
-    wildcard_default_seen = False
+    unknown: set[str] = set()
 
-    def resolve_pid(value: Any) -> str:
-        """Match numeric CSV values such as ``4.0`` to parcel ID ``4``.
-
-        Parameters
-        ----------
-        value : Any
-            Input value to normalize or evaluate.
-
-        Returns
-        -------
-        str
-            Normalized parcel identifier.
-        """
-        pid = str(value).strip()
-        if pid in valid_pids:
-            return pid
+    def normalize_pid(value: Any) -> str:
+        if pd.isna(value):
+            return ""
+        text = str(value).strip()
         if isinstance(value, (float, np.floating)) and np.isfinite(value) and float(value).is_integer():
-            integer_pid = str(int(value))
-            if integer_pid in valid_pids:
-                return integer_pid
-        return pid
+            text = str(int(value))
+        return text
 
     for row_idx, row in upstream_rows.iterrows():
-        raw_pid = row[COL_PID]
-        if pd.isna(raw_pid) or not str(raw_pid).strip():
-            raise ValueError(f"{CFG_PARCEL_UP} row {row_idx} has a blank {COL_PID}")
-
-        raw_upstream = row[COL_PID_UP]
-        pid_text = str(raw_pid).strip()
-        if pid_text == "*":
-            upstream_is_blank = pd.isna(raw_upstream) or not str(raw_upstream).strip()
-            if not upstream_is_blank:
-                raise ValueError(
-                    f"{CFG_PARCEL_UP} row {row_idx} uses pid='*' but {COL_PID_UP} is not blank. "
-                    "The parcel_up wildcard may only declare the default of no upstream parcels; "
-                    "actual upstream relationships must use explicit parcel IDs."
-                )
-            if wildcard_default_seen:
-                raise ValueError(
-                    f"{CFG_PARCEL_UP} may contain at most one pid='*' row with a blank {COL_PID_UP}"
-                )
-            wildcard_default_seen = True
-            continue
-
-        pid = resolve_pid(raw_pid)
+        pid = normalize_pid(row[COL_PID])
+        pid_up = normalize_pid(row[COL_PID_UP])
+        if not pid or not pid_up:
+            raise ValueError(
+                f"{GPKG_PARCEL_UP_TABLE} row {row_idx} must contain nonblank pid and pid_up"
+            )
+        if pid == "*" or pid_up == "*" or "," in pid or "," in pid_up:
+            raise ValueError(
+                f"{GPKG_PARCEL_UP_TABLE} uses normalized one-edge-per-row relationships; "
+                "wildcards and comma-separated IDs are not supported"
+            )
         if pid not in valid_pids:
-            unknown_pids.add(pid)
+            unknown.add(pid)
             continue
-
-        if pd.isna(raw_upstream):
+        if pid_up not in valid_pids:
+            unknown.add(pid_up)
             continue
+        if pid_up not in seen_by_pid[pid]:
+            parcel_up_map[pid].append(pid_up)
+            seen_by_pid[pid].add(pid_up)
 
-        if isinstance(raw_upstream, (int, float, np.integer, np.floating)):
-            raw_upstream_pids = [raw_upstream]
-        else:
-            raw_upstream_pids = str(raw_upstream).split(",")
-
-        for raw_upstream_pid in raw_upstream_pids:
-            upstream_pid = resolve_pid(raw_upstream_pid)
-            if not upstream_pid:
-                continue
-            if upstream_pid not in valid_pids:
-                unknown_pids.add(upstream_pid)
-                continue
-            if upstream_pid not in seen_by_pid[pid]:
-                parcel_up_map[pid].append(upstream_pid)
-                seen_by_pid[pid].add(upstream_pid)
-
-    if unknown_pids:
-        unknown = sorted(unknown_pids)
-        preview = unknown[:10]
-        suffix = f" (and {len(unknown) - len(preview)} more)" if len(unknown) > len(preview) else ""
+    if unknown:
+        values = sorted(unknown)
         raise ValueError(
-            f"{CFG_PARCEL_UP} references parcel IDs not found in parcels after clipping: "
-            f"{preview}{suffix}"
+            "parcel_up references parcel IDs not found in parcels after clipping: "
+            f"{values[:10]}"
         )
-
     return parcel_up_map
 
-
-def _expand_pid_defaults(
-    df: pd.DataFrame,
-    parcel_ids: Sequence[str],
-    *,
-    label: str,
-    logger: Any,
-    key_columns: Optional[Sequence[str]] = (),
-) -> pd.DataFrame:
-    """Expand ``pid='*'`` defaults to modeled parcels.
-
-    Exact parcel rows override wildcard defaults. When ``key_columns`` is an
-    empty sequence, at most one row may be defined for the wildcard and for
-    each exact parcel (used by ``parcel_p``). When one or more key columns are
-    supplied, overrides are resolved independently for each key combination
-    (used by ``delivery_ratios`` with ``oid``). When ``key_columns`` is
-    ``None``, rows are treated as a parcel-level group: if a parcel has any
-    explicit rows, those rows replace the wildcard group entirely (used by
-    ``parcel_out``).
-
-    Rows whose exact parcel IDs are not present in the clipped parcel layer are
-    removed with a warning. If no wildcard row is present, the function simply
-    returns the valid exact rows, preserving subset behavior.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input table to process.
-    parcel_ids : Sequence[str]
-        Parcel identifiers in model order.
-    label : str
-        Context label used in diagnostics and validation errors.
-    logger : Any
-        Logger used for diagnostic and progress messages.
-    key_columns : Optional[Sequence[str]]
-        Columns that, together with parcel ID, identify an input row.
-
-    Returns
-    -------
-    pd.DataFrame
-        Table with wildcard parcel defaults expanded to modeled parcels.
-
-    Raises
-    ------
-    ValueError
-        If wildcard defaults are ambiguous or parcel-specific rows are duplicated after expansion.
-    """
-    out = df.copy()
-    out[COL_PID] = out[COL_PID].astype(str).str.strip()
-
-    ordered_pids = [str(pid).strip() for pid in parcel_ids]
-    valid_pids = set(ordered_pids)
-
-    valid_mask = out[COL_PID].isin(valid_pids | {"*"})
-    removed = out.loc[~valid_mask]
-    if not removed.empty:
-        preview = removed[COL_PID].astype(str).drop_duplicates().head(10).tolist()
-        logger.warning(
-            f"{label}: some PIDs not found in parcels after clipping; they were removed. "
-            f"Example PIDs: {preview}"
-        )
-    out = out.loc[valid_mask].copy()
-    if out.empty:
-        return out.reset_index(drop=True)
-
-    defaults = out[out[COL_PID] == "*"].copy()
-    exact = out[out[COL_PID] != "*"].copy()
-
-    if key_columns is not None:
-        keys = list(key_columns)
-        if keys:
-            if not defaults.empty:
-                validate_unique_rows(defaults, keys, label)
-            validate_unique_rows(exact, [COL_PID, *keys], label)
-        else:
-            if len(defaults) > 1:
-                raise ValueError(f"{label} may contain at most one pid='*' default row")
-            if exact[COL_PID].duplicated().any():
-                dup_pids = sorted(
-                    exact.loc[exact[COL_PID].duplicated(keep=False), COL_PID]
-                    .astype(str)
-                    .unique()
-                    .tolist()
-                )
-                raise ValueError(
-                    f"{label} must contain one row per parcel; duplicates found: {dup_pids}"
-                )
-
-    if defaults.empty:
-        return exact.reset_index(drop=True)
-
-    expanded: List[pd.Series] = []
-    if key_columns is None:
-        for pid in ordered_pids:
-            pid_rows = exact[exact[COL_PID] == pid]
-            source = pid_rows if not pid_rows.empty else defaults
-            for _, row in source.iterrows():
-                copied = row.copy()
-                copied[COL_PID] = pid
-                expanded.append(copied)
-    else:
-        keys = list(key_columns)
-
-        def _key(row: pd.Series) -> Tuple[Any, ...]:
-            """Return a stable composite key for an input row.
-
-            Parameters
-            ----------
-            row : pd.Series
-                Input table row.
-
-            Returns
-            -------
-            Tuple[Any, ...]
-                Composite key used to identify an input row.
-            """
-            return tuple(row[column] for column in keys)
-
-        for pid in ordered_pids:
-            pid_rows = exact[exact[COL_PID] == pid]
-            exact_keys = {_key(row) for _, row in pid_rows.iterrows()}
-            for _, row in defaults.iterrows():
-                if _key(row) in exact_keys:
-                    continue
-                copied = row.copy()
-                copied[COL_PID] = pid
-                expanded.append(copied)
-            for _, row in pid_rows.iterrows():
-                expanded.append(row.copy())
-
-    if not expanded:
-        return out.iloc[0:0].copy().reset_index(drop=True)
-    return pd.DataFrame(expanded, columns=out.columns).reset_index(drop=True)
-
-
 def _load_parcel_outlets(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
-    """Load parcel-to-outlet relationships.
-
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Configuration mapping.
-    logger : Any
-        Logger used for progress reporting.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Table describing which outlets each parcel drains to.
-    """
-    out_path = Path(ci_get(cfg, CFG_PARCEL_OUT))
-    if not out_path.exists():
-        raise FileNotFoundError(f"{CFG_PARCEL_OUT} not found: {out_path}")
-    df = _merge_csvs(out_path, [COL_PID, COL_OIDS], CFG_PARCEL_OUT, logger)
-    return df
-
-
-def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: Any) -> pd.DataFrame:
-    """Load or synthesize parcel selection probabilities.
-
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Configuration mapping.
-    parcels : pandas.DataFrame
-        Parcel table used to determine available parcel IDs.
-    logger : Any
-        Logger used for progress reporting.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Parcel IDs and normalized selection probabilities.
-    """
-    if parcels.empty:
-        raise ValueError("No parcels available for selection")
-    p_cfg = ci_get(cfg, CFG_PARCEL_P)
-    if p_cfg is not None:
-        df = _merge_csvs(p_cfg, [COL_PID, COL_PROBABILITY], CFG_PARCEL_P, logger)
-        probs = pd.to_numeric(df[COL_PROBABILITY], errors="coerce")
-        invalid = (~np.isfinite(probs)) | (probs < 0.0)
-        if invalid.any():
-            bad_rows = df.loc[invalid, [COL_PID, COL_PROBABILITY]]
-            preview = bad_rows.head(5).to_dict(orient="records")
-            raise ValueError(
-                f"{CFG_PARCEL_P} contains invalid probability values (must be finite and >= 0). "
-                f"Example rows: {preview}"
-            )
-        df[COL_PROBABILITY] = probs.astype(float)
-        df = _expand_pid_defaults(
-            df,
-            parcels[COL_PID].astype(str).tolist(),
-            label=CFG_PARCEL_P,
-            logger=logger,
-            key_columns=[],
-        )
-        if df.empty:
-            raise ValueError(f"{CFG_PARCEL_P} has no {COL_PID}s that exist in parcels after filtering")
-        total_prob = df[COL_PROBABILITY].sum()
-        if total_prob <= 0:
-            raise ValueError(f"{CFG_PARCEL_P} selection weights sum to zero or negative")
-        df[COL_PROBABILITY] /= total_prob
-        return df[[COL_PID, COL_PROBABILITY]].copy()
-    return pd.DataFrame({COL_PID: parcels[COL_PID].values, COL_PROBABILITY: np.full(len(parcels), 1 / len(parcels))})
-
-
-def _load_outlet_loc(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
-    """Load outlet locations and align them to the domain CRS.
-
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Configuration mapping.
-    domain : geopandas.GeoDataFrame
-        Domain boundary whose CRS is used for alignment.
-    logger : Any
-        Logger used for progress reporting.
-
-    Returns
-    -------
-    geopandas.GeoDataFrame
-        Outlet location dataframe in the domain CRS.
-    """
-    outlet_path = Path(ci_get(cfg, CFG_OUTLET_LOC))
-    if not outlet_path.exists():
-        raise FileNotFoundError(f"Outlet location not found: {outlet_path}")
-    outlet_loc = read_geodataframe(outlet_path).to_crs(domain.crs)
-    outlet_loc = outlet_loc.rename(columns={c: c.lower() for c in outlet_loc.columns})
-    require_columns(outlet_loc, [COL_OID], CFG_OUTLET_LOC, logger)
-    return outlet_loc
-
-
-def _load_optional_outlet_stats(
-    cfg: Dict[str, Any],
-    key: str,
-    required_cols: Sequence[str],
-    label: str,
-    logger: Any,
-) -> Optional[pd.DataFrame]:
-    """Optionally load an outlet summary table.
-
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Configuration mapping.
-    key : str
-        Configuration key for the table path.
-    required_cols : sequence of str
-        Columns that must be present in the table.
-    label : str
-        Dataset label used in logs and errors.
-    logger : Any
-        Logger used for progress reporting.
-
-    Returns
-    -------
-    pandas.DataFrame or None
-        Loaded table with normalized pollutant names, or ``None`` when the
-        configuration key is absent.
-    """
-    if ci_get(cfg, key) is None:
-        logger.verbose(f"Optional key {key} not provided; skipping {label}")
-        return None
-    df = _merge_csvs(ci_get(cfg, key), required_cols, label, logger)
-    df = _normalize_pollutant_column(df, COL_POLLUTANT, label, logger)
-    numeric_columns = [
-        column for column in (COL_TARGET, COL_MEAN) if column in df.columns
-    ]
-    validate_numeric_columns_in_domain(
-        df, numeric_columns, NONNEGATIVE_DOMAIN, label
-    )
-    return df
-
-
-def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataFrame]:
-    """Optionally load parcel-to-outlet delivery ratios.
-
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Configuration mapping.
-    logger : Any
-        Logger used for progress and warning messages.
-
-    Returns
-    -------
-    pandas.DataFrame or None
-        Delivery ratio table, or ``None`` when not configured or missing.
-    """
-    dr_cfg = ci_get(cfg, CFG_DELIVERY_RATIOS)
-    if dr_cfg is None:
-        logger.verbose("No delivery ratios configured; using default delivery coefficients")
-        return None
-    dr_path = Path(dr_cfg)
-    if not dr_path.exists():
-        logger.warning(f"{CFG_DELIVERY_RATIOS} specified but file not found: {dr_cfg}; skipping delivery ratios")
-        return None
-    return _merge_csvs(
-        dr_cfg,
-        [COL_PID, COL_OID, "sdr_f_to_s", "sdr_s_to_o", "ndr_f_to_s", "ndr_s_to_o"],
-        CFG_DELIVERY_RATIOS,
+    """Load normalized parcel-to-outlet edges from ``parcels.gpkg``."""
+    return _read_gpkg_input_table(
+        ci_get(cfg, CFG_PARCELS),
+        GPKG_PARCEL_OUTLETS_TABLE,
+        [COL_PID, COL_OID],
+        GPKG_PARCEL_OUTLETS_TABLE,
         logger,
     )
 
+def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: Any) -> pd.DataFrame:
+    """Load selection weights from the ``parcels`` layer or use equal weights."""
+    del cfg, logger
+    if parcels.empty:
+        raise ValueError("No parcels available for selection")
+    if COL_SELECTION_WEIGHT not in parcels.columns:
+        return pd.DataFrame({
+            COL_PID: parcels[COL_PID].astype(str).values,
+            COL_PROBABILITY: np.full(len(parcels), 1.0 / len(parcels)),
+        })
+    df = parcels[[COL_PID, COL_SELECTION_WEIGHT]].copy()
+    df[COL_PID] = df[COL_PID].astype(str)
+    weights = pd.to_numeric(df[COL_SELECTION_WEIGHT], errors="coerce")
+    invalid = (~np.isfinite(weights)) | (weights < 0.0)
+    if invalid.any():
+        preview = df.loc[invalid, [COL_PID, COL_SELECTION_WEIGHT]].head(5).to_dict(orient="records")
+        raise ValueError(
+            "parcels.selection_weight values must be finite and >= 0. "
+            f"Example rows: {preview}"
+        )
+    total = float(weights.sum())
+    if total <= 0.0:
+        raise ValueError("parcels.selection_weight values sum to zero or negative")
+    df[COL_PROBABILITY] = weights.astype(float) / total
+    return df[[COL_PID, COL_PROBABILITY]].reset_index(drop=True)
+
+def _load_outlet_loc(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
+    """Load the spatial ``outlets`` layer from the consolidated outlet GeoPackage."""
+    raw_outlets = ci_get(cfg, CFG_OUTLETS)
+    if raw_outlets is None:
+        raise ValueError("outlets is required and must point to the consolidated outlets GeoPackage")
+    outlet_path = Path(raw_outlets)
+    if not outlet_path.exists():
+        raise FileNotFoundError(f"Outlets GeoPackage not found: {outlet_path}")
+    try:
+        outlet_loc = read_geodataframe(outlet_path, layer=GPKG_OUTLETS_LAYER).to_crs(domain.crs)
+    except Exception as exc:
+        raise ValueError(
+            f"Outlets GeoPackage must contain spatial layer '{GPKG_OUTLETS_LAYER}': {outlet_path}"
+        ) from exc
+    outlet_loc = outlet_loc.rename(columns={c: c.lower() for c in outlet_loc.columns})
+    require_columns(outlet_loc, [COL_OID], CFG_OUTLETS, logger)
+    return outlet_loc
+
+def _load_optional_outlet_stats(
+    cfg: Dict[str, Any],
+    value_col: str,
+    logger: Any,
+) -> Optional[pd.DataFrame]:
+    """Load one optional statistic column from the consolidated ``outlet_stats`` table."""
+    if value_col not in {COL_TARGET, COL_MEAN}:
+        raise ValueError(f"Unsupported outlet statistic column: {value_col}")
+    label = f"{GPKG_OUTLET_STATS_TABLE}.{value_col}"
+    required_cols = [COL_OID, COL_POLLUTANT, value_col]
+    package = ci_get(cfg, CFG_OUTLETS)
+    base_required = [COL_OID, COL_POLLUTANT]
+    try:
+        df = _read_gpkg_input_table(
+            package, GPKG_OUTLET_STATS_TABLE, base_required, "outlet_stats", logger
+        )
+    except ValueError as exc:
+        if "requires table/layer" in str(exc):
+            logger.verbose("outlet_stats table not present; skipping optional outlet statistics")
+            return None
+        raise
+    if value_col not in df.columns:
+        logger.verbose(f"outlet_stats does not contain {value_col}; skipping {label}")
+        return None
+    df = df[df[value_col].notna()].copy()
+    if df.empty:
+        return None
+    require_columns(df, required_cols, label, logger)
+    df = _normalize_pollutant_column(df, COL_POLLUTANT, label, logger)
+    validate_numeric_columns_in_domain(df, [value_col], NONNEGATIVE_DOMAIN, label)
+    validate_unique_rows(df, [COL_OID, COL_POLLUTANT], label)
+    return df[list(required_cols)].reset_index(drop=True)
+
+def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataFrame]:
+    """Load optional delivery ratios from the ``parcel_outlets`` table."""
+    required_ratio_cols = [
+        COL_SDR_F_TO_S, COL_SDR_S_TO_O, COL_NDR_F_TO_S, COL_NDR_S_TO_O
+    ]
+    table = _read_gpkg_input_table(
+        ci_get(cfg, CFG_PARCELS),
+        GPKG_PARCEL_OUTLETS_TABLE,
+        [COL_PID, COL_OID],
+        CFG_DELIVERY_RATIOS,
+        logger,
+    )
+    present = [column for column in required_ratio_cols if column in table.columns]
+    if not present:
+        logger.verbose("parcel_outlets has no delivery-ratio columns; using neutral defaults")
+        return None
+    missing = [column for column in required_ratio_cols if column not in table.columns]
+    if missing:
+        raise ValueError(
+            f"parcel_outlets supplies some delivery-ratio columns but is missing {missing}"
+        )
+    return table[[COL_PID, COL_OID, *required_ratio_cols]].copy()
 
 def _efficiency_stat_columns(df: pd.DataFrame) -> List[str]:
     """Return columns that can define an efficiency distribution.
@@ -2142,33 +1831,21 @@ def _expand_pollutant_load_rate_defaults(
     return pd.DataFrame(expanded).reset_index(drop=True)
 
 
-def _load_pollutant_load_rate(cfg: Dict[str, Any], parcels: pd.DataFrame, pollutants: List[str], logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-    """Load parcel pollutant load rates for non-PLET mode.
-
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Configuration mapping.
-    parcels : pandas.DataFrame
-        Parcel table used to filter valid IDs.
-    pollutants : list[str]
-        Pollutants to retain.
-    logger : Any
-        Logger used for progress reporting.
-    distribution_catalog : Optional[pd.DataFrame]
-        Reusable distribution catalog used to resolve referenced statistics.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Parcel pollutant load rate table filtered to valid parcels and pollutants.
-
-    Raises
-    ------
-    ValueError
-        If no pollutant load-rate records remain for the modeled parcels and pollutants.
-    """
-    df = _merge_csvs(ci_get(cfg, CFG_POLLUTANT_LOAD_RATE), [COL_PID, COL_POLLUTANT], CFG_POLLUTANT_LOAD_RATE, logger)
+def _load_pollutant_load_rate(
+    cfg: Dict[str, Any],
+    parcels: pd.DataFrame,
+    pollutants: List[str],
+    logger: Any,
+    distribution_catalog: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    """Load statistical parcel pollutant load rates from ``parcels.gpkg``."""
+    df = _read_gpkg_input_table(
+        ci_get(cfg, CFG_PARCELS),
+        GPKG_POLLUTANT_LOAD_RATES_TABLE,
+        [COL_PID, COL_POLLUTANT],
+        CFG_POLLUTANT_LOAD_RATE,
+        logger,
+    )
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_POLLUTANT_LOAD_RATE, logger)
     df = _normalize_pathway_column(df, CFG_POLLUTANT_LOAD_RATE, logger)
     df = resolve_distribution_references(df, distribution_catalog, CFG_POLLUTANT_LOAD_RATE)
@@ -2178,10 +1855,9 @@ def _load_pollutant_load_rate(cfg: Dict[str, Any], parcels: pd.DataFrame, pollut
         df, parcels[COL_PID].astype(str).tolist(), pollutants
     )
     if df.empty:
-        raise ValueError("pollutant_load_rate has no records for specified parcels+pollutants")
+        raise ValueError("pollutant_load_rates has no records for specified parcels+pollutants")
     validate_stats_rows(df, CFG_POLLUTANT_LOAD_RATE)
     return df
-
 
 def _resolve_aggregate_pathway_fractions(
     cfg: Dict[str, Any], load_generation: Dict[str, Any], pathways: Sequence[str]
@@ -2297,7 +1973,8 @@ def _complete_delivery_ratio_defaults(
                 COL_NDR_S_TO_O: 1.0,
             })
     if rows:
-        out = pd.concat([out, pd.DataFrame(rows)], ignore_index=True)
+        defaults = pd.DataFrame(rows, columns=columns)
+        out = defaults if out.empty else pd.concat([out, defaults], ignore_index=True)
     for column in (COL_SDR_F_TO_S, COL_SDR_S_TO_O, COL_NDR_F_TO_S, COL_NDR_S_TO_O):
         if column not in out.columns:
             out[column] = pd.Series(dtype=float)
@@ -2340,28 +2017,26 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
 
         up = _load_parcel_graph(cfg, logger)
         out = _load_parcel_outlets(cfg, logger)
-        out = _expand_pid_defaults(
-            out,
-            parcels[COL_PID].astype(str).tolist(),
-            label=CFG_PARCEL_OUT,
-            logger=logger,
-            key_columns=None,
-        )
         sel = _load_parcel_selection(cfg, parcels, logger)
 
-        parcel_up_map = _build_parcel_up_map(
-            up,
-            parcels[COL_PID].astype(str).tolist(),
-        )
+        parcel_ids = parcels[COL_PID].astype(str).tolist()
+        parcel_up_map = _build_parcel_up_map(up, parcel_ids)
 
-        parcel_out_map: Dict[str, List[str]] = {}
-        for pid in parcels[COL_PID].astype(str):
-            oids: List[str] = []
-            rows = out[out[COL_PID].astype(str) == str(pid)]
-            if not rows.empty:
-                for value in rows[COL_OIDS].tolist():
-                    oids.extend([str(x).strip() for x in str(value).split(",") if str(x).strip()])
-            parcel_out_map[str(pid)] = list(dict.fromkeys(oids))
+        out = out.copy()
+        out[COL_PID] = out[COL_PID].astype(str).str.strip()
+        out[COL_OID] = out[COL_OID].astype(str).str.strip()
+        validate_unique_rows(out, [COL_PID, COL_OID], GPKG_PARCEL_OUTLETS_TABLE)
+        unknown_out_pids = sorted(set(out[COL_PID]) - set(parcel_ids))
+        if unknown_out_pids:
+            raise ValueError(
+                "parcel_outlets references parcel IDs not found in parcels after clipping: "
+                f"{unknown_out_pids[:10]}"
+            )
+        parcel_out_map: Dict[str, List[str]] = {pid: [] for pid in parcel_ids}
+        for row in out.itertuples(index=False):
+            pid = str(getattr(row, COL_PID))
+            oid = str(getattr(row, COL_OID))
+            parcel_out_map[pid].append(oid)
 
         pollutants = _load_pollutants(cfg)
         cps = _load_cps(cfg)
@@ -2382,8 +2057,16 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         )
 
         outlet_loc = _load_outlet_loc(cfg, domain, logger)
-        outlet_target = _load_optional_outlet_stats(cfg, CFG_OUTLET_TARGET, [COL_OID, COL_POLLUTANT, COL_TARGET], CFG_OUTLET_TARGET, logger)
-        outlet_mean = _load_optional_outlet_stats(cfg, CFG_OUTLET_MEAN, [COL_OID, COL_POLLUTANT, COL_MEAN], CFG_OUTLET_MEAN, logger)
+        valid_oids = set(outlet_loc[COL_OID].astype(str))
+        referenced_oids = {oid for values in parcel_out_map.values() for oid in values}
+        unknown_oids = sorted(referenced_oids - valid_oids)
+        if unknown_oids:
+            raise ValueError(
+                "parcel_outlets references outlet IDs not found in outlets layer: "
+                f"{unknown_oids[:10]}"
+            )
+        outlet_target = _load_optional_outlet_stats(cfg, COL_TARGET, logger)
+        outlet_mean = _load_optional_outlet_stats(cfg, COL_MEAN, logger)
 
         if "pathway_mode" in load_generation:
             raise ValueError(
@@ -2422,14 +2105,30 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         pollutant_concentrations = None
         groundwater_concentrations = None
         if load_mode == LOAD_MODE_PLET_RUSLE:
+            package_parameters = _read_gpkg_input_table(
+                ci_get(cfg, CFG_PARCELS),
+                GPKG_PARCEL_PARAMETERS_TABLE,
+                [COL_PID, "parameter"],
+                "parcel_parameters",
+                logger,
+            )
+            from .plet_rusle import canonical_parameter_name
+            canonical_names = package_parameters["parameter"].map(canonical_parameter_name)
+            rusle_mask = canonical_names.isin(set(RUSLE_PARAMETER_NAMES))
+            plet_source = package_parameters.loc[~rusle_mask].copy()
+            rusle_rows = package_parameters.loc[rusle_mask].copy()
+            rusle_source = None if rusle_rows.empty else rusle_rows
+
             plet_inputs = _load_plet_parameter_table(
-                load_generation.get(LOAD_PLET_INPUTS),
+                plet_source,
                 sel[COL_PID].astype(str).tolist(),
                 logger,
                 distribution_catalog,
             )
             if plet_inputs is None:
-                raise ValueError("load_generation.plet_inputs is required for mode='plet_rusle'")
+                raise ValueError(
+                    "plet_rusle mode requires parcel_parameters in the parcels GeoPackage"
+                )
             plet_hydrology_lookup = _load_plet_hydrology_lookup(
                 load_generation.get(LOAD_HYDROLOGY_LOOKUP),
                 logger,
@@ -2437,17 +2136,18 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             )
             load_generation["_hydrology_lookup_table"] = plet_hydrology_lookup
             rusle_inputs = _load_parameter_stats_table(
-                load_generation.get(LOAD_RUSLE_INPUTS), LOAD_RUSLE_INPUTS, logger,
-                distribution_catalog,
+                rusle_source, LOAD_RUSLE_INPUTS, logger, distribution_catalog
             )
-            if LOAD_GROUNDWATER_CONCENTRATIONS in load_generation:
-                raise ValueError(
-                    "load_generation.groundwater_concentrations has been removed; "
-                    "put subsurface concentration rows in "
-                    "load_generation.pollutant_concentrations with pathway='subsurface'"
-                )
             unified_concentrations = _load_pollutant_concentrations(
-                load_generation.get(LOAD_CONCENTRATIONS), pollutants, logger,
+                _read_gpkg_input_table(
+                    ci_get(cfg, CFG_PARCELS),
+                    GPKG_POLLUTANT_CONCENTRATIONS_TABLE,
+                    [COL_PID, COL_POLLUTANT, COL_PATHWAY],
+                    LOAD_CONCENTRATIONS,
+                    logger,
+                ),
+                pollutants,
+                logger,
                 distribution_catalog,
             )
             pollutant_concentrations, groundwater_concentrations = _split_plet_concentrations(
@@ -2462,10 +2162,6 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 parcels[COL_PID].astype(str).tolist(),
                 pollutants,
             )
-            if any(p in {"TN", "TP"} for p in pollutants) and unified_concentrations is None:
-                raise ValueError(
-                    "load_generation.pollutant_concentrations is required for TN or TP in plet_rusle mode"
-                )
             pollutant_load_rate = None
             pathways = list(PLET_PATHWAY_VALUES)
             pollutant_load_rate_is_aggregate = False
@@ -2494,14 +2190,6 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             )
 
         delivery_ratios = _load_delivery_ratios(cfg, logger)
-        if delivery_ratios is not None:
-            delivery_ratios = _expand_pid_defaults(
-                delivery_ratios,
-                parcels[COL_PID].astype(str).tolist(),
-                label=CFG_DELIVERY_RATIOS,
-                logger=logger,
-                key_columns=[COL_OID],
-            )
         delivery_ratios = _complete_delivery_ratio_defaults(delivery_ratios, parcel_out_map)
 
         avg_area_ha = float(parcels["area_ha"].mean())

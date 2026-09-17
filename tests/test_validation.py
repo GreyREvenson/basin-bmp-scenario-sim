@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from src.bmp import _get_bmp_selection_probs
-from src.constants import CFG_PARCEL_P, DATA_CPS, DATA_PARCELS
+from src.constants import COL_SELECTION_WEIGHT, DATA_CPS, DATA_PARCELS
 from src.input_config import _build_parcel_up_map, _load_parcel_selection
 from src.model import Model
 
@@ -29,111 +29,56 @@ def test_load_parcel_selection_rejects_empty_parcels() -> None:
         _load_parcel_selection({}, pd.DataFrame(columns=["pid"]), DummyLogger())
 
 
-def test_load_parcel_selection_rejects_duplicate_selection_rows(tmp_path) -> None:
-    parcel_p = tmp_path / "parcel_p.csv"
-    pd.DataFrame({"pid": ["p1", "p1"], "probability": [0.4, 0.6]}).to_csv(parcel_p, index=False)
-    cfg = {CFG_PARCEL_P: str(parcel_p)}
-    parcels = pd.DataFrame({"pid": ["p1", "p2"]})
-
-    with pytest.raises(ValueError, match="must contain one row per parcel"):
-        _load_parcel_selection(cfg, parcels, DummyLogger())
-
-
-
-def test_load_parcel_selection_supports_wildcard_default_and_exact_override(tmp_path) -> None:
-    parcel_p = tmp_path / "parcel_p.csv"
-    pd.DataFrame(
-        {
-            "pid": ["*", "p2"],
-            "probability": [1.0, 3.0],
-        }
-    ).to_csv(parcel_p, index=False)
-    cfg = {CFG_PARCEL_P: str(parcel_p)}
-    parcels = pd.DataFrame({"pid": ["p1", "p2", "p3"]})
-
-    loaded = _load_parcel_selection(cfg, parcels, DummyLogger())
+def test_load_parcel_selection_normalizes_selection_weights() -> None:
+    parcels = pd.DataFrame(
+        {"pid": ["p1", "p2", "p3"], COL_SELECTION_WEIGHT: [1.0, 3.0, 1.0]}
+    )
+    loaded = _load_parcel_selection({}, parcels, DummyLogger())
     probs = dict(zip(loaded["pid"].astype(str), loaded["probability"]))
-
     assert probs == pytest.approx({"p1": 0.2, "p2": 0.6, "p3": 0.2})
 
 
-def test_build_parcel_up_map_supports_blank_wildcard_default() -> None:
-    upstream_rows = pd.DataFrame(
-        {
-            "pid": ["*", "9"],
-            "pid_up": [None, "4,5"],
-        }
+def test_load_parcel_selection_rejects_negative_weight() -> None:
+    parcels = pd.DataFrame(
+        {"pid": ["p1", "p2"], COL_SELECTION_WEIGHT: [1.0, -1.0]}
     )
+    with pytest.raises(ValueError, match="finite and >= 0"):
+        _load_parcel_selection({}, parcels, DummyLogger())
 
-    parcel_up_map = _build_parcel_up_map(
-        upstream_rows,
-        parcel_ids=["4", "5", "9", "10"],
-    )
-
-    assert parcel_up_map == {
-        "4": [],
-        "5": [],
-        "9": ["4", "5"],
-        "10": [],
-    }
-
-
-def test_build_parcel_up_map_rejects_nonblank_wildcard_relationship() -> None:
+def test_build_parcel_up_map_uses_normalized_edge_rows() -> None:
     upstream_rows = pd.DataFrame(
-        {
-            "pid": ["*"],
-            "pid_up": ["4"],
-        }
-    )
-
-    with pytest.raises(ValueError, match="wildcard may only declare the default of no upstream parcels"):
-        _build_parcel_up_map(upstream_rows, parcel_ids=["4", "9"])
-
-def test_build_parcel_up_map_splits_trims_and_deduplicates_ids() -> None:
-    upstream_rows = pd.DataFrame(
-        {
-            "pid": ["9", "9", "10", "11"],
-            "pid_up": ["4, 5", "5,4", None, "  "],
-        }
+        {"pid": ["9", "9"], "pid_up": ["4", "5"]}
     )
     parcel_up_map = _build_parcel_up_map(
-        upstream_rows,
-        parcel_ids=["4", "5", "9", "10", "11"],
+        upstream_rows, parcel_ids=["4", "5", "9", "10"]
     )
+    assert parcel_up_map == {"4": [], "5": [], "9": ["4", "5"], "10": []}
 
-    assert parcel_up_map == {
-        "4": [],
-        "5": [],
-        "9": ["4", "5"],
-        "10": [],
-        "11": [],
-    }
+
+def test_build_parcel_up_map_rejects_wildcards_and_compound_ids() -> None:
+    upstream_rows = pd.DataFrame({"pid": ["9"], "pid_up": ["4,5"]})
+    with pytest.raises(ValueError, match="one-edge-per-row"):
+        _build_parcel_up_map(upstream_rows, parcel_ids=["4", "5", "9"])
+
+def test_build_parcel_up_map_deduplicates_normalized_edges() -> None:
+    upstream_rows = pd.DataFrame(
+        {"pid": ["9", "9", "9"], "pid_up": ["4", "5", "5"]}
+    )
+    parcel_up_map = _build_parcel_up_map(
+        upstream_rows, parcel_ids=["4", "5", "9", "10"]
+    )
+    assert parcel_up_map == {"4": [], "5": [], "9": ["4", "5"], "10": []}
 
 
 def test_build_parcel_up_map_rejects_unknown_upstream_ids() -> None:
-    upstream_rows = pd.DataFrame(
-        {
-            "pid": ["9"],
-            "pid_up": ["4,missing"],
-        }
-    )
+    upstream_rows = pd.DataFrame({"pid": ["9"], "pid_up": ["missing"]})
     with pytest.raises(ValueError, match="missing"):
         _build_parcel_up_map(upstream_rows, parcel_ids=["4", "9"])
 
 
-def test_build_parcel_up_map_handles_numeric_cells_with_missing_values() -> None:
-    upstream_rows = pd.DataFrame(
-        {
-            "pid": [1, 2],
-            "pid_up": [2, None],
-        }
-    )
-
-    parcel_up_map = _build_parcel_up_map(
-        upstream_rows,
-        parcel_ids=["1", "2"],
-    )
-
+def test_build_parcel_up_map_handles_numeric_ids() -> None:
+    upstream_rows = pd.DataFrame({"pid": [1], "pid_up": [2]})
+    parcel_up_map = _build_parcel_up_map(upstream_rows, parcel_ids=["1", "2"])
     assert parcel_up_map == {"1": ["2"], "2": []}
 
 def test_get_bmp_selection_probs_rejects_invalid_probabilities(tmp_path) -> None:
@@ -177,3 +122,31 @@ def test_prepare_lookup_tables_rejects_duplicate_parcel_ids() -> None:
 
     with pytest.raises(ValueError, match="Duplicate parcel IDs"):
         Model._prepare_lookup_tables(model)
+
+
+def test_config_rejects_legacy_per_file_parcel_and_outlet_keys() -> None:
+    from src.input_validation import validate_config
+
+    cfg = {
+        "n_scenarios": 1,
+        "buffer_depth_ft": 25.0,
+        "bmp_fail_rate": 0.0,
+        "bmp_fail_reduction": 0.25,
+        "parcel_out": "parcel_out.csv",
+    }
+    with pytest.raises(ValueError, match="Legacy per-file parcel/outlet configuration keys"):
+        validate_config(cfg)
+
+
+def test_config_rejects_legacy_plet_file_keys() -> None:
+    from src.input_validation import validate_config
+
+    cfg = {
+        "n_scenarios": 1,
+        "buffer_depth_ft": 25.0,
+        "bmp_fail_rate": 0.0,
+        "bmp_fail_reduction": 0.25,
+        "load_generation": {"mode": "plet_rusle", "plet_inputs": "plet_inputs.csv"},
+    }
+    with pytest.raises(ValueError, match="Legacy load_generation file keys"):
+        validate_config(cfg)

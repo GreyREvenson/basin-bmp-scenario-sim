@@ -61,7 +61,7 @@ This is an important structural assumption. It is most natural where later pract
 
 ## Parcel connectivity and wetlands
 
-Where applicable, `parcel_up` supplies upstream parcel relationships used by BMP logic that depends on contributing drainage area. Cells containing multiple upstream parcel IDs are interpreted as multiple relationships rather than one compound ID.
+Where applicable, the `parcel_up` table inside the parcel GeoPackage supplies upstream parcel relationships used by BMP logic that depends on contributing drainage area. The table is normalized: each row is one `pid` → `pid_up` relationship; comma-separated relationship lists are not supported.
 
 ## Cost and stopping conditions
 

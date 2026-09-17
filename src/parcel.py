@@ -96,7 +96,7 @@ def _get_parcel_metadata(self: "Model", pid: Union[int, str]) -> pd.Series:
     if match.empty:
         raise KeyError(
             f"Selected pid {pid} not found in parcels after clipping. "
-            f"Ensure parcel_p PIDs exist in parcels and are within the domain."
+            f"Ensure the selected PID exists in the parcels layer and is within the domain."
         )
     return match.iloc[0]
 

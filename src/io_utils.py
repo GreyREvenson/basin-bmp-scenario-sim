@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 import logging
+import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple, Union
 
@@ -87,13 +88,15 @@ def read_csv_tables(
     return [read_csv_table(item) for item in items]
 
 
-def read_geodataframe(path: Union[str, Path]) -> gpd.GeoDataFrame:
+def read_geodataframe(path: Union[str, Path], *, layer: str | None = None) -> gpd.GeoDataFrame:
     """Deserialize a geospatial vector dataset without domain normalization.
 
         Parameters
         ----------
         path : Union[str, Path]
             Path to the geospatial vector dataset.
+        layer : str or None
+            Optional layer/table name for multi-layer containers such as GeoPackage.
 
         Returns
         -------
@@ -101,7 +104,27 @@ def read_geodataframe(path: Union[str, Path]) -> gpd.GeoDataFrame:
             Deserialized geospatial dataset.
         
     """
-    return gpd.read_file(path)
+    return gpd.read_file(path, layer=layer) if layer is not None else gpd.read_file(path)
+
+
+def read_geopackage_table(path: Union[str, Path], table: str) -> pd.DataFrame:
+    """Read one non-spatial attribute table from a GeoPackage.
+
+    Attribute tables are stored as ordinary SQLite tables inside the GeoPackage.
+    Reading them with SQLite avoids imposing geospatial-layer semantics on data
+    such as parcel relationships, parameter rows, and outlet statistics.
+    """
+    package = Path(path)
+    if not package.exists():
+        raise FileNotFoundError(f"GeoPackage not found: {package}")
+    safe_table = str(table).replace('"', '""')
+    with sqlite3.connect(package) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (str(table),)
+        ).fetchone()
+        if exists is None:
+            raise ValueError(f"GeoPackage table not found: {table} in {package}")
+        return pd.read_sql_query(f'SELECT * FROM "{safe_table}"', conn)
 
 
 def read_parquet_table(path: Union[str, Path]) -> pd.DataFrame:

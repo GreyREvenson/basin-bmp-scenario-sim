@@ -29,18 +29,13 @@ CURRENT_TIMESTEP_YEARS = 1.0
 # Config keys
 CFG_DOMAIN = "domain"
 CFG_PARCELS = "parcels"
-CFG_OUTLET_LOC = "outlet_loc"
-CFG_PARCEL_OUT = "parcel_out"
-CFG_PARCEL_UP = "parcel_up"
-CFG_PARCEL_P = "parcel_p"
+CFG_OUTLETS = "outlets"
 CFG_POLLUTANTS = "pollutants"
 CFG_CPS = "cps"
 CFG_POLLUTANT_LOAD_RATE = "pollutant_load_rate"
 CFG_BMP_EFFICIENCY = "bmp_efficiency"
 CFG_BMP_COST = "bmp_cost"
 CFG_DELIVERY_RATIOS = "delivery_ratios"
-CFG_OUTLET_TARGET = "outlet_target"
-CFG_OUTLET_MEAN = "outlet_mean"
 CFG_N_SCENARIOS = "n_scenarios"
 CFG_BMP_LIMIT_N = "bmp_limit_n"
 CFG_BMP_LIMIT_USD = "bmp_limit_usd"
@@ -148,6 +143,24 @@ PLET_PARAMETER_ALIASES = {
     "subsurface_shallow_fraction": "fraction_subsurface_shallow",
 }
 
+
+# Canonical tables/layers in consolidated GeoPackage inputs
+GPKG_PARCELS_LAYER = "parcels"
+GPKG_PARCEL_UP_TABLE = "parcel_up"
+GPKG_PARCEL_OUTLETS_TABLE = "parcel_outlets"
+GPKG_PARCEL_PARAMETERS_TABLE = "parcel_parameters"
+GPKG_POLLUTANT_LOAD_RATES_TABLE = "pollutant_load_rates"
+GPKG_POLLUTANT_CONCENTRATIONS_TABLE = "pollutant_concentrations"
+GPKG_OUTLETS_LAYER = "outlets"
+GPKG_OUTLET_STATS_TABLE = "outlet_stats"
+
+# Parameters stored in the shared parcel_parameters table that are interpreted
+# as RUSLE/sediment inputs. All other rows are interpreted as PLET inputs.
+RUSLE_PARAMETER_NAMES = (
+    "r", "k", "ls", "c", "p", "sdr",
+    "sediment_n_pct", "sediment_p_pct", "enrichment_ratio",
+)
+
 # New: BMP failure configuration
 CFG_BMP_FAIL_RATE = "bmp_fail_rate"            # probability [0,1] a BMP fails
 CFG_BMP_FAIL_REDUCTION = "bmp_fail_reduction"  # efficiency scale [0,1] on failure
@@ -194,6 +207,7 @@ COL_POLLUTANT = "pollutant"
 COL_OIDS = "oids"
 COL_PID_UP = "pid_up"
 COL_PROBABILITY = "probability"
+COL_SELECTION_WEIGHT = "selection_weight"
 COL_UNIT = "unit"
 COL_AREA_M2 = "area_m2"
 COL_AREA_HA = "area_ha"

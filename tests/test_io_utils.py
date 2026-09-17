@@ -77,3 +77,34 @@ def test_read_csv_tables_preserves_input_order_for_multiple_paths(tmp_path) -> N
     assert len(frames) == 2
     assert frames[0].iloc[0]["name"] == "first"
     assert frames[1].iloc[0]["name"] == "second"
+
+def test_read_geopackage_table_reads_attribute_table(tmp_path) -> None:
+    import sqlite3
+
+    from src.io_utils import read_geopackage_table
+
+    path = tmp_path / "inputs.gpkg"
+    with sqlite3.connect(path) as conn:
+        pd.DataFrame({"pid": ["P1", "P2"], "oid": ["O1", "O1"]}).to_sql(
+            "parcel_outlets", conn, index=False
+        )
+
+    df = read_geopackage_table(path, "parcel_outlets")
+
+    assert df.to_dict(orient="records") == [
+        {"pid": "P1", "oid": "O1"},
+        {"pid": "P2", "oid": "O1"},
+    ]
+
+
+def test_read_geopackage_table_rejects_missing_table(tmp_path) -> None:
+    import sqlite3
+
+    from src.io_utils import read_geopackage_table
+
+    path = tmp_path / "inputs.gpkg"
+    with sqlite3.connect(path):
+        pass
+
+    with pytest.raises(ValueError, match="GeoPackage table not found"):
+        read_geopackage_table(path, "missing_table")

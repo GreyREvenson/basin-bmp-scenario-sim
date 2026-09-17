@@ -2,149 +2,91 @@
 
 [← Back to main README](../readme.md)
 
-## Purpose
+`plet_rusle` mode derives annual surface and subsurface loads from user-supplied parcel parameters, hydrology assumptions, pollutant concentrations, and optional RUSLE sediment parameters.
 
-`plet_rusle` mode calculates baseline parcel pollutant loads internally using PLET-style runoff and infiltration calculations, pollutant concentrations, and optional RUSLE sediment generation.
+## Configuration
 
-This mode is appropriate when annual parcel loads should be derived from parcel hydrology and concentration assumptions rather than supplied directly as statistical parcel load-rate inputs.
+```yaml
+domain: ../domain/domain.gpkg
+parcels: ../parcels/parcels.gpkg
+outlets: ../outlets/outlets.gpkg
 
-## Required configuration
+pollutants: [TN, TP, TSS]
+cps: [340, 329, 590, 412, 656]
 
-A typical configuration is:
+bmp_efficiency: ../bmps/bmp_efficiency.csv
+input_distributions: ../misc/input_distributions.csv
 
-    load_generation:
-      mode: plet_rusle
-      plet_inputs: ./inputs/plet/plet_inputs.csv
-      hydrology_lookup: ./inputs/plet/plet_hydrology_lookup.csv
-      rusle_inputs: ./inputs/plet/rusle_inputs.csv
-      pollutant_concentrations: ./inputs/plet/pollutant_concentrations.csv
+load_generation:
+  mode: plet_rusle
+  hydrology_lookup: ../plet/plet_hydrology_lookup.csv
+```
 
-## Production pathways
+PLET/RUSLE parcel inputs are stored in the consolidated parcel GeoPackage rather than configured as separate files.
 
-`plet_rusle` has exactly two production pathways:
+## `parcel_parameters`
 
-- `surface`
-- `subsurface`
+The `parcel_parameters` table combines the former PLET and RUSLE long-form parameter tables. Each row is keyed by `pid` and `parameter` and uses the standard fixed-value/distribution columns.
 
-The production calculation does not create separate shallow and deep subsurface pathways. Compatibility diagnostic fields may still appear in some outputs for older callers or tests, but they should not be interpreted as additional production pathways.
+PLET inputs include:
 
-## Required PLET hydrology input
+- `annual_precip_in`
+- `rain_days`
+- `rain_correction_fraction`
+- `runoff_day_fraction`
+- `land_cover`
+- `hsg`
+- optional supported PLET parameters such as `ia_ratio`
 
-`plet_rusle` mode requires:
+`land_cover` and `hsg` are fixed classifications. `cn` and `infiltration_fraction` must not be supplied as parcel parameters; they are resolved from the hydrology lookup.
 
-    load_generation:
-      mode: plet_rusle
-      hydrology_lookup: ./path/to/plet_hydrology_lookup.csv
+RUSLE parameters live in the same table:
 
-The table is a user input, not a source-code lookup. It uses long form:
+- `r`
+- `k`
+- `ls`
+- `c`
+- `p`
+- `sdr`
+- `sediment_n_pct`
+- `sediment_p_pct`
+- `enrichment_ratio`
 
-    land_cover,hsg,parameter,value,distribution_id,mean,sd,min,p05,p50,p95,max,sample_group,units
-    cropland,B,cn,78,,,,,,,,,,,dimensionless
-    cropland,B,infiltration_fraction,0.30,,,,,,,,,,,fraction
+`pid="*"` may supply defaults, with parcel-specific rows overriding defaults.
 
-For every supported land-cover/HSG pairing, the file must contain exactly one `cn` row and exactly one `infiltration_fraction` row.
+## Hydrology lookup
 
-Supported land covers are:
+`load_generation.hydrology_lookup` is a separate, required user input. It defines both `cn` and `infiltration_fraction` for supported land-cover × HSG pairs.
 
-- `urban`
-- `cropland`
-- `pastureland`
-- `forest`
-- `user_defined`
+Both may be fixed values or probability distributions. This table deliberately remains outside the source tree and outside the parcel GeoPackage so a user can replace hydrologic assumptions independently for a run.
 
-Supported HSG values are:
+## `pollutant_concentrations`
 
-- `A`
-- `B`
-- `C`
-- `D`
+The parcel GeoPackage contains one unified concentration table with:
 
-This produces 40 required parameter rows: 5 land covers × 4 HSGs × 2 parameters.
+```text
+pid | pollutant | pathway | ...numeric/distribution columns...
+```
 
-CN must remain in `(0, 100]`. Infiltration fraction must remain in `[0, 1]`. A fixed value or a distribution can be supplied for either parameter.
+`pathway` must be:
 
-Example stochastic pair:
+- `surface` — combined with PLET runoff volume.
+- `subsurface` — combined with PLET infiltration volume.
 
-    land_cover,hsg,parameter,value,distribution_id,mean,sd,min,max,units
-    cropland,B,cn,,,78,2,70,86,dimensionless
-    cropland,B,infiltration_fraction,,,0.30,0.03,0.20,0.40,fraction
+Surface concentrations are required for TN and TP and for TSS when complete RUSLE sediment inputs are unavailable. Subsurface concentrations are required for modeled non-TSS pollutants.
 
-Each parcel classified as cropland/HSG B samples those pair-specific distributions independently unless `sample_group` is supplied.
+## BMP pathways
 
-## `plet_inputs`
+Production pathways are fixed to `surface` and `subsurface`. Surface BMP efficiencies are required. Missing correctly labeled subsurface efficiencies are completed with zero and logged.
 
-`load_generation.plet_inputs` is a required long-form parcel parameter table. It supplies climate variables and fixed `land_cover` and `hsg` classifications.
+## Removed inputs
 
-Numeric rows use the standardized fixed-value/distribution schema and may use `pid="*"` defaults with parcel-specific overrides.
+The following are not part of the consolidated interface:
 
-`cn` and `infiltration_fraction` are **not** supplied in this table.
+- separate `plet_inputs` path
+- separate `rusle_inputs` path
+- separate `pollutant_concentrations` path
+- `pathway_mode`
+- `watershed_area_mi2` and equivalent spellings
 
-## RUSLE inputs
-
-`load_generation.rusle_inputs` is optional. Numeric rows use the common distribution schema and may use `pid="*"` defaults.
-
-A parcel with RUSLE data must have a complete factor set and may supply `sdr` to override the default sediment delivery ratio of 1.0.
-
-## Pollutant concentrations
-
-`load_generation.pollutant_concentrations` is the single concentration input for both PLET pathways. Each row has a required `pathway` value of `surface` or `subsurface`.
-
-Surface concentration rows are used with PLET runoff volume. They are required for TN and TP, and TSS surface concentration is also required when RUSLE is unavailable for a modeled parcel.
-
-Subsurface concentration rows are used with PLET infiltration volume and are required for every modeled non-TSS pollutant. `pid="*"` defaults and parcel-specific overrides are supported independently for each pollutant/pathway combination.
-
-Example:
-
-    pid,pollutant,pathway,value,units
-    *,TN,surface,2.4,mg/L
-    *,TN,subsurface,1.1,mg/L
-    *,TP,surface,0.35,mg/L
-    *,TP,subsurface,0.08,mg/L
-
-## BMP efficiency expectations
-
-A `surface` efficiency is required for every configured CPS × pollutant combination.
-
-A missing or unusable correctly labeled `subsurface` efficiency defaults to zero and is logged.
-
-Example:
-
-    cps,pollutant,pathway,value,distribution_id,mean,sd,min,max
-    340,TN,surface,,,0.35,,0.20,0.50
-    340,TN,subsurface,0,,,,,
-    340,TP,surface,,,0.25,,0.10,0.40
-
-Unexpected pathway labels such as `shallow subsurface` or `deep subsurface` are not remapped to the PLET `subsurface` pathway. They are ignored in this mode, a warning is logged, and the subsurface efficiency defaults to zero if no valid `subsurface` row remains.
-
-This prevents an incorrectly labeled row from silently changing infiltration-derived nutrient treatment.
-
-## Removed and legacy configuration concepts
-
-`load_generation.pathway_mode` has been removed. `plet_rusle` always derives its two production pathways from PLET and RUSLE inputs.
-
-`watershed_area_mi2` has been removed from `rusle_inputs` and is an error if supplied, along with its `watershed_area_sqmi` and `watershed_area_sq_mi` spellings. No delivery ratio was ever derived from it; parcels that relied on it were silently computed at a delivery ratio of 1.0. Supply `sdr` explicitly instead.
-
-Legacy `groundwater_loads` and `treat_groundwater_with_bmps` keys do not determine production pathway generation. The current production calculation always estimates subsurface load from the configured `subsurface` pollutant concentration and sampled infiltration. Whether a BMP reduces that load is determined by the BMP's `subsurface` efficiency.
-
-Statistical pathway-fraction settings are not used to generate baseline PLET/RUSLE loads.
-
-## Main distinction from statistical mode
-
-In statistical mode, the user supplies the baseline parcel pollutant load-rate inputs and defines the pathways. In `plet_rusle`, the model calculates baseline parcel loads and the pathway meanings are fixed by the hydrologic formulation.
-
-## Recommended file organization
-
-For a PLET/RUSLE project:
-
-    inputs/
-      plet/
-        input_distributions.csv
-        plet_inputs.csv
-        plet_hydrology_lookup.csv
-        rusle_inputs.csv
-        pollutant_concentrations.csv
-        bmp_efficiency.csv
-        bmp_cost.csv
-        ...spatial and routing inputs...
-
-The organization deliberately separates different scientific variable families while keeping the numeric specification syntax the same in every file.
+The user-controlled hydrology lookup remains the sole source of curve-number and infiltration-fraction assumptions.

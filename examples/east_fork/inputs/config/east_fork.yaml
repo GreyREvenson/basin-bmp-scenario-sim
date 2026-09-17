@@ -3,37 +3,31 @@ verbose: True
 outputs: ../../outputs/default/run_1
 random_seed: 42
 
-# Required geospatial inputs
+# Consolidated geospatial/input packages
 domain: ../domain/domain.gpkg
 parcels: ../parcels/parcels.gpkg
-outlet_loc: ../outlets/outlet_loc.gpkg
-# Drainage and selection
-parcel_out: ../parcels/parcel_out.csv
-parcel_up: ../parcels/parcel_up.csv
-parcel_p: ../parcels/parcel_p.csv
+outlets: ../outlets/outlets.gpkg
 
 pollutants: ["TN", "TP", "TSS"]
 cps: [340, 329, 590, 412, 656]
+
 # Optional reusable distribution catalog
 input_distributions: ../misc/input_distributions.csv
 
-pollutant_load_rate: ../parcels/pollutant_load_rates.csv
 bmp_efficiency: ../bmps/bmp_efficiency.csv
 bmp_cost: ../bmps/bmp_cost.csv
 
-# Explicitly document the default load-generation mode.
+# Statistical parcel load rates are read from the pollutant_load_rates table
+# inside parcels.gpkg.
 load_generation:
   mode: statistical
+
 # One aggregate areal load rate is sampled per parcel and pollutant, then
 # partitioned across the pathways defined by bmp_efficiency.
 pollutant_load_rate_pathway_fractions:
   surface: 0.30
   shallow subsurface: 0.40
   deep subsurface: 0.30
-# Optional delivery ratios and targets/means
-# delivery_ratios: ../outlets/delivery_ratios.csv
-outlet_target: ../outlets/outlet_target.csv
-outlet_mean: ../outlets/outlet_mean.csv
 
 n_scenarios: 1
 bmp_limit_n: 200
