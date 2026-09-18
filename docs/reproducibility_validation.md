@@ -35,6 +35,18 @@ The model uses `joblib` for scenario-level parallelism.
 
 Parallel execution should not be treated as a substitute for recording the seed and software environment. Reproducibility claims should be verified for the exact runtime environment used in an analysis.
 
+## Validate inputs before simulation
+
+Use the validation-only CLI before expensive or production runs:
+
+    python run_model.py config.yaml --validate-only
+
+This performs the same configuration, GeoPackage, distribution, physical-domain,
+foreign-key, and coverage validation used by a normal run, but exits before any
+scenario workers start. Spatial area/perimeter calculations use one metric
+analysis CRS established from the domain; parcel and outlet layers are
+transformed into that CRS before geometry-derived quantities are calculated.
+
 ## Testing
 
 Scientific model development should maintain tests covering at least:

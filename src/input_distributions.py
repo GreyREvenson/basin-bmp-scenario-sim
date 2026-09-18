@@ -19,11 +19,10 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from .input_units import convert_row_statistics, row_unit, unit_labels_same_scale
+from .input_units import convert_row_statistics, row_unit
 
 DISTRIBUTION_ID = "distribution_id"
 SAMPLE_GROUP = "sample_group"
-_DISTRIBUTION_UNITS: Dict[str, Any] = {}
 
 # Canonical names used by new files. Existing aliases remain accepted.
 _STAT_ALIASES = {
@@ -211,29 +210,14 @@ def stats_from_row(row: Mapping[str, Any], exclude: Iterable[str] = ()) -> Dict[
     )
 
     # Catalog rows do not by themselves identify the target physical dimension.
-    # Register their declared unit so use-site overrides can be checked, but do
-    # not numerically convert until the row has model context.
+    # They remain in their declared numeric scale until resolution into a
+    # model-use row.  Unit compatibility is checked by
+    # input_config.resolve_distribution_references(), which has both rows in
+    # scope.  Keeping that state run-local avoids cross-run global leakage.
     if is_catalog_row:
-        if unit is not None:
-            _DISTRIBUTION_UNITS[ref_id] = unit
         return out
 
-    # A distribution reference may use a spelling alias with the same scale,
-    # but may not reinterpret copied catalog statistics at a new scale.
-    if ref_id and unit is not None and not is_catalog_row:
-        catalog_unit = _DISTRIBUTION_UNITS.get(ref_id)
-        if catalog_unit is not None and not unit_labels_same_scale(catalog_unit, unit):
-            raise ValueError(
-                f"distribution_id={ref_id!r} is defined using units {catalog_unit!r}, "
-                f"but the use-site row supplies {unit!r}; distribution references "
-                "may not reinterpret catalog statistics at a different scale"
-            )
-
     conversion_row: Mapping[str, Any] = row
-    if ref_id and unit is None and ref_id in _DISTRIBUTION_UNITS:
-        copied = dict(row)
-        copied["units"] = _DISTRIBUTION_UNITS[ref_id]
-        conversion_row = copied
 
     expected_kind = None
     # PLET/RUSLE concentration sampling explicitly excludes both identifiers.

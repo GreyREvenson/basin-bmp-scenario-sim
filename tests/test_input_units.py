@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.input_distributions import stats_from_row
+from src.input_config import resolve_distribution_references
 from src.input_units import canonical_cost_unit, convert_cost_value
 from src.sampling import _sample_from_stats
 
@@ -77,19 +78,25 @@ def test_runtime_load_rate_rejects_concentration_units() -> None:
 
 
 def test_distribution_reference_cannot_change_catalog_scale() -> None:
-    # Catalog validation/extraction registers the distribution's numeric scale.
-    stats_from_row(
+    catalog = __import__("pandas").DataFrame([
         {"distribution_id": "rain", "mean": 1000.0, "sd": 100.0, "units": "mm/year"}
-    )
+    ])
+    use = __import__("pandas").DataFrame([
+        {"pid": "*", "parameter": "annual_precip_in", "distribution_id": "rain", "units": "in/year"}
+    ])
     with pytest.raises(ValueError, match="may not reinterpret"):
-        stats_from_row({"distribution_id": "rain", "units": "in/year"})
+        resolve_distribution_references(use, catalog, "plet_inputs")
 
 
 def test_distribution_reference_allows_same_scale_alias() -> None:
-    stats_from_row(
+    catalog = __import__("pandas").DataFrame([
         {"distribution_id": "rain_alias", "mean": 1000.0, "sd": 100.0, "units": "mm/year"}
-    )
-    assert stats_from_row({"distribution_id": "rain_alias", "units": "mm/yr"}) == {}
+    ])
+    use = __import__("pandas").DataFrame([
+        {"pid": "*", "parameter": "annual_precip_in", "distribution_id": "rain_alias", "units": "mm/yr"}
+    ])
+    resolved = resolve_distribution_references(use, catalog, "plet_inputs")
+    assert resolved.loc[0, "mean"] == pytest.approx(1000.0)
 
 
 def test_cost_area_units_convert_to_usd_per_hectare() -> None:

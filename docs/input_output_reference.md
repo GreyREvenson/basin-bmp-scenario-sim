@@ -48,6 +48,18 @@ P1  | O2
 
 The structural tables do not contain modeled input variables.
 
+A parcel GeoPackage may also contain the metadata table:
+
+```text
+model_input_schema
+schema_version
+1
+```
+
+Schema version `1` identifies the current one-variable-per-table layout. Unknown
+`input_*` tables are rejected so misspelled variable names cannot be silently
+ignored.
+
 ## One variable per `input_*` table
 
 Every parcel-side user input variable has its own GeoPackage attribute table. Numeric tables use the same standardized value/distribution columns:
@@ -99,7 +111,7 @@ These two tables are keyed by:
 land_cover | hsg
 ```
 
-and then use the standard numeric/distribution columns. Every supported land-cover × HSG pair must have both a curve-number definition and an infiltration-fraction definition. Either variable may be fixed or stochastic.
+and then use the standard numeric/distribution columns. Every land-cover × HSG pair actually used by modeled parcels must have both a curve-number definition and an infiltration-fraction definition. Reusable tables may contain additional valid pairings. Either variable may be fixed or stochastic.
 
 There is no separate `hydrology_lookup` file or source-code fallback.
 

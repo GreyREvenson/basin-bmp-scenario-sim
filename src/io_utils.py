@@ -18,6 +18,22 @@ import pandas as pd
 import yaml
 
 
+class MissingInputTableError(ValueError):
+    """Raised when a requested GeoPackage attribute table does not exist."""
+
+
+def list_geopackage_tables(path: Union[str, Path]) -> List[str]:
+    """Return ordinary table names present in a GeoPackage/SQLite container."""
+    package = Path(path)
+    if not package.exists():
+        raise FileNotFoundError(f"GeoPackage not found: {package}")
+    with sqlite3.connect(package) as conn:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
 def read_config(path: Union[str, Path]) -> Dict[str, Any]:
     """Deserialize a YAML configuration file without applying model semantics.
 
@@ -123,7 +139,9 @@ def read_geopackage_table(path: Union[str, Path], table: str) -> pd.DataFrame:
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (str(table),)
         ).fetchone()
         if exists is None:
-            raise ValueError(f"GeoPackage table not found: {table} in {package}")
+            raise MissingInputTableError(
+                f"GeoPackage table not found: {table} in {package}"
+            )
         return pd.read_sql_query(f'SELECT * FROM "{safe_table}"', conn)
 
 

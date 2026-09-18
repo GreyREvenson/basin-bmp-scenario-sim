@@ -843,6 +843,32 @@ def validate_config(cfg: Dict[str, Any]) -> None:
                 f"{supplied_load_legacy}. Store each variable in its dedicated input_* table in parcels.gpkg."
             )
 
+    allowed_top_level = {
+        "domain", "parcels", "outlets", "pollutants", "cps",
+        "bmp_efficiency", "bmp_cost", "bmp_sel", "n_scenarios",
+        "bmp_limit_n", "bmp_limit_usd", "parallel", "random_seed",
+        "outputs", "verbose", "buffer_depth_ft", "bmp_sel_prob_via_costs",
+        "input_distributions", "load_generation", "bmp_fail_rate",
+        "bmp_fail_reduction", "pollutant_load_rate_pathway_fractions",
+        "pollutant_load_rate_frac_surface", "pollutant_load_rate_frac_shallow",
+    }
+    unknown_top = sorted(str(key) for key in cfg if str(key).lower() not in allowed_top_level and str(key).lower() not in legacy_top_level)
+    if unknown_top:
+        raise ValueError(f"Unknown configuration key(s): {unknown_top}")
+
+    if isinstance(load_generation, dict):
+        allowed_load_generation = {
+            "mode", "groundwater_loads", "treat_groundwater_with_bmps",
+            "pollutant_load_rate_pathway_fractions", "pathway_mode",
+        }
+        unknown_load = sorted(
+            str(key) for key in load_generation
+            if str(key).lower() not in allowed_load_generation
+            and str(key).lower() not in {"plet_inputs", "rusle_inputs", "pollutant_concentrations", "groundwater_concentrations", "hydrology_lookup"}
+        )
+        if unknown_load:
+            raise ValueError(f"Unknown load_generation key(s): {unknown_load}")
+
     n_scenarios_raw = ci_get(cfg, CFG_N_SCENARIOS)
     n_scenarios = validate_scalar_in_domain(
         n_scenarios_raw, POSITIVE_DOMAIN, CFG_N_SCENARIOS
