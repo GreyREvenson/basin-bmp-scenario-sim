@@ -4,36 +4,19 @@
 
 ## Purpose
 
-Numeric model inputs use one common row-level convention. The convention is used by:
+Numeric model inputs use one common **inline** row-level convention. A row contains either a fixed value or all statistics needed to define its distribution directly. There is no separate distribution catalog and no named distribution reference.
 
-- statistical-mode parcel pollutant load-rate inputs
-- PLET numeric parameters
-- the PLET land-cover/HSG Curve Number and infiltration table
-- RUSLE parameters
-- PLET surface and subsurface pollutant concentrations
-- BMP efficiencies
-- BMP costs
-
-The goal is to make a fixed value and an uncertain input interchangeable without changing the structure of the model, while keeping large parcel datasets manageable.
+The convention is used by statistical parcel load rates, PLET/RUSLE numeric parameters, curve number and infiltration fraction, pollutant concentrations, BMP efficiencies, and BMP costs.
 
 ## Canonical distribution columns
 
-New input files should use these names where applicable:
+Use these columns where applicable:
 
-    value, distribution_id, mean, sd, min, p05, p50, p95, max
+    value, mean, sd, min, p05, p50, p95, max
 
-Other percentile levels such as `p10`, `p25`, `p75`, and `p90` are also supported. Metadata columns such as `units`, `unit`, `notes`, and identifiers such as `pid`, `pollutant`, `parameter`, `pathway`, or `cps` depend on the input table.
+Other percentile levels such as `p10`, `p25`, `p75`, and `p90` are also supported. Metadata columns such as `units`, `unit`, `notes`, and `sample_group`, plus identifiers such as `pid`, `pollutant`, `parameter`, `pathway`, or `cps`, depend on the input table.
 
-Recognized legacy aliases remain accepted:
-
-- `average` or `avg` → `mean`
-- `std` → `sd`
-- `minimum` → `min`
-- `maximum` → `max`
-- `p0` → `min`
-- `p100` → `max`
-
-Use the canonical names for new files.
+Recognized aliases remain accepted: `average`/`avg` → `mean`, `std` → `sd`, `minimum` → `min`, `maximum` → `max`, `p0` → `min`, and `p100` → `max`.
 
 ## Accepted numeric forms
 
@@ -47,7 +30,6 @@ Each numeric row must use exactly one coherent specification.
 | Legacy bounded normal | `min`, `mean`, `max` | Truncated normal with inferred `sd = (max - min) / 4` |
 | Uniform | `min`, `max` | Uniform between the endpoints |
 | Percentile distribution | `min`, one or more `pXX`, `max` | Piecewise-linear inverse-CDF sampling |
-| Reusable named distribution | `distribution_id` | Uses a definition from `input_distributions.csv` |
 
 Examples:
 
@@ -58,42 +40,16 @@ Examples:
     Uniform:               min=5, max=12
     Percentile:            min=5, p10=6, p50=8.5, p90=11, max=12
 
-### Invalid or ambiguous combinations
+The loader rejects ambiguous rows: do not mix `value` with distribution statistics; provide both `min` and `max`; do not combine percentile statistics with `mean` or `sd`; and give percentile distributions both endpoints. It also checks finite values, nonnegative `sd`, ordered bounds, and monotonic percentiles.
 
-The loader rejects ambiguous rows. In particular:
+## Parcel defaults and overrides
 
-- do not mix `value` with distribution statistics
-- do not combine `distribution_id` with inline distribution statistics
-- do not provide only one of `min` or `max`
-- do not combine percentile statistics with `mean` or `sd`
-- percentile distributions require both `min` and `max` endpoints
+For parcel-keyed input tables that allow defaults, `pid IS NULL` defines the default row. An integer `pid` row overrides that default for the matching parcel. Both the default and the override may be fixed values or direct inline distributions.
 
-The loader also checks finite numeric values, nonnegative `sd`, ordered bounds, and monotonic percentile values.
+For example, this defines a watershed-wide precipitation distribution and a different distribution for parcel 127:
 
-## Reusable distribution catalog
+    pid    mean    sd    min    max    units
+    NULL   42      3     34     50     in/year
+    127    46      2     40     52     in/year
 
-A configuration may define an optional catalog:
-
-    input_distributions: ./path/to/input_distributions.csv
-
-The catalog contains one row per `distribution_id` and uses the same distribution columns:
-
-    distribution_id,value,mean,sd,min,p05,p50,p95,max,units,notes
-    annual_precip_default,,42,3,34,,,,50,in/year,Example bounded normal
-    runoff_tn_default,3,,,,,,,,mg/L,Fixed value
-    cover_crop_surface_tn,,0.35,,0.15,,,,0.55,fraction,Legacy min/mean/max form
-
-A use-site row can then be short:
-
-    pid,parameter,distribution_id,units
-    ,annual_precip_in,annual_precip_default,in/year
-
-`distribution_id` reuses the **distribution definition**. It does **not** mean that different parcels receive the same sampled number.
-
-The catalog is most useful when many rows share the same uncertainty assumption. If each parcel genuinely has a unique distribution, put that distribution directly on the parcel row rather than creating thousands of one-use catalog IDs.
-
-## Shared draws versus reused definitions
-
-Assigning the same text label to different variables does not create a multivariate or correlated distribution between those variables.
-
-A default row (`pid IS NULL`) or reused `distribution_id` also does not create a shared draw by itself. Where an input type supports `sample_group`, use that explicitly when multiple rows are intended to share the same sampled value within a scenario.
+Without an explicit `sample_group`, the default distribution is sampled independently for each parcel. Use `sample_group` only when multiple rows are intentionally meant to share the same sampled value within a scenario.

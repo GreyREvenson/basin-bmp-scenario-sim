@@ -43,7 +43,6 @@ from .constants import (
     CFG_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS,
     CFG_RANDOM_SEED,
     CFG_LOAD_GENERATION,
-    CFG_INPUT_DISTRIBUTIONS,
     LOAD_MODE_STATISTICAL,
     LOAD_MODE_PLET_RUSLE,
     LOAD_PLET_INPUTS,
@@ -96,10 +95,8 @@ from .io_utils import (
     read_parquet_table,
 )
 from .utils import ci_get, normalize_columns, normalize_pollutant_label
-from .input_units import row_unit, unit_labels_same_scale
 from .logging_utils import log_scope
 from .input_distributions import (
-    DISTRIBUTION_ID,
     statistic_columns,
     stats_from_row,
 )
@@ -110,7 +107,6 @@ from .input_validation import (
     require_columns,
     validate_config,
     validate_distribution_bounds,
-    validate_distribution_catalog,
     validate_numeric_columns_in_domain,
     validate_numeric_distribution_rows,
     validate_plet_input_table,
@@ -329,7 +325,7 @@ def _validate_input_package_schema(cfg: Dict[str, Any], load_mode: str, logger: 
             or "fid" in parcel_columns
         ):
             raise ValueError(
-                "GeoPackage schema v2 requires parcels.pid to be the INTEGER PRIMARY KEY "
+                "GeoPackage schema v3 requires parcels.pid to be the INTEGER PRIMARY KEY "
                 "and does not use a separate fid column"
             )
 
@@ -337,14 +333,19 @@ def _validate_input_package_schema(cfg: Dict[str, Any], load_mode: str, logger: 
         for table_name in sorted(editable_tables):
             info = read_geopackage_table_info(package, table_name)
             metadata = {row["name"].lower(): row for row in info}
+            if "distribution_id" in metadata:
+                raise ValueError(
+                    f"GeoPackage schema v3 does not support {table_name}.distribution_id; "
+                    "define distribution statistics directly on the input row"
+                )
             if not any(int(row["pk"]) > 0 for row in info):
                 raise ValueError(
-                    f"GeoPackage schema v2 requires {table_name!r} to have an integer primary-key row ID so it is editable in QGIS"
+                    f"GeoPackage schema v3 requires {table_name!r} to have an integer primary-key row ID so it is editable in QGIS"
                 )
             for pid_column in (COL_PID, COL_PID_UP):
                 if pid_column in metadata and "INT" not in metadata[pid_column]["type"].upper():
                     raise ValueError(
-                        f"GeoPackage schema v2 requires {table_name}.{pid_column} to use INTEGER storage"
+                        f"GeoPackage schema v3 requires {table_name}.{pid_column} to use INTEGER storage"
                     )
     else:
         logger.warning(
@@ -384,6 +385,7 @@ def _merge_csvs(
         logger.verbose(f"Reading {label} from {p}")
         df = read_csv_table(p)
         df = normalize_columns(df)
+        _reject_distribution_id_column(df, f"{label} ({p})")
         require_columns(df, required_cols, f"{label} ({p})", logger)
         frames.append(df)
     out = pd.concat(frames, ignore_index=True)
@@ -433,6 +435,7 @@ def _read_gpkg_input_table(
             f"Failed to read {label} table/layer '{table_name}' from {package}: {exc}"
         ) from exc
     frame = normalize_columns(pd.DataFrame(frame))
+    _reject_distribution_id_column(frame, label)
     # ``id``/``fid`` are technical SQLite/QGIS row identifiers for attribute
     # tables; they are deliberately not part of the model's logical schema.
     technical_ids = [column for column in ("fid", "id", "row_id") if column in frame.columns and column not in required_cols]
@@ -442,7 +445,7 @@ def _read_gpkg_input_table(
     identifier_cols = [column for column in (COL_PID, COL_PID_UP, COL_OID) if column in frame.columns]
     if identifier_cols:
         spec = INPUT_VARIABLE_SPECS.get(table_name)
-        # Schema-v2 renamed ``wildcard_allowed`` to ``default_row_allowed``
+        # Schema-v3 renamed ``wildcard_allowed`` to ``default_row_allowed``
         # when parcel defaults changed from pid="*" to pid IS NULL. Accept
         # either registry attribute so a partially updated working tree does
         # not crash with AttributeError.
@@ -500,10 +503,6 @@ def _load_fixed_numeric_variable_table(
         return None
     if "value" not in table.columns:
         raise ValueError(f"{table_name} requires a value column")
-    if DISTRIBUTION_ID in table.columns:
-        bad = table[DISTRIBUTION_ID].notna() & table[DISTRIBUTION_ID].astype(str).str.strip().ne("")
-        if bad.any():
-            raise ValueError(f"{table_name} is deterministic and does not allow distribution_id")
     other_stats = [c for c in statistic_columns(table.columns) if str(c).lower() != "value"]
     if other_stats and table[other_stats].notna().any(axis=1).any():
         raise ValueError(f"{table_name} is deterministic and only allows fixed value")
@@ -589,6 +588,7 @@ def _load_table_source(
     """Load a logical input table from either an in-memory frame or CSV path(s)."""
     if isinstance(source, pd.DataFrame):
         frame = normalize_columns(source.copy())
+        _reject_distribution_id_column(frame, label)
         require_columns(frame, required_cols, label, logger)
         return _sort_input_table(frame, required_cols)
     return _merge_csvs(source, required_cols, label, logger)
@@ -811,6 +811,16 @@ def _nonblank(value: Any) -> bool:
     return value is not None and not pd.isna(value) and str(value).strip() != ""
 
 
+def _reject_distribution_id_column(df: pd.DataFrame, label: str) -> pd.DataFrame:
+    """Reject the removed named-distribution indirection feature."""
+    if "distribution_id" in df.columns:
+        raise ValueError(
+            f"{label} contains removed column 'distribution_id'; define the fixed value "
+            "or distribution statistics directly on that row"
+        )
+    return df
+
+
 def _row_stats_raw(row: Mapping[str, Any]) -> Dict[str, float]:
     """Return normalized numeric statistics from an input row.
 
@@ -825,120 +835,6 @@ def _row_stats_raw(row: Mapping[str, Any]) -> Dict[str, float]:
         Normalized numeric statistics extracted from the row.
     """
     return stats_from_row(row)
-
-
-def load_distribution_catalog(path: Any, logger: Any = None) -> Optional[pd.DataFrame]:
-    """Read and validate the optional reusable input-distribution catalog.
-
-    Parameters
-    ----------
-    path : Any
-        Path or paths to reusable distribution-catalog CSV files.
-    logger : Any
-        Logger used for diagnostic and progress messages.
-
-    Returns
-    -------
-    Optional[pd.DataFrame]
-        Validated distribution catalog, or ``None`` when no catalog is configured.
-
-    Raises
-    ------
-    ValueError
-        If a catalog file is missing the required ``distribution_id`` column.
-    """
-    if path is None:
-        return None
-    paths = [path] if isinstance(path, (str, Path)) else list(path)
-    frames: List[pd.DataFrame] = []
-    for item in paths:
-        if logger is not None:
-            logger.verbose(f"Reading reusable input distributions from {item}")
-        frame = read_csv_table(item)
-        frame = normalize_columns(frame)
-        if DISTRIBUTION_ID not in frame.columns:
-            raise ValueError(f"input_distributions ({item}) is missing required column '{DISTRIBUTION_ID}'")
-        frames.append(frame)
-    catalog = pd.concat(frames, ignore_index=True)
-    validate_distribution_catalog(catalog)
-    catalog[DISTRIBUTION_ID] = catalog[DISTRIBUTION_ID].astype(str).str.strip()
-    return catalog.reset_index(drop=True)
-
-
-def resolve_distribution_references(
-    df: pd.DataFrame,
-    catalog: Optional[pd.DataFrame],
-    label: str,
-) -> pd.DataFrame:
-    """Expand distribution references into inline statistics during input loading.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input table to process.
-    catalog : Optional[pd.DataFrame]
-        Reusable distribution catalog, if configured.
-    label : str
-        Context label used in diagnostics and validation errors.
-
-    Returns
-    -------
-    pd.DataFrame
-        Table with distribution references expanded to inline statistics.
-
-    Raises
-    ------
-    ValueError
-        If a distribution reference conflicts with inline statistics, is unknown,
-        or cannot be resolved because no catalog is configured.
-    """
-    out = df.copy()
-    if DISTRIBUTION_ID not in out.columns:
-        return out
-    catalog_map: Dict[str, pd.Series] = {}
-    if catalog is not None:
-        catalog_map = {str(row[DISTRIBUTION_ID]).strip(): row for _, row in catalog.iterrows()}
-    all_stat_cols = set(statistic_columns(out.columns))
-    if catalog is not None:
-        all_stat_cols.update(statistic_columns(catalog.columns))
-    for column in all_stat_cols:
-        if column not in out.columns:
-            out[column] = np.nan
-        out[column] = pd.to_numeric(out[column], errors="coerce")
-    for index, row in out.iterrows():
-        ref = row.get(DISTRIBUTION_ID)
-        if not _nonblank(ref):
-            continue
-        ref_id = str(ref).strip()
-        inline = _row_stats_raw(row)
-        if inline:
-            raise ValueError(
-                f"{label} row {index} specifies distribution_id={ref_id!r} and inline statistics; use one or the other"
-            )
-        if not catalog_map:
-            raise ValueError(
-                f"{label} row {index} references distribution_id={ref_id!r}, but no input_distributions catalog is configured"
-            )
-        if ref_id not in catalog_map:
-            raise ValueError(f"{label} row {index} references unknown distribution_id={ref_id!r}")
-        source = catalog_map[ref_id]
-        source_units = row_unit(source)
-        use_units = row_unit(row)
-        if source_units is not None and use_units is not None and not unit_labels_same_scale(source_units, use_units):
-            raise ValueError(
-                f"{label} row {index} references distribution_id={ref_id!r} defined using "
-                f"units {source_units!r}, but the use-site supplies {use_units!r}; "
-                "a distribution reference may not reinterpret catalog statistics at a different scale"
-            )
-        for source_col in statistic_columns(source.index):
-            value = source.get(source_col)
-            if not pd.isna(value):
-                out.at[index, source_col] = float(value)
-        if source_units is not None and use_units is None:
-            if "units" not in out.columns:
-                out["units"] = np.nan
-            out.at[index, "units"] = source_units
-    return out
 
 
 def _rows_for_pid(table: Optional[pd.DataFrame], pid: Union[int, str]) -> List[pd.Series]:
@@ -1194,7 +1090,6 @@ _CONFIG_PATH_KEYS = (
     CFG_BMP_EFFICIENCY,
     CFG_BMP_COST,
     CFG_BMP_SEL,
-    CFG_INPUT_DISTRIBUTIONS,
     CFG_OUTPUTS,
 )
 
@@ -1296,7 +1191,6 @@ def _load_parameter_stats_table(
     source: Any,
     label: str,
     logger: Any,
-    distribution_catalog: Optional[pd.DataFrame] = None,
     parcel_ids: Optional[Sequence[str]] = None,
 ) -> Optional[pd.DataFrame]:
     """Load a parcel parameter statistics table from a frame or CSV path(s)."""
@@ -1311,7 +1205,6 @@ def _load_parameter_stats_table(
         )
     df["parameter"] = df["parameter"].map(canonical_parameter_name)
     validate_unique_rows(df, [COL_PID, "parameter"], label)
-    df = resolve_distribution_references(df, distribution_catalog, label)
     validate_stats_rows(df, label)
     return df
 
@@ -1320,7 +1213,6 @@ def _load_plet_parameter_table(
     source: Any,
     parcel_ids: Sequence[str],
     logger: Any,
-    distribution_catalog: Optional[pd.DataFrame] = None,
 ) -> Optional[pd.DataFrame]:
     """Load PLET numeric parameters and fixed land-cover/HSG classifications."""
     if source is None:
@@ -1336,10 +1228,6 @@ def _load_plet_parameter_table(
 
     categorical_mask = df["parameter"].isin(PLET_CLASSIFICATION_PARAMETERS)
     categorical_rows = df.loc[categorical_mask].copy()
-    if DISTRIBUTION_ID in categorical_rows.columns:
-        bad = categorical_rows[DISTRIBUTION_ID].notna() & categorical_rows[DISTRIBUTION_ID].astype(str).str.strip().ne("")
-        if bad.any():
-            raise ValueError("PLET land_cover and hsg are classifications and must use fixed value, not distribution_id")
     categorical_stat_cols = [
         col for col in statistic_columns(categorical_rows.columns)
         if str(col).strip().lower() != "value"
@@ -1354,9 +1242,6 @@ def _load_plet_parameter_table(
             )
     numeric_rows = df.loc[~categorical_mask].copy()
     if not numeric_rows.empty:
-        numeric_rows = resolve_distribution_references(
-            numeric_rows, distribution_catalog, LOAD_PLET_INPUTS
-        )
         validate_stats_rows(numeric_rows, LOAD_PLET_INPUTS)
     df = pd.concat([categorical_rows, numeric_rows], axis=0).sort_index()
     return validate_plet_input_table(df, parcel_ids)
@@ -1365,7 +1250,6 @@ def _load_plet_parameter_table(
 def _load_plet_hydrology_lookup(
     path: Any,
     logger: Any,
-    distribution_catalog: Optional[pd.DataFrame] = None,
     required_pairs: Optional[Sequence[Tuple[str, str]]] = None,
 ) -> pd.DataFrame:
     """Load required land-cover/HSG hydrology distributions for PLET mode.
@@ -1381,8 +1265,6 @@ def _load_plet_hydrology_lookup(
         Path to the required PLET hydrology lookup CSV file.
     logger : Any
         Logger used for diagnostic and progress messages.
-    distribution_catalog : Optional[pd.DataFrame]
-        Reusable distribution catalog used to resolve referenced statistics.
 
     Returns
     -------
@@ -1439,9 +1321,6 @@ def _load_plet_hydrology_lookup(
             f"{unexpected_parameters}; expected only cn and infiltration_fraction"
         )
 
-    table = resolve_distribution_references(
-        table, distribution_catalog, _PLET_HYDROLOGY_LABEL
-    )
     validate_stats_rows(table, _PLET_HYDROLOGY_LABEL)
     validate_unique_rows(
         table, ["land_cover", "hsg", "parameter"], _PLET_HYDROLOGY_LABEL
@@ -1488,7 +1367,6 @@ def _load_pollutant_concentrations(
     source: Any,
     pollutants: List[str],
     logger: Any,
-    distribution_catalog: Optional[pd.DataFrame] = None,
     parcel_ids: Optional[Sequence[str]] = None,
 ) -> Optional[pd.DataFrame]:
     """Load the unified surface/subsurface concentration table."""
@@ -1519,9 +1397,6 @@ def _load_pollutant_concentrations(
     )
     pathways = df[COL_PATHWAY].copy().reset_index(drop=True)
     numeric_df = df.drop(columns=[COL_PATHWAY]).reset_index(drop=True)
-    numeric_df = resolve_distribution_references(
-        numeric_df, distribution_catalog, LOAD_CONCENTRATIONS
-    )
     validate_stats_rows(numeric_df, LOAD_CONCENTRATIONS)
     numeric_df.insert(2, COL_PATHWAY, pathways)
     return numeric_df.reset_index(drop=True)
@@ -1638,7 +1513,7 @@ def _load_parcels(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) ->
     if COL_PID in parcels.columns:
         parcels = parcels.reset_index(drop=True)
     else:
-        # In GeoPackage schema v2, ``pid`` is the layer's INTEGER PRIMARY KEY.
+        # In GeoPackage schema v3, ``pid`` is the layer's INTEGER PRIMARY KEY.
         # OGR/GDAL usually exposes that field as the feature ID rather than as a
         # normal attribute.  Prefer the FID index when the reader provides it.
         index_name = str(parcels.index.name or "").lower()
@@ -2004,7 +1879,6 @@ def _plet_numeric_spec_columns(df: pd.DataFrame) -> List[str]:
     """
     candidates = [
         "value",
-        "distribution_id",
         "mean",
         "sd",
         "min",
@@ -2256,7 +2130,6 @@ def _load_bmp_efficiency(
     logger: Any,
     *,
     complete_legacy: bool = True,
-    distribution_catalog: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Load and normalize BMP effectiveness inputs.
 
@@ -2276,8 +2149,6 @@ def _load_bmp_efficiency(
         Logger used for diagnostic and progress messages.
     complete_legacy : bool
         Whether to complete legacy three-pathway BMP efficiency coverage.
-    distribution_catalog : Optional[pd.DataFrame]
-        Reusable distribution catalog used to resolve referenced statistics.
 
     Returns
     -------
@@ -2293,7 +2164,6 @@ def _load_bmp_efficiency(
     df = _normalize_cps_column(df, CFG_BMP_EFFICIENCY)
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_BMP_EFFICIENCY, logger)
     df = _normalize_pathway_column(df, CFG_BMP_EFFICIENCY, logger)
-    df = resolve_distribution_references(df, distribution_catalog, CFG_BMP_EFFICIENCY)
     df = df[df[COL_CPS].isin(cps) & df[COL_POLLUTANT].isin(pollutants)].copy()
     if df.empty:
         raise ValueError("bmp_efficiency has no records for specified cps+pollutants")
@@ -2303,7 +2173,7 @@ def _load_bmp_efficiency(
     return df
 
 
-def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any, distribution_catalog: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
+def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any) -> Optional[pd.DataFrame]:
     """Optionally load BMP cost inputs.
 
     Parameters
@@ -2314,8 +2184,6 @@ def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any, distributio
         BMP CPS codes to retain.
     logger : Any
         Logger used for progress and warning messages.
-    distribution_catalog : Optional[pd.DataFrame]
-        Reusable distribution catalog used to resolve referenced statistics.
 
     Returns
     -------
@@ -2328,7 +2196,6 @@ def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any, distributio
         return None
     df = _merge_csvs(path, [COL_CPS, COL_UNIT], CFG_BMP_COST, logger)
     df = _normalize_cps_column(df, CFG_BMP_COST)
-    df = resolve_distribution_references(df, distribution_catalog, CFG_BMP_COST)
     validate_stats_table(df, CFG_BMP_COST)
     df = df[df[COL_CPS].isin(cps)].copy()
     if df.empty:
@@ -2416,7 +2283,6 @@ def _load_pollutant_load_rate(
     parcels: pd.DataFrame,
     pollutants: List[str],
     logger: Any,
-    distribution_catalog: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Load statistical parcel pollutant load rates from ``parcels.gpkg``."""
     df = _read_gpkg_input_table(
@@ -2428,7 +2294,6 @@ def _load_pollutant_load_rate(
     )
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_POLLUTANT_LOAD_RATE, logger)
     df = _normalize_pathway_column(df, CFG_POLLUTANT_LOAD_RATE, logger)
-    df = resolve_distribution_references(df, distribution_catalog, CFG_POLLUTANT_LOAD_RATE)
     validate_stats_table(df, CFG_POLLUTANT_LOAD_RATE)
     df = _normalize_identifier_columns(df, [COL_PID], CFG_POLLUTANT_LOAD_RATE, allow_null_pid=True)
     parcel_ids = [int(pid) for pid in parcels[COL_PID].tolist()]
@@ -2651,9 +2516,6 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             )
         _validate_input_package_schema(cfg, load_mode, logger)
 
-        distribution_catalog = load_distribution_catalog(
-            ci_get(cfg, CFG_INPUT_DISTRIBUTIONS), logger
-        )
 
         outlet_loc = _load_outlet_loc(cfg, domain, logger)
         valid_oids = set(outlet_loc[COL_OID].astype(str))
@@ -2695,9 +2557,8 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             raise ValueError("bmp_efficiency is required")
         bmp_eff = _load_bmp_efficiency(
             cfg, cps, pollutants, logger, complete_legacy=False,
-            distribution_catalog=distribution_catalog,
         )
-        bmp_cost = _load_bmp_cost(cfg, cps, logger, distribution_catalog)
+        bmp_cost = _load_bmp_cost(cfg, cps, logger)
 
         plet_inputs = None
         rusle_inputs = None
@@ -2720,7 +2581,6 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 plet_source,
                 [int(pid) for pid in sel[COL_PID].tolist()],
                 logger,
-                distribution_catalog,
             )
             if plet_inputs is None:
                 raise ValueError(
@@ -2732,19 +2592,17 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             plet_hydrology_lookup = _load_plet_hydrology_lookup(
                 _assemble_plet_hydrology_source(cfg, logger),
                 logger,
-                distribution_catalog,
                 required_pairs=required_hydrology_pairs,
             )
             load_generation["_hydrology_lookup_table"] = plet_hydrology_lookup
             rusle_inputs = _load_parameter_stats_table(
-                rusle_source, LOAD_RUSLE_INPUTS, logger, distribution_catalog,
+                rusle_source, LOAD_RUSLE_INPUTS, logger,
                 parcel_ids=parcel_ids,
             )
             unified_concentrations = _load_pollutant_concentrations(
                 _assemble_plet_concentration_source(cfg, logger),
                 pollutants,
                 logger,
-                distribution_catalog,
                 parcel_ids=parcel_ids,
             )
             pollutant_concentrations, groundwater_concentrations = _split_plet_concentrations(
@@ -2769,7 +2627,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             bmp_eff = _complete_plet_bmp_efficiency_coverage(bmp_eff, cps, pollutants, logger)
         else:
             pollutant_load_rate = _load_pollutant_load_rate(
-                cfg, parcels, pollutants, logger, distribution_catalog
+                cfg, parcels, pollutants, logger
             )
             load_rate_pathways, pollutant_load_rate_is_aggregate = validate_statistical_load_rates(
                 pollutant_load_rate, parcels, pollutants

@@ -15,7 +15,6 @@ pollutants: [TN, TP, TSS]
 cps: [340, 329, 590, 412, 656]
 
 bmp_efficiency: ../bmps/bmp_efficiency.csv
-input_distributions: ../misc/input_distributions.csv
 
 load_generation:
   mode: plet_rusle

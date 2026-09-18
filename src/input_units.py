@@ -375,7 +375,7 @@ def convert_sampling_mapping(
     expected_kind: Optional[str] = None,
 ) -> Dict[str, float]:
     """Extract and unit-normalize statistics from a runtime sampling mapping."""
-    metadata = {"unit", "units", "notes", "distribution_id", "sample_group"}
+    metadata = {"unit", "units", "notes", "sample_group"}
     numeric: Dict[str, float] = {}
     for key, value in stats.items():
         label = str(key).strip().lower()

@@ -6,7 +6,6 @@ import pytest
 import src.input_config as input_config
 from src.constants import (
     CFG_CPS,
-    CFG_INPUT_DISTRIBUTIONS,
     CFG_LOAD_GENERATION,
     CFG_OUTLETS,
     CFG_OUTPUTS,
@@ -57,38 +56,7 @@ def test_build_parcel_up_map_unknown_upstream_pid_raises() -> None:
         input_config._build_parcel_up_map(upstream, ["1", "10"])
 
 
-def test_load_distribution_catalog_none_path_returns_none() -> None:
-    assert input_config.load_distribution_catalog(None) is None
 
-
-def test_resolve_distribution_references_none_catalog_returns_copy_of_input() -> None:
-    table = pd.DataFrame(
-        [
-            {"pid": None, "parameter": "annual_precip_in", "value": 42.0},
-            {"pid": "P1", "parameter": "annual_precip_in", "value": 40.0},
-        ]
-    )
-
-    resolved = input_config.resolve_distribution_references(table, None, "plet_inputs")
-
-    assert resolved.equals(table)
-    assert resolved is not table
-
-
-def test_resolve_distribution_references_unknown_distribution_id_raises() -> None:
-    use = pd.DataFrame(
-        [
-            {"pid": None, "parameter": "annual_precip_in", "distribution_id": "rain-missing"},
-        ]
-    )
-    catalog = pd.DataFrame(
-        [
-            {"distribution_id": "rain-ok", "mean": 42.0, "sd": 3.0, "min": 30.0, "max": 55.0},
-        ]
-    )
-
-    with pytest.raises(ValueError, match="rain-missing|Unknown distribution_id|distribution_id"):
-        input_config.resolve_distribution_references(use, catalog, "plet_inputs")
 
 
 def test_load_and_validate_all_rejects_non_mapping_load_generation(monkeypatch, tmp_path) -> None:
@@ -153,7 +121,6 @@ def test_load_and_validate_all_accepts_mixed_case_plet_mode_and_builds_maps(monk
         CFG_POLLUTANTS: ["TN"],
         CFG_CPS: [329],
         CFG_LOAD_GENERATION: {"mode": "PLeT_RuSlE"},
-        CFG_INPUT_DISTRIBUTIONS: None,
     }
 
     monkeypatch.setattr(input_config, "normalize_config", lambda cfg: cfg)
@@ -187,7 +154,6 @@ def test_load_and_validate_all_accepts_mixed_case_plet_mode_and_builds_maps(monk
     )
     monkeypatch.setattr(input_config, "_load_pollutants", lambda cfg: ["TN"])
     monkeypatch.setattr(input_config, "_load_cps", lambda cfg: [329])
-    monkeypatch.setattr(input_config, "load_distribution_catalog", lambda path, logger=None: None)
     monkeypatch.setattr(
         input_config,
         "_load_outlet_loc",
@@ -233,7 +199,7 @@ def test_load_pollutant_concentrations_requires_and_preserves_plet_pathway(tmp_p
     ).to_csv(path, index=False)
 
     loaded = input_config._load_pollutant_concentrations(
-        path, ["TN", "TP"], logger, None
+        path, ["TN", "TP"], logger
     )
 
     assert loaded is not None
@@ -260,7 +226,7 @@ def test_load_pollutant_concentrations_rejects_missing_pathway_column(tmp_path) 
     ).to_csv(path, index=False)
 
     with pytest.raises(ValueError, match="pathway"):
-        input_config._load_pollutant_concentrations(path, ["TN"], logger, None)
+        input_config._load_pollutant_concentrations(path, ["TN"], logger)
 
 
 def test_load_pollutant_concentrations_rejects_non_plet_pathway(tmp_path) -> None:
@@ -279,4 +245,4 @@ def test_load_pollutant_concentrations_rejects_non_plet_pathway(tmp_path) -> Non
     ).to_csv(path, index=False)
 
     with pytest.raises(ValueError, match="surface.*subsurface|unexpected"):
-        input_config._load_pollutant_concentrations(path, ["TN"], logger, None)
+        input_config._load_pollutant_concentrations(path, ["TN"], logger)

@@ -14,7 +14,6 @@ inputs/
   outlets/outlets.gpkg
   bmps/bmp_efficiency.csv
   bmps/bmp_cost.csv              # optional
-  misc/input_distributions.csv   # optional
 ```
 
 Parcel-side model variables are stored inside `parcels.gpkg`. The GeoPackage file may be renamed or moved; update only the YAML `parcels` path. Internal table names are the model schema.
@@ -55,16 +54,16 @@ A parcel GeoPackage may also contain the metadata table:
 ```text
 model_input_schema
 schema_version
-2
+3
 ```
 
-Schema version `2` identifies the integer-PID/NULL-default one-variable-per-table layout. Unknown
+Schema version `3` identifies the integer-PID/NULL-default one-variable-per-table layout with inline-only distributions (no named distribution IDs). Unknown
 `input_*` tables are rejected so misspelled variable names cannot be silently
 ignored.
 
 ### Editing in QGIS
 
-Schema-v2 GeoPackages are designed to be editable directly in QGIS. The spatial `parcels` layer uses `pid` itself as its integer feature/primary key. Attribute-only tables have a separate technical `id INTEGER PRIMARY KEY` so QGIS can identify and edit individual rows; this `id` is not a parcel identifier and is ignored by the model.
+Schema-v3 GeoPackages are designed to be editable directly in QGIS. The spatial `parcels` layer uses `pid` itself as its integer feature/primary key. Attribute-only tables have a separate technical `id INTEGER PRIMARY KEY` so QGIS can identify and edit individual rows; this `id` is not a parcel identifier and is ignored by the model.
 
 For a default row, leave `pid` empty/NULL in QGIS. Do not enter `*`. For delivery-ratio defaults, leave both `pid` and `oid` NULL. Parcel-specific rows must use an existing integer `pid`. Because relationship and input tables reference `parcels.pid`, changing an existing parcel PID should be treated as a schema/data migration rather than an ordinary attribute edit.
 
@@ -73,12 +72,11 @@ For a default row, leave `pid` empty/NULL in QGIS. Do not enter `*`. For deliver
 Every parcel-side user input variable has its own GeoPackage attribute table. Numeric tables use the same standardized value/distribution columns:
 
 ```text
-value, distribution_id, mean, sd, min,
+value, mean, sd, min,
 p05, p10, p25, p50, p75, p90, p95, max,
 sample_group, units, notes
 ```
 
-Only the columns needed to define a row need values. A row must define either a fixed `value`, a `distribution_id`, or a valid inline distribution. See [Standardized numeric inputs and distributions](input_distributions.md).
 
 Most parcel-specific variable tables are keyed by integer `pid`. Where a table supports a package-wide default, leave `pid` as SQL `NULL`; an exact integer `pid` row overrides that default. The legacy string `"*"` is invalid in PID fields.
 
@@ -197,7 +195,6 @@ outlets: ../outlets/outlets.gpkg
 
 ## Other CSV inputs
 
-`input_distributions` is an optional reusable distribution catalog keyed by `distribution_id`.
 
 `bmp_efficiency` defines BMP efficiency values/distributions by CPS, pollutant, and pathway where applicable.
 

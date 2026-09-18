@@ -17,7 +17,6 @@ from src.input_config import (
     _normalize_integer_identifier_value,
     _plet_parameter_defaults,
     _validate_input_package_schema,
-    resolve_distribution_references,
 )
 from src.io_utils import MissingInputTableError, read_geopackage_table, read_geopackage_table_info
 
@@ -123,30 +122,6 @@ def test_hydrology_lookup_can_be_reusable_but_only_used_pairs_must_be_complete()
     assert len(loaded) == 3
 
 
-def test_distribution_unit_compatibility_is_run_local_not_global() -> None:
-    catalog = pd.DataFrame(
-        [
-            {
-                "distribution_id": "rain",
-                "mean": 1000.0,
-                "sd": 100.0,
-                "units": "mm/year",
-            }
-        ]
-    )
-    use = pd.DataFrame(
-        [
-            {
-                "pid": None,
-                "parameter": "annual_precip_in",
-                "distribution_id": "rain",
-                "units": "in/year",
-            }
-        ]
-    )
-    with pytest.raises(ValueError, match="may not reinterpret"):
-        resolve_distribution_references(use, catalog, "plet_inputs")
-
 
 def test_clipped_structural_relationships_are_filtered_but_true_unknown_ids_error() -> None:
     rows = pd.DataFrame(
@@ -191,7 +166,7 @@ def test_validate_config_rejects_unknown_load_generation_keys() -> None:
         validate_config(cfg)
 
 
-def test_schema_v2_rejects_legacy_star_pid_and_accepts_null_default() -> None:
+def test_schema_v3_rejects_legacy_star_pid_and_accepts_null_default() -> None:
     with pytest.raises(ValueError, match=r"legacy '\*' parcel default"):
         _normalize_integer_identifier_value("*", "pid", allow_null=True)
     assert _normalize_integer_identifier_value(None, "pid", allow_null=True) is None
@@ -211,14 +186,14 @@ def test_example_parcels_geopackage_uses_integer_pid_primary_key_and_editable_at
     assert "INT" in annual["pid"]["type"].upper()
 
     with sqlite3.connect(package) as con:
-        assert con.execute("SELECT schema_version FROM model_input_schema").fetchone()[0] == 2
+        assert con.execute("SELECT schema_version FROM model_input_schema").fetchone()[0] == 3
         default_pid = con.execute("SELECT pid FROM input_annual_precip_in LIMIT 1").fetchone()[0]
         assert default_pid is None
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_load_parcels_recovers_pid_when_reader_hides_feature_id(monkeypatch) -> None:
-    """Schema-v2 pid must survive GeoPandas/Fiona versions that hide the FID."""
+    """Schema-v3 pid must survive GeoPandas/Fiona versions that hide the FID."""
     repo = Path(__file__).resolve().parents[1]
     package = repo / "examples" / "east_fork" / "inputs" / "parcels" / "parcels.gpkg"
     domain_path = repo / "examples" / "east_fork" / "inputs" / "domain" / "domain.gpkg"
@@ -260,7 +235,7 @@ def test_gpkg_reader_accepts_legacy_registry_wildcard_field(monkeypatch, tmp_pat
 
 
 def test_plet_validation_applies_null_classification_defaults_to_integer_pids() -> None:
-    """Schema-v2 NULL defaults must satisfy classifications for every integer parcel."""
+    """Schema-v3 NULL defaults must satisfy classifications for every integer parcel."""
     from src.input_validation import validate_plet_input_table
 
     table = pd.DataFrame(
@@ -277,7 +252,7 @@ def test_plet_validation_applies_null_classification_defaults_to_integer_pids() 
 
 
 def test_plet_concentration_sampling_applies_null_defaults_to_integer_pids() -> None:
-    """Runtime concentration sampling must honor schema-v2 NULL parcel defaults."""
+    """Runtime concentration sampling must honor schema-v3 NULL parcel defaults."""
     from src.plet_rusle import _sample_concentrations
 
     class FixedContext:
@@ -295,3 +270,21 @@ def test_plet_concentration_sampling_applies_null_defaults_to_integer_pids() -> 
     sampled = _sample_concentrations(FixedContext(), table, [1, 2])
     assert sampled[0] == {"TN": pytest.approx(4.4), "TP": pytest.approx(0.35)}
     assert sampled[1] == {"TN": pytest.approx(5.0), "TP": pytest.approx(0.35)}
+
+
+def test_validate_config_rejects_removed_input_distributions_key() -> None:
+    from src.input_validation import validate_config
+
+    cfg = input_config.normalize_config(
+        {"n_scenarios": 1, "input_distributions": "legacy.csv"}
+    )
+    with pytest.raises(ValueError, match="input_distributions is no longer supported"):
+        validate_config(cfg)
+
+
+def test_input_table_rejects_removed_distribution_id_column() -> None:
+    table = pd.DataFrame(
+        [{"pid": None, "parameter": "annual_precip_in", "distribution_id": "rain"}]
+    )
+    with pytest.raises(ValueError, match="removed column 'distribution_id'"):
+        input_config._load_parameter_stats_table(table, "plet_inputs", Logger())

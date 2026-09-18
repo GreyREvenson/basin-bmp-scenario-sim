@@ -120,7 +120,7 @@ A scientific or technical report using the model should document:
 - selected load-generation mode
 - pathway definitions
 - all major input data sources
-- probability distributions, reusable distribution definitions, Curve Number and infiltration assumptions, and their rationale
+- probability-distribution assumptions, Curve Number and infiltration assumptions, and their rationale
 - BMP interaction and failure assumptions
 - number of Monte Carlo scenarios
 - random seed

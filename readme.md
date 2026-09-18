@@ -72,9 +72,8 @@ Numeric inputs use a common value/distribution convention. Depending on the tabl
 - the legacy `min` + `mean` + `max` form
 - `min` + `max` for a uniform distribution
 - `min` + percentile columns such as `p05`, `p50`, `p95` + `max`
-- a reusable `distribution_id` defined once in an optional `input_distributions.csv` catalog
 
-Parcel-indexed inputs may use `pid: "*"` as a default and provide only parcel-specific overrides. This can greatly reduce duplication when many parcels share assumptions.
+Parcel-indexed inputs may use `pid IS NULL` as a default and provide parcel-specific integer-PID overrides. This can greatly reduce duplication when many parcels share assumptions.
 
 ## Quick start
 
@@ -93,7 +92,6 @@ Both modes use consolidated parcel and outlet GeoPackages:
     pollutants: [TN, TP, TSS]
     cps: [340, 329, 590]
 
-    input_distributions: ../misc/input_distributions.csv
     bmp_efficiency: ../bmps/bmp_efficiency.csv
 
     n_scenarios: 1000
@@ -112,7 +110,6 @@ See the docs below for complete examples and mode-specific requirements.
 
 - [Model concepts and scientific formulation](docs/model_overview.md) — loads, pathways, Monte Carlo structure, and outlet routing
 - [Configuration reference](docs/configuration.md) — common YAML settings and complete examples for both modes
-- [Standardized numeric inputs and distributions](docs/input_distributions.md) — fixed values, distributions, reusable distribution IDs, parcel defaults and overrides, and shared draws
 - [Statistical load-generation mode](docs/statistical_mode.md) — direct parcel load-rate inputs, arbitrary pathways, aggregate pathway splitting, and coverage rules
 - [PLET/RUSLE load-generation mode](docs/plet_rusle_mode.md) — required land-cover/HSG hydrology inputs, runoff, infiltration, groundwater loads, RUSLE, and two-pathway BMP treatment
 - [BMP simulation](docs/bmp_simulation.md) — BMP selection, efficiencies, treatment fractions, failure, signed effects, and serial stacking
@@ -148,7 +145,7 @@ For reproducible scientific analyses, archive or record:
 
 - the repository commit or release
 - the configuration YAML
-- all input data files, including the parcel GeoPackage and any distribution catalog
+- all input data files, including the parcel GeoPackage
 - the random seed
 - the Python environment and dependency versions
 - the generated logs

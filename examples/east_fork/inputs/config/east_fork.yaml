@@ -11,8 +11,6 @@ outlets: ../outlets/outlets.gpkg
 pollutants: ["TN", "TP", "TSS"]
 cps: [340, 329, 590, 412, 656]
 
-# Optional reusable distribution catalog
-input_distributions: ../misc/input_distributions.csv
 
 bmp_efficiency: ../bmps/bmp_efficiency.csv
 bmp_cost: ../bmps/bmp_cost.csv

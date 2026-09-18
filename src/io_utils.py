@@ -117,7 +117,7 @@ def read_geodataframe(
             Optional layer/table name for multi-layer containers such as GeoPackage.
         fid_as_index : bool
             When true, preserve the vector driver's feature ID as the dataframe
-            index. This is used for the parcels layer because schema v2 names
+            index. This is used for the parcels layer because schema v3 names
             the GeoPackage integer feature ID column ``pid``.
 
         Returns

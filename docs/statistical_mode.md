@@ -15,7 +15,6 @@ pollutants: [TN, TP, TSS]
 cps: [340, 329, 590]
 
 bmp_efficiency: ../bmps/bmp_efficiency.csv
-input_distributions: ../misc/input_distributions.csv
 
 load_generation:
   mode: statistical
@@ -30,7 +29,7 @@ The natural key is parcel × pollutant, optionally extended by pathway.
 Example aggregate rows:
 
 ```text
-pid | pollutant | distribution_id | units
+pid | pollutant | value / distribution statistics | units
 NULL| TN        | yield_tn        | kg/ha/year
 NULL| TP        | yield_tp        | kg/ha/year
 ```

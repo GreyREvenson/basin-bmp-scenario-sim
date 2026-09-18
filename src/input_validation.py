@@ -32,7 +32,7 @@ from .constants import (
     LOAD_CONCENTRATIONS,
     LOAD_GROUNDWATER_CONCENTRATIONS,
 )
-from .input_distributions import DISTRIBUTION_ID, stats_from_row
+from .input_distributions import stats_from_row
 from .utils import ci_get
 
 
@@ -353,11 +353,9 @@ def validate_numeric_distribution_rows(df: pd.DataFrame, label: str) -> None:
     if df is None or df.empty:
         return
     for index, row in df.iterrows():
-        distribution_id = row.get(DISTRIBUTION_ID)
         stats = _row_stats_raw(row)
         if not stats:
-            suffix = f" (distribution_id={distribution_id!r})" if _nonblank(distribution_id) else ""
-            raise ValueError(f"{label} row {index} has no fixed value or distribution statistics{suffix}")
+            raise ValueError(f"{label} row {index} has no fixed value or distribution statistics")
         has_value = "value" in stats
         distribution_keys = set(stats) - {"value"}
         if has_value and distribution_keys:
@@ -477,34 +475,6 @@ def validate_stats_rows(df: pd.DataFrame, label: str) -> None:
     """
     validate_numeric_distribution_rows(df, label)
     validate_physical_distribution_rows(df, label)
-
-
-def validate_distribution_catalog(catalog: pd.DataFrame) -> None:
-    """Validate reusable distribution identifiers and numeric definitions.
-
-        Parameters
-        ----------
-        catalog : pd.DataFrame
-            Reusable distribution catalog, if configured.
-
-        Raises
-        ------
-        ValueError
-            If ``distribution_id`` values are blank or duplicated.
-        
-    """
-    require_columns(catalog, [DISTRIBUTION_ID], "input_distributions")
-    raw_ids = catalog[DISTRIBUTION_ID]
-    blank_ids = raw_ids.isna() | raw_ids.astype(str).str.strip().eq("")
-    if blank_ids.any():
-        rows = catalog.index[blank_ids].tolist()
-        raise ValueError(f"input_distributions contains blank distribution_id values at rows {rows}")
-    normalized_ids = raw_ids.astype(str).str.strip()
-    duplicate = normalized_ids.duplicated(keep=False)
-    if duplicate.any():
-        ids = sorted(normalized_ids.loc[duplicate].unique().tolist())
-        raise ValueError(f"input_distributions contains duplicate distribution_id values: {ids}")
-    validate_numeric_distribution_rows(catalog, "input_distributions")
 
 
 def validate_bmp_selection_table(df: pd.DataFrame, cps: Sequence[int]) -> None:
@@ -829,8 +799,20 @@ def validate_config(cfg: Dict[str, Any]) -> None:
             "Legacy per-file parcel/outlet configuration keys are no longer supported: "
             f"{supplied_legacy}. Use the consolidated 'parcels' and 'outlets' GeoPackages."
         )
+    normalized_top_keys = {str(key).lower() for key in cfg}
+    if "input_distributions" in normalized_top_keys:
+        raise ValueError(
+            "input_distributions is no longer supported; define each fixed value or "
+            "distribution directly on its model input row"
+        )
+
     load_generation = ci_get(cfg, "load_generation")
     if isinstance(load_generation, dict):
+        if any(str(key).lower() == "input_distributions" for key in load_generation):
+            raise ValueError(
+                "load_generation.input_distributions is no longer supported; define each "
+                "distribution directly on its model input row"
+            )
         legacy_load_keys = {"plet_inputs", "rusle_inputs", "pollutant_concentrations", "groundwater_concentrations", "hydrology_lookup"}
         supplied_load_legacy = sorted(
             key for key in legacy_load_keys if ci_get(load_generation, key) is not None
@@ -846,7 +828,7 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         "bmp_efficiency", "bmp_cost", "bmp_sel", "n_scenarios",
         "bmp_limit_n", "bmp_limit_usd", "parallel", "random_seed",
         "outputs", "verbose", "buffer_depth_ft", "bmp_sel_prob_via_costs",
-        "input_distributions", "load_generation", "bmp_fail_rate",
+        "load_generation", "bmp_fail_rate",
         "bmp_fail_reduction", "pollutant_load_rate_pathway_fractions",
         "pollutant_load_rate_frac_surface", "pollutant_load_rate_frac_shallow",
     }

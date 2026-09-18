@@ -8,8 +8,6 @@ import pytest
 
 import src.sampling as sampling
 from src.input_config import (
-    load_distribution_catalog,
-    resolve_distribution_references,
     _expand_pollutant_load_rate_defaults,
     _load_plet_hydrology_lookup,
     _load_plet_parameter_table,
@@ -61,17 +59,6 @@ def test_numeric_schema_rejects_mixed_fixed_and_distribution():
         validate_numeric_distribution_rows(pd.DataFrame([{"value": 1, "mean": 1, "sd": 0.1}]), "x")
 
 
-def test_distribution_catalog_reference_expands(tmp_path):
-    path = tmp_path / "d.csv"
-    pd.DataFrame([{"distribution_id": "rain", "mean": 42, "sd": 3, "min": 30, "max": 55}]).to_csv(path, index=False)
-    catalog = load_distribution_catalog(path)
-    use = pd.DataFrame([{"pid": None, "parameter": "annual_precip_in", "distribution_id": "rain"}])
-    resolved = resolve_distribution_references(use, catalog, "plet_inputs")
-    assert resolved.loc[0, "mean"] == 42
-    assert resolved.loc[0, "sd"] == 3
-    assert resolved.loc[0, "min"] == 30
-    assert resolved.loc[0, "max"] == 55
-
 
 def test_hydrology_lookup_requires_full_pair_parameter_coverage(tmp_path):
     table = hydrology_rows().iloc[:-1]
@@ -104,6 +91,17 @@ def test_wildcard_parameter_distributions_are_independent_without_sample_group()
     table = pd.DataFrame([{"pid": None, "parameter": "annual_precip_in", "mean": 42.0, "sd": 3.0}])
     values = _sample_parameter_table(ctx, table, ["P1", "P2"], cache_prefix="plet")
     assert values[0]["annual_precip_in"] != values[1]["annual_precip_in"]
+
+
+def test_pid_specific_distribution_overrides_default_distribution():
+    ctx = Ctx(seed=7)
+    table = pd.DataFrame([
+        {"pid": None, "parameter": "annual_precip_in", "mean": 42.0, "sd": 0.0},
+        {"pid": "P2", "parameter": "annual_precip_in", "mean": 50.0, "sd": 0.0},
+    ])
+    values = _sample_parameter_table(ctx, table, ["P1", "P2"], cache_prefix="plet")
+    assert values[0]["annual_precip_in"] == pytest.approx(42.0)
+    assert values[1]["annual_precip_in"] == pytest.approx(50.0)
 
 
 def test_sample_group_explicitly_shares_parameter_draw():
@@ -159,12 +157,6 @@ def test_plet_initializer_uses_configured_hydrology_table():
     assert state.parameters[0]["infiltration_fraction"] == 0.41
     assert state.pathway_load_rates.shape == (1, 1, 2)
 
-
-def test_distribution_catalog_rejects_blank_id(tmp_path):
-    path = tmp_path / "d.csv"
-    pd.DataFrame([{"distribution_id": None, "value": 1.0}]).to_csv(path, index=False)
-    with pytest.raises(ValueError, match="blank distribution_id"):
-        load_distribution_catalog(path)
 
 
 def test_numeric_schema_rejects_mixed_percentile_and_normal_forms():
@@ -240,37 +232,6 @@ def test_numeric_schema_rejects_invalid_percentile_labels(column):
         validate_numeric_distribution_rows(table, "x")
 
 
-def test_distribution_catalog_rejects_duplicate_statistic_aliases(tmp_path):
-    path = tmp_path / "d.csv"
-    pd.DataFrame(
-        [{"distribution_id": "rain", "mean": 42.0, "avg": 43.0, "sd": 3.0}]
-    ).to_csv(path, index=False)
-    with pytest.raises(ValueError, match="Multiple populated columns define statistic 'mean'"):
-        load_distribution_catalog(path)
 
 
-def test_distribution_catalog_rejects_nonmonotonic_percentiles(tmp_path):
-    path = tmp_path / "d.csv"
-    pd.DataFrame(
-        [
-            {
-                "distribution_id": "rain",
-                "min": 30.0,
-                "p05": 35.0,
-                "p50": 45.0,
-                "p95": 40.0,
-                "max": 55.0,
-            }
-        ]
-    ).to_csv(path, index=False)
-    with pytest.raises(ValueError, match="distribution is not monotonic"):
-        load_distribution_catalog(path)
 
-
-def test_distribution_catalog_rejects_invalid_percentile_label(tmp_path):
-    path = tmp_path / "d.csv"
-    pd.DataFrame(
-        [{"distribution_id": "rain", "min": 30.0, "p105": 42.0, "max": 55.0}]
-    ).to_csv(path, index=False)
-    with pytest.raises(ValueError, match="Invalid percentile statistic column"):
-        load_distribution_catalog(path)

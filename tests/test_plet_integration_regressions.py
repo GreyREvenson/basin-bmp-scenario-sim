@@ -96,7 +96,6 @@ def _patch_loader_preamble(monkeypatch) -> None:
     )
     monkeypatch.setattr(input_config, "_load_pollutants", lambda cfg: ["TN"])
     monkeypatch.setattr(input_config, "_load_cps", lambda cfg: [340])
-    monkeypatch.setattr(input_config, "load_distribution_catalog", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         input_config,
         "_load_outlet_loc",

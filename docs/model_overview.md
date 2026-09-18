@@ -67,7 +67,7 @@ The load-generation mode determines how baseline parcel loads are established. I
 
 ## What the model does not represent directly
 
-Unless supplied indirectly through input distributions or delivery factors, the model does not explicitly simulate:
+Unless supplied through direct input distributions or delivery factors, the model does not explicitly simulate:
 
 - sub-daily or daily hydrology
 - channel hydraulics

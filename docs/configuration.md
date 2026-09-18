@@ -22,7 +22,6 @@ pollutants: [TN, TP, TSS]
 cps: [340, 329, 590, 412, 656]
 
 bmp_efficiency: ../bmps/bmp_efficiency.csv
-input_distributions: ../misc/input_distributions.csv   # optional
 bmp_cost: ../bmps/bmp_cost.csv                         # optional
 
 outputs: ../../outputs/run_1
@@ -60,12 +59,11 @@ PLET/RUSLE inputs—including curve number and infiltration fraction—are read 
 Numeric variable tables share the same uncertainty columns:
 
 ```text
-value, distribution_id, mean, sd, min,
+value, mean, sd, min,
 p05, p10, p25, p50, p75, p90, p95, max,
 sample_group, units, notes
 ```
 
-Only the fields needed for a row need values. See [Standardized numeric inputs and distributions](input_distributions.md).
 
 ## Parallel configuration
 

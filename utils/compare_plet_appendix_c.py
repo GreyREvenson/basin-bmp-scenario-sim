@@ -158,7 +158,6 @@ def _resolve_config_paths(cfg: Dict[str, Any], cfg_path: Path) -> Dict[str, Any]
         "outlet_target",
         "outlet_mean",
         "outputs",
-        "input_distributions",
     ]
     for key in path_keys:
         if key in out:
@@ -173,8 +172,7 @@ def _resolve_config_paths(cfg: Dict[str, Any], cfg_path: Path) -> Dict[str, Any]
             "rusle_inputs",
             "pollutant_concentrations",
             "groundwater_concentrations",
-            "input_distributions",
-        ]:
+            ]:
             if key in lg2:
                 lg2[key] = _resolve_path_like(lg2[key], base_dir)
         out["load_generation"] = lg2
@@ -269,43 +267,14 @@ def _first_present_float(row: Mapping[str, Any], candidates: Sequence[str], defa
     return default
 
 
-def _load_distribution_catalog(path: Optional[str]) -> Dict[str, float]:
-    if not path:
-        return {}
-    df = pd.read_csv(path)
-    if "distribution_id" not in df.columns:
-        return {}
-    out: Dict[str, float] = {}
-    for _, row in df.iterrows():
-        did = str(row.get("distribution_id", "")).strip()
-        if not did:
-            continue
-        if "value" in row and pd.notna(row["value"]):
-            try:
-                out[did] = float(row["value"])
-                continue
-            except Exception:
-                pass
-        if "mean" in row and pd.notna(row["mean"]):
-            try:
-                out[did] = float(row["mean"])
-            except Exception:
-                pass
-    return out
-
-
-def _resolve_numeric_row(row: Mapping[str, Any], dist_map: Mapping[str, float]) -> float:
+def _resolve_numeric_row(row: Mapping[str, Any]) -> float:
     value = row.get("value")
     if pd.notna(value):
         text = str(value).strip()
         try:
             return float(text)
         except Exception:
-            if text in dist_map:
-                return float(dist_map[text])
-    did = str(row.get("distribution_id", "")).strip()
-    if did and did in dist_map:
-        return float(dist_map[did])
+            pass
     if pd.notna(row.get("mean")):
         return float(row.get("mean"))
     return 0.0
@@ -315,7 +284,6 @@ def _lookup_concentration(
     table_path: str,
     pid: str,
     pollutant: str,
-    dist_map: Mapping[str, float],
 ) -> float:
     df = pd.read_csv(table_path)
     df["pid"] = df["pid"].astype(str).str.strip()
@@ -323,11 +291,11 @@ def _lookup_concentration(
 
     exact = df[(df["pid"] == str(pid)) & (df["pollutant"] == pollutant)]
     if not exact.empty:
-        return _resolve_numeric_row(exact.iloc[0], dist_map)
+        return _resolve_numeric_row(exact.iloc[0])
 
     wildcard = df[(df["pid"] == "*") & (df["pollutant"] == pollutant)]
     if not wildcard.empty:
-        return _resolve_numeric_row(wildcard.iloc[0], dist_map)
+        return _resolve_numeric_row(wildcard.iloc[0])
 
     return 0.0
 
@@ -544,14 +512,13 @@ def _run_one_cps(
         params, extracted_debug = _extract_realized_parameters(load_row)
 
         lg_cfg = base_cfg["load_generation"]
-        dist_map = _load_distribution_catalog(base_cfg.get("input_distributions") or lg_cfg.get("input_distributions"))
         runoff_conc = {
-            pol: _lookup_concentration(str(lg_cfg["pollutant_concentrations"]), pid_str, pol, dist_map)
+            pol: _lookup_concentration(str(lg_cfg["pollutant_concentrations"]), pid_str, pol )
             for pol in pollutants
             if pol != "TSS"
         }
         groundwater_conc = {
-            pol: _lookup_concentration(str(lg_cfg["groundwater_concentrations"]), pid_str, pol, dist_map)
+            pol: _lookup_concentration(str(lg_cfg["groundwater_concentrations"]), pid_str, pol )
             for pol in pollutants
             if pol != "TSS"
         }

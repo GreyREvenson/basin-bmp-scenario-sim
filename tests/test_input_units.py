@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from src.input_distributions import stats_from_row
-from src.input_config import resolve_distribution_references
 from src.input_units import canonical_cost_unit, convert_cost_value
 from src.sampling import _sample_from_stats
 
@@ -28,7 +27,7 @@ def test_plet_precipitation_mm_per_year_converts_to_inches_per_year() -> None:
 def test_concentration_micrograms_per_liter_converts_to_mg_per_liter() -> None:
     stats = stats_from_row(
         {"pid": None, "pollutant": "TN", "value": 2500.0, "units": "ug/L"},
-        {"pid", "pollutant", "sample_group", "distribution_id", "units"},
+        {"pid", "pollutant", "sample_group", "units"},
     )
     assert stats["value"] == pytest.approx(2.5)
 
@@ -37,7 +36,7 @@ def test_concentration_rejects_load_rate_units() -> None:
     with pytest.raises(ValueError, match="dimensionally incompatible"):
         stats_from_row(
             {"pid": None, "pollutant": "TN", "value": 2.0, "units": "lb/ac/yr"},
-            {"pid", "pollutant", "sample_group", "distribution_id", "units"},
+            {"pid", "pollutant", "sample_group", "units"},
         )
 
 
@@ -77,26 +76,6 @@ def test_runtime_load_rate_rejects_concentration_units() -> None:
         _sample_from_stats(dummy, {"value": 2.0, "units": "mg/L"}, kind="load_rate")
 
 
-def test_distribution_reference_cannot_change_catalog_scale() -> None:
-    catalog = __import__("pandas").DataFrame([
-        {"distribution_id": "rain", "mean": 1000.0, "sd": 100.0, "units": "mm/year"}
-    ])
-    use = __import__("pandas").DataFrame([
-        {"pid": None, "parameter": "annual_precip_in", "distribution_id": "rain", "units": "in/year"}
-    ])
-    with pytest.raises(ValueError, match="may not reinterpret"):
-        resolve_distribution_references(use, catalog, "plet_inputs")
-
-
-def test_distribution_reference_allows_same_scale_alias() -> None:
-    catalog = __import__("pandas").DataFrame([
-        {"distribution_id": "rain_alias", "mean": 1000.0, "sd": 100.0, "units": "mm/year"}
-    ])
-    use = __import__("pandas").DataFrame([
-        {"pid": None, "parameter": "annual_precip_in", "distribution_id": "rain_alias", "units": "mm/yr"}
-    ])
-    resolved = resolve_distribution_references(use, catalog, "plet_inputs")
-    assert resolved.loc[0, "mean"] == pytest.approx(1000.0)
 
 
 def test_cost_area_units_convert_to_usd_per_hectare() -> None:

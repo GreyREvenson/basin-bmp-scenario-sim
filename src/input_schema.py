@@ -24,7 +24,7 @@ from .constants import (
 )
 
 INPUT_SCHEMA_TABLE = "model_input_schema"
-INPUT_SCHEMA_VERSION = 2
+INPUT_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)

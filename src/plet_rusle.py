@@ -559,7 +559,7 @@ def _sample_parameter_table(
                         cache[cache_key] = normalize_plet_hsg(raw_value)
                 else:
                     stats = stats_from_row(
-                        row, {"pid", "parameter", "sample_group", "distribution_id", "units"}
+                        row, {"pid", "parameter", "sample_group", "units"}
                     )
                     if not stats:
                         raise ValueError(
@@ -619,7 +619,7 @@ def _sample_concentrations(ctx: Any, table: Optional[pd.DataFrame], parcel_ids: 
             key = (variable_key, group_key)
             if key not in cache:
                 stats = stats_from_row(
-                    row, {"pid", "pollutant", "sample_group", "distribution_id", "units"}
+                    row, {"pid", "pollutant", "sample_group", "units"}
                 )
                 if not stats:
                     raise ValueError(f"No concentration value or statistics supplied for {pid}/{pollutant}")
@@ -701,7 +701,6 @@ def _sample_plet_hydrology(
                 "land_cover",
                 "hsg",
                 "parameter",
-                "distribution_id",
                 "sample_group",
                 "units",
                 "notes",
