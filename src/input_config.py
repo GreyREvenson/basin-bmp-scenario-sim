@@ -91,6 +91,8 @@ from .io_utils import (
     read_csv_table,
     read_geodataframe,
     read_geopackage_table,
+    read_geopackage_table_info,
+    read_geopackage_integer_ids,
     read_parquet_table,
 )
 from .utils import ci_get, normalize_columns, normalize_pollutant_label
@@ -134,46 +136,113 @@ from .input_schema import (
 _PLET_HYDROLOGY_LABEL = "plet_hydrology_inputs"
 
 
-def _normalize_identifier_value(value: Any, label: str) -> str:
-    """Normalize one relational identifier and reject missing/blank values."""
+def _normalize_integer_identifier_value(
+    value: Any, label: str, *, allow_null: bool = False
+) -> Optional[int]:
+    """Normalize a parcel identifier to an integer.
+
+    ``NULL`` is reserved for package-wide default rows in tables whose schema
+    explicitly permits defaults. The legacy ``"*"`` sentinel is rejected so
+    every non-null PID is always a real parcel identifier.
+    """
     if value is None or pd.isna(value):
+        if allow_null:
+            return None
+        raise ValueError(f"{label} must not be null")
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"{label} must be an integer parcel identifier, not a boolean")
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            raise ValueError(f"{label} must not be blank")
+        if text == "*":
+            raise ValueError(
+                f"{label} uses the legacy '*' parcel default; use NULL pid for a default row"
+            )
+        value = text
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label}={value!r} must be an integer parcel identifier") from exc
+    if not np.isfinite(numeric) or not numeric.is_integer():
+        raise ValueError(f"{label}={value!r} must be a finite integer parcel identifier")
+    return int(numeric)
+
+
+def _normalize_text_identifier_value(
+    value: Any, label: str, *, allow_null: bool = False
+) -> Optional[str]:
+    """Normalize an outlet-style identifier while optionally permitting NULL defaults."""
+    if value is None or pd.isna(value):
+        if allow_null:
+            return None
         raise ValueError(f"{label} must not be null")
     if isinstance(value, (bool, np.bool_)):
         raise ValueError(f"{label} must be an identifier, not a boolean")
-    if isinstance(value, (float, np.floating)) and np.isfinite(value) and float(value).is_integer():
-        text = str(int(value))
-    else:
-        text = str(value).strip()
+    text = str(value).strip()
     if not text:
         raise ValueError(f"{label} must not be blank")
+    if text == "*":
+        raise ValueError(
+            f"{label} uses the legacy '*' default sentinel; use NULL in all default key columns"
+        )
     return text
 
 
-def _normalize_identifier_columns(df: pd.DataFrame, columns: Sequence[str], label: str) -> pd.DataFrame:
-    """Return a copy with normalized PID/OID-style identifier columns."""
+def _normalize_identifier_columns(
+    df: pd.DataFrame,
+    columns: Sequence[str],
+    label: str,
+    *,
+    allow_null_pid: bool = False,
+    allow_null_oid: bool = False,
+) -> pd.DataFrame:
+    """Return a copy with canonical integer PIDs and normalized outlet IDs."""
     out = df.copy()
     for column in columns:
         if column not in out.columns:
             continue
-        values: List[str] = []
-        for index, value in out[column].items():
-            values.append(_normalize_identifier_value(value, f"{label} row {index} {column}"))
-        out[column] = values
+        if column in {COL_PID, COL_PID_UP}:
+            allow_null = allow_null_pid and column == COL_PID
+            values = [
+                _normalize_integer_identifier_value(
+                    value, f"{label} row {index} {column}", allow_null=allow_null
+                )
+                for index, value in out[column].items()
+            ]
+            out[column] = pd.array(values, dtype="Int64" if allow_null else "int64")
+        else:
+            values = [
+                _normalize_text_identifier_value(
+                    value, f"{label} row {index} {column}", allow_null=allow_null_oid
+                )
+                for index, value in out[column].items()
+            ]
+            out[column] = values
     return out
 
 
 def _validate_explicit_references(
-    values: Sequence[Any], valid_values: Sequence[Any], *, label: str, allow_wildcard: bool = True
+    values: Sequence[Any],
+    valid_values: Sequence[Any],
+    *,
+    label: str,
+    allow_default: bool = False,
 ) -> None:
     """Reject explicit foreign-key values that do not exist in the target universe."""
-    valid = {str(value) for value in valid_values}
-    supplied = {str(value) for value in values}
-    if allow_wildcard:
-        supplied.discard("*")
-    unknown = sorted(supplied - valid)
+    valid = set(valid_values)
+    supplied = set()
+    saw_null = False
+    for value in values:
+        if value is None or pd.isna(value):
+            saw_null = True
+            continue
+        supplied.add(value)
+    if saw_null and not allow_default:
+        raise ValueError(f"{label} contains NULL identifiers where defaults are not allowed")
+    unknown = sorted(supplied - valid, key=lambda value: str(value))
     if unknown:
         raise ValueError(f"{label} references unknown identifiers: {unknown[:10]}")
-
 
 
 def _normalize_cps_column(df: pd.DataFrame, label: str) -> pd.DataFrame:
@@ -249,6 +318,34 @@ def _validate_input_package_schema(cfg: Dict[str, Any], load_mode: str, logger: 
             raise ValueError(
                 f"{INPUT_SCHEMA_TABLE} must contain exactly one row with schema_version={INPUT_SCHEMA_VERSION}"
             )
+
+        parcel_info = read_geopackage_table_info(package, GPKG_PARCELS_LAYER)
+        parcel_columns = {row["name"].lower(): row for row in parcel_info}
+        pid_meta = parcel_columns.get(COL_PID)
+        if (
+            pid_meta is None
+            or "INT" not in pid_meta["type"].upper()
+            or int(pid_meta["pk"]) != 1
+            or "fid" in parcel_columns
+        ):
+            raise ValueError(
+                "GeoPackage schema v2 requires parcels.pid to be the INTEGER PRIMARY KEY "
+                "and does not use a separate fid column"
+            )
+
+        editable_tables = (set(KNOWN_INPUT_TABLES) | {GPKG_PARCEL_UP_TABLE, GPKG_PARCEL_OUTLETS_TABLE}) & table_names
+        for table_name in sorted(editable_tables):
+            info = read_geopackage_table_info(package, table_name)
+            metadata = {row["name"].lower(): row for row in info}
+            if not any(int(row["pk"]) > 0 for row in info):
+                raise ValueError(
+                    f"GeoPackage schema v2 requires {table_name!r} to have an integer primary-key row ID so it is editable in QGIS"
+                )
+            for pid_column in (COL_PID, COL_PID_UP):
+                if pid_column in metadata and "INT" not in metadata[pid_column]["type"].upper():
+                    raise ValueError(
+                        f"GeoPackage schema v2 requires {table_name}.{pid_column} to use INTEGER storage"
+                    )
     else:
         logger.warning(
             f"{INPUT_SCHEMA_TABLE} is not present in {package.name}; accepting the current table layout, "
@@ -336,12 +433,34 @@ def _read_gpkg_input_table(
             f"Failed to read {label} table/layer '{table_name}' from {package}: {exc}"
         ) from exc
     frame = normalize_columns(pd.DataFrame(frame))
-    if "fid" in frame.columns:
-        frame = frame.drop(columns=["fid"])
+    # ``id``/``fid`` are technical SQLite/QGIS row identifiers for attribute
+    # tables; they are deliberately not part of the model's logical schema.
+    technical_ids = [column for column in ("fid", "id", "row_id") if column in frame.columns and column not in required_cols]
+    if technical_ids:
+        frame = frame.drop(columns=technical_ids)
     require_columns(frame, required_cols, f"{label} ({package}:{table_name})", logger)
     identifier_cols = [column for column in (COL_PID, COL_PID_UP, COL_OID) if column in frame.columns]
     if identifier_cols:
-        frame = _normalize_identifier_columns(frame, identifier_cols, label)
+        spec = INPUT_VARIABLE_SPECS.get(table_name)
+        # Schema-v2 renamed ``wildcard_allowed`` to ``default_row_allowed``
+        # when parcel defaults changed from pid="*" to pid IS NULL. Accept
+        # either registry attribute so a partially updated working tree does
+        # not crash with AttributeError.
+        allow_default = bool(
+            spec
+            and getattr(
+                spec,
+                "default_row_allowed",
+                getattr(spec, "wildcard_allowed", False),
+            )
+        )
+        frame = _normalize_identifier_columns(
+            frame,
+            identifier_cols,
+            label,
+            allow_null_pid=allow_default,
+            allow_null_oid=allow_default and COL_OID in getattr(spec, "key_columns", ()),
+        )
     sort_cols = list(required_cols)
     if COL_PATHWAY in frame.columns and COL_PATHWAY not in sort_cols:
         sort_cols.append(COL_PATHWAY)
@@ -822,29 +941,22 @@ def resolve_distribution_references(
     return out
 
 
-def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
-    """Resolve wildcard input rows plus parcel-specific overrides for one parcel.
-
-    Parameters
-    ----------
-    table : Optional[pd.DataFrame]
-        Input table containing model data.
-    pid : str
-        Parcel identifier.
-
-    Returns
-    -------
-    List[pd.Series]
-        Rows applicable to the specified parcel.
-    """
+def _rows_for_pid(table: Optional[pd.DataFrame], pid: Union[int, str]) -> List[pd.Series]:
+    """Resolve NULL default rows plus parcel-specific overrides for one parcel."""
     if table is None or table.empty:
         return []
     from .plet_rusle import canonical_parameter_name
 
-    pids = table[COL_PID].astype(str)
-    wildcard_rows = table[pids == "*"]
-    exact_rows = table[pids == str(pid)]
-    combined = pd.concat([wildcard_rows, exact_rows], ignore_index=True)
+    default_rows = table[table[COL_PID].isna()]
+    try:
+        target_pid = int(pid)
+        numeric_pids = pd.to_numeric(table[COL_PID], errors="coerce")
+        exact_rows = table[table[COL_PID].notna() & (numeric_pids == target_pid)]
+    except (TypeError, ValueError):
+        exact_rows = table[
+            table[COL_PID].notna() & (table[COL_PID].astype(str) == str(pid))
+        ]
+    combined = pd.concat([default_rows, exact_rows], ignore_index=True)
     if combined.empty:
         return []
     combined = combined.assign(
@@ -999,7 +1111,7 @@ def _append_parameter_defaults(
     table: pd.DataFrame,
     pollutants: Sequence[str],
 ) -> pd.DataFrame:
-    """Append wildcard PLET parameter defaults before scenario sampling.
+    """Append NULL-key PLET parameter defaults before scenario sampling.
 
     Parameters
     ----------
@@ -1011,7 +1123,7 @@ def _append_parameter_defaults(
     Returns
     -------
     pd.DataFrame
-        Table containing explicit wildcard default rows.
+        Table containing explicit NULL-key default rows.
     """
     defaults = _plet_parameter_defaults(pollutants)
     out = table.copy()
@@ -1019,15 +1131,15 @@ def _append_parameter_defaults(
         out["_default_applied"] = False
     if "value" not in out.columns:
         out["value"] = np.nan
-    existing_wildcards = set(
-        out.loc[out[COL_PID].astype(str) == "*", "parameter"].astype(str).tolist()
+    existing_defaults = set(
+        out.loc[out[COL_PID].isna(), "parameter"].astype(str).tolist()
     )
     rows: List[Dict[str, Any]] = []
     for parameter, value in defaults.items():
-        if parameter in existing_wildcards:
+        if parameter in existing_defaults:
             continue
         row = {column: np.nan for column in out.columns}
-        row[COL_PID] = "*"
+        row[COL_PID] = pd.NA
         row["parameter"] = parameter
         row["value"] = value
         row["_default_applied"] = True
@@ -1192,10 +1304,10 @@ def _load_parameter_stats_table(
         return None
     from .plet_rusle import canonical_parameter_name
     df = _load_table_source(source, [COL_PID, "parameter"], label, logger)
-    df = _normalize_identifier_columns(df, [COL_PID], label)
+    df = _normalize_identifier_columns(df, [COL_PID], label, allow_null_pid=True)
     if parcel_ids is not None:
         _validate_explicit_references(
-            df[COL_PID].tolist(), parcel_ids, label=label, allow_wildcard=True
+            df[COL_PID].tolist(), parcel_ids, label=label, allow_default=True
         )
     df["parameter"] = df["parameter"].map(canonical_parameter_name)
     validate_unique_rows(df, [COL_PID, "parameter"], label)
@@ -1215,9 +1327,9 @@ def _load_plet_parameter_table(
         return None
     from .plet_rusle import canonical_parameter_name, PLET_CLASSIFICATION_PARAMETERS
     df = _load_table_source(source, [COL_PID, "parameter"], LOAD_PLET_INPUTS, logger)
-    df = _normalize_identifier_columns(df, [COL_PID], LOAD_PLET_INPUTS)
+    df = _normalize_identifier_columns(df, [COL_PID], LOAD_PLET_INPUTS, allow_null_pid=True)
     _validate_explicit_references(
-        df[COL_PID].tolist(), parcel_ids, label=LOAD_PLET_INPUTS, allow_wildcard=True
+        df[COL_PID].tolist(), parcel_ids, label=LOAD_PLET_INPUTS, allow_default=True
     )
     df["parameter"] = df["parameter"].map(canonical_parameter_name)
     validate_unique_rows(df, [COL_PID, "parameter"], LOAD_PLET_INPUTS)
@@ -1390,10 +1502,10 @@ def _load_pollutant_concentrations(
     )
     df = _normalize_pollutant_column(df, COL_POLLUTANT, LOAD_CONCENTRATIONS, logger)
     df = _normalize_pathway_column(df, LOAD_CONCENTRATIONS, logger)
-    df = _normalize_identifier_columns(df, [COL_PID], LOAD_CONCENTRATIONS)
+    df = _normalize_identifier_columns(df, [COL_PID], LOAD_CONCENTRATIONS, allow_null_pid=True)
     if parcel_ids is not None:
         _validate_explicit_references(
-            df[COL_PID].tolist(), parcel_ids, label=LOAD_CONCENTRATIONS, allow_wildcard=True
+            df[COL_PID].tolist(), parcel_ids, label=LOAD_CONCENTRATIONS, allow_default=True
         )
     df = df[df[COL_POLLUTANT].isin(pollutants)].copy()
     invalid_pathways = sorted(set(df[COL_PATHWAY]) - set(PLET_PATHWAY_VALUES))
@@ -1511,14 +1623,43 @@ def _load_parcels(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) ->
     if not parcels_path.exists():
         raise FileNotFoundError(f"Parcels GeoPackage not found: {parcels_path}")
     try:
+        parcels = read_geodataframe(
+            parcels_path, layer=GPKG_PARCELS_LAYER, fid_as_index=True
+        )
+    except TypeError:
+        # Older GeoPandas/Fiona combinations may not accept ``fid_as_index``.
         parcels = read_geodataframe(parcels_path, layer=GPKG_PARCELS_LAYER)
     except Exception as exc:
         raise ValueError(
             f"Parcels GeoPackage must contain spatial layer '{GPKG_PARCELS_LAYER}': {parcels_path}"
         ) from exc
+
     parcels = parcels.rename(columns={c: c.lower() for c in parcels.columns})
-    if COL_PID not in parcels.columns:
-        raise ValueError("Parcels layer must include a 'pid' column")
+    if COL_PID in parcels.columns:
+        parcels = parcels.reset_index(drop=True)
+    else:
+        # In GeoPackage schema v2, ``pid`` is the layer's INTEGER PRIMARY KEY.
+        # OGR/GDAL usually exposes that field as the feature ID rather than as a
+        # normal attribute.  Prefer the FID index when the reader provides it.
+        index_name = str(parcels.index.name or "").lower()
+        if index_name in {"fid", COL_PID}:
+            feature_ids = parcels.index.to_numpy(copy=True)
+            parcels = parcels.reset_index(drop=True)
+            parcels.insert(0, COL_PID, feature_ids)
+        else:
+            # Some GeoPandas/Fiona versions ignore ``fid_as_index`` and return a
+            # zero-based RangeIndex. Recover the real GeoPackage feature IDs
+            # directly from SQLite instead of mistaking row numbers for parcel IDs.
+            feature_ids = read_geopackage_integer_ids(
+                parcels_path, GPKG_PARCELS_LAYER, COL_PID
+            )
+            if len(feature_ids) != len(parcels):
+                raise ValueError(
+                    "Could not recover parcel IDs from the GeoPackage: the number "
+                    "of pid values does not match the number of parcel features"
+                )
+            parcels = parcels.reset_index(drop=True)
+            parcels.insert(0, COL_PID, feature_ids)
     parcels = _normalize_identifier_columns(parcels, [COL_PID], CFG_PARCELS)
     if parcels[COL_PID].duplicated().any():
         dup_pids = sorted(parcels.loc[parcels[COL_PID].duplicated(), COL_PID].unique().tolist())
@@ -1646,28 +1787,33 @@ def _load_parcel_outlets(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
     )
 
 def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: Any) -> pd.DataFrame:
-    """Load optional parcel selection weights from ``input_selection_weight``."""
+    """Load optional parcel selection weights from ``input_selection_weight``.
+
+    A row with ``pid IS NULL`` supplies the default weight; exact integer PID
+    rows override it.
+    """
     if parcels.empty:
         raise ValueError("No parcels available for selection")
     table = _load_fixed_numeric_variable_table(
         cfg, GPKG_INPUT_SELECTION_WEIGHT, [COL_PID], logger,
         required=False, domain=NONNEGATIVE_DOMAIN,
     )
-    parcel_ids = parcels[COL_PID].astype(str).tolist()
+    parcel_ids = [int(pid) for pid in parcels[COL_PID].tolist()]
     if table is None or table.empty:
         return pd.DataFrame({
             COL_PID: parcel_ids,
             COL_PROBABILITY: np.full(len(parcels), 1.0 / len(parcels)),
         })
     table = table.copy()
-    table[COL_PID] = table[COL_PID].astype(str).str.strip()
-    default_rows = table[table[COL_PID] == "*"]
+    default_rows = table[table[COL_PID].isna()]
     if len(default_rows) > 1:
-        raise ValueError(f"{GPKG_INPUT_SELECTION_WEIGHT} may contain at most one pid='*' row")
+        raise ValueError(
+            f"{GPKG_INPUT_SELECTION_WEIGHT} may contain at most one NULL-pid default row"
+        )
     default_value = None if default_rows.empty else float(default_rows.iloc[0]["value"])
     exact = {
-        str(row[COL_PID]): float(row["value"])
-        for _, row in table[table[COL_PID] != "*"].iterrows()
+        int(row[COL_PID]): float(row["value"])
+        for _, row in table[table[COL_PID].notna()].iterrows()
     }
     unknown = sorted(set(exact) - set(parcel_ids))
     if unknown:
@@ -1683,7 +1829,7 @@ def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: A
         else:
             raise ValueError(
                 f"{GPKG_INPUT_SELECTION_WEIGHT} has no value for pid={pid}; "
-                "supply the parcel explicitly or add pid='*'"
+                "supply the parcel explicitly or add one row with pid=NULL"
             )
     weights_arr = np.asarray(weights, dtype=float)
     if ((~np.isfinite(weights_arr)) | (weights_arr < 0.0)).any():
@@ -1757,9 +1903,13 @@ def _load_optional_outlet_stats(
     return df[list(required_cols)].reset_index(drop=True)
 
 def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataFrame]:
-    """Load the four parcel-to-outlet delivery variables from dedicated tables."""
+    """Load the four parcel-to-outlet delivery variables from dedicated tables.
+
+    A global default row is represented by ``pid IS NULL AND oid IS NULL``.
+    Partial-NULL keys are invalid.
+    """
     base = _load_parcel_outlets(cfg, logger)[[COL_PID, COL_OID]].copy()
-    base[COL_PID] = base[COL_PID].astype(str).str.strip()
+    base[COL_PID] = base[COL_PID].astype("int64")
     base[COL_OID] = base[COL_OID].astype(str).str.strip()
     result = base.copy()
     any_supplied = False
@@ -1775,23 +1925,22 @@ def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataF
             continue
         any_supplied = True
         table = table.copy()
-        table[COL_PID] = table[COL_PID].astype(str).str.strip()
-        table[COL_OID] = table[COL_OID].astype(str).str.strip()
-        defaults = table[(table[COL_PID] == "*") & (table[COL_OID] == "*")]
+        default_mask = table[COL_PID].isna() & table[COL_OID].isna()
+        defaults = table[default_mask]
         if len(defaults) > 1:
-            raise ValueError(f"{table_name} may contain at most one (*, *) default row")
-        default = 1.0 if defaults.empty else float(defaults.iloc[0]["value"])
-        exact_rows = table[~((table[COL_PID] == "*") & (table[COL_OID] == "*"))]
-        bad_wildcards = exact_rows[(exact_rows[COL_PID] == "*") | (exact_rows[COL_OID] == "*")]
-        if not bad_wildcards.empty:
+            raise ValueError(f"{table_name} may contain at most one NULL/NULL default row")
+        partial_null = table[COL_PID].isna() ^ table[COL_OID].isna()
+        if partial_null.any():
             raise ValueError(
-                f"{table_name} supports either exact pid/oid rows or one (*, *) default row"
+                f"{table_name} supports exact pid/oid rows or one row with both pid and oid NULL"
             )
+        default = 1.0 if defaults.empty else float(defaults.iloc[0]["value"])
+        exact_rows = table[~default_mask]
         exact = {
-            (str(row[COL_PID]), str(row[COL_OID])): float(row["value"])
+            (int(row[COL_PID]), str(row[COL_OID])): float(row["value"])
             for _, row in exact_rows.iterrows()
         }
-        unknown = sorted(set(exact) - valid_pairs)
+        unknown = sorted(set(exact) - valid_pairs, key=lambda pair: (pair[0], pair[1]))
         if unknown:
             raise ValueError(
                 f"{table_name} references parcel/outlet relationships not present in parcel_outlets: {unknown[:10]}"
@@ -2190,38 +2339,41 @@ def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any, distributio
 
 def _expand_pollutant_load_rate_defaults(
     df: pd.DataFrame,
-    parcel_ids: Sequence[str],
+    parcel_ids: Sequence[Any],
     pollutants: Sequence[str],
 ) -> pd.DataFrame:
-    """Expand ``pid='*'`` load-rate defaults while preserving exact overrides.
+    """Expand NULL-pid load-rate defaults while preserving exact overrides.
 
-    This lets large statistical-mode applications define one distribution for
-    many or all parcels and add only the parcel-specific exceptions. Exact
-    parcel rows override wildcard rows for the same pollutant/pathway.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input table to process.
-    parcel_ids : Sequence[str]
-        Parcel identifiers in model order.
-    pollutants : Sequence[str]
-        Pollutant names in model order.
-
-    Returns
-    -------
-    pd.DataFrame
-        Load-rate table with wildcard parcel defaults expanded.
+    External GeoPackage inputs have already been normalized to integer PIDs.
+    Keeping this helper tolerant of programmatic string IDs makes isolated
+    model/unit-test contexts usable without weakening the file-input contract.
     """
+    def pid_key(value: Any) -> Any:
+        if value is None or pd.isna(value):
+            return None
+        if isinstance(value, (bool, np.bool_)):
+            return str(value)
+        text = str(value).strip()
+        try:
+            numeric = float(text)
+            if np.isfinite(numeric) and numeric.is_integer():
+                return int(numeric)
+        except ValueError:
+            pass
+        return text
+
     out = df.copy()
-    out[COL_PID] = out[COL_PID].astype(str)
-    valid_pids = {str(pid) for pid in parcel_ids}
+    valid_pids = {pid_key(pid) for pid in parcel_ids}
+    normalized_pid = out[COL_PID].map(pid_key)
     out = out[
-        out[COL_PID].isin(valid_pids | {"*"})
+        (out[COL_PID].isna() | normalized_pid.isin(valid_pids))
         & out[COL_POLLUTANT].isin(list(pollutants))
     ].copy()
-    if out.empty or not (out[COL_PID] == "*").any():
-        return out[out[COL_PID].isin(valid_pids)].reset_index(drop=True)
+    normalized_pid = out[COL_PID].map(pid_key)
+    if out.empty or not out[COL_PID].isna().any():
+        out = out[out[COL_PID].notna()].copy()
+        out[COL_PID] = out[COL_PID].map(pid_key)
+        return out.reset_index(drop=True)
 
     explicit = COL_PATHWAY in out.columns
     keys = [COL_PID, COL_POLLUTANT] + ([COL_PATHWAY] if explicit else [])
@@ -2232,18 +2384,19 @@ def _expand_pollutant_load_rate_defaults(
     )
 
     defaults: Dict[Tuple[str, Optional[str]], pd.Series] = {}
-    exact: Dict[Tuple[str, str, Optional[str]], pd.Series] = {}
+    exact: Dict[Tuple[Any, str, Optional[str]], pd.Series] = {}
     for _, row in out.iterrows():
         path = str(row[COL_PATHWAY]) if explicit else None
         pollutant = str(row[COL_POLLUTANT])
-        pid = str(row[COL_PID])
-        if pid == "*":
+        key = pid_key(row[COL_PID])
+        if key is None:
             defaults[(pollutant, path)] = row
         else:
-            exact[(pid, pollutant, path)] = row
+            exact[(key, pollutant, path)] = row
 
     expanded: List[pd.Series] = []
-    for pid in map(str, parcel_ids):
+    for raw_pid in parcel_ids:
+        pid = pid_key(raw_pid)
         for pollutant in map(str, pollutants):
             for path in pathways:
                 row = exact.get((pid, pollutant, path))
@@ -2257,7 +2410,6 @@ def _expand_pollutant_load_rate_defaults(
     if not expanded:
         return out.iloc[0:0].copy()
     return pd.DataFrame(expanded).reset_index(drop=True)
-
 
 def _load_pollutant_load_rate(
     cfg: Dict[str, Any],
@@ -2278,10 +2430,10 @@ def _load_pollutant_load_rate(
     df = _normalize_pathway_column(df, CFG_POLLUTANT_LOAD_RATE, logger)
     df = resolve_distribution_references(df, distribution_catalog, CFG_POLLUTANT_LOAD_RATE)
     validate_stats_table(df, CFG_POLLUTANT_LOAD_RATE)
-    df = _normalize_identifier_columns(df, [COL_PID], CFG_POLLUTANT_LOAD_RATE)
-    parcel_ids = parcels[COL_PID].astype(str).tolist()
+    df = _normalize_identifier_columns(df, [COL_PID], CFG_POLLUTANT_LOAD_RATE, allow_null_pid=True)
+    parcel_ids = [int(pid) for pid in parcels[COL_PID].tolist()]
     _validate_explicit_references(
-        df[COL_PID].tolist(), parcel_ids, label=CFG_POLLUTANT_LOAD_RATE, allow_wildcard=True
+        df[COL_PID].tolist(), parcel_ids, label=CFG_POLLUTANT_LOAD_RATE, allow_default=True
     )
     df = _expand_pollutant_load_rate_defaults(df, parcel_ids, pollutants)
     if df.empty:
@@ -2395,7 +2547,7 @@ def _complete_delivery_ratio_defaults(
             if key in existing:
                 continue
             rows.append({
-                COL_PID: key[0],
+                COL_PID: pid,
                 COL_OID: key[1],
                 COL_SDR_F_TO_S: 1.0,
                 COL_SDR_S_TO_O: 1.0,
@@ -2449,14 +2601,16 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         out = _load_parcel_outlets(cfg, logger)
         sel = _load_parcel_selection(cfg, parcels, logger)
 
-        parcel_ids = parcels[COL_PID].astype(str).tolist()
-        source_parcel_ids = list(parcels.attrs.get("source_pid_universe", parcel_ids))
+        parcel_ids = [int(pid) for pid in parcels[COL_PID].tolist()]
+        source_parcel_ids = [
+            int(pid) for pid in parcels.attrs.get("source_pid_universe", parcel_ids)
+        ]
         parcel_up_map = _build_parcel_up_map(
             up, parcel_ids, source_parcel_ids=source_parcel_ids, logger=logger
         )
 
         out = out.copy()
-        out[COL_PID] = out[COL_PID].astype(str).str.strip()
+        out[COL_PID] = out[COL_PID].astype("int64")
         out[COL_OID] = out[COL_OID].astype(str).str.strip()
         validate_unique_rows(out, [COL_PID, COL_OID], GPKG_PARCEL_OUTLETS_TABLE)
         unknown_out_pids = sorted(set(out[COL_PID]) - set(source_parcel_ids))
@@ -2471,9 +2625,9 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 f"Filtered {int(clipped_out_rows.sum())} parcel_outlets relationship(s) for parcels outside the modeled domain"
             )
             out = out.loc[~clipped_out_rows].copy()
-        parcel_out_map: Dict[str, List[str]] = {pid: [] for pid in parcel_ids}
+        parcel_out_map: Dict[str, List[str]] = {str(pid): [] for pid in parcel_ids}
         for row in out.itertuples(index=False):
-            pid = str(getattr(row, COL_PID))
+            pid = str(int(getattr(row, COL_PID)))
             oid = str(getattr(row, COL_OID))
             parcel_out_map[pid].append(oid)
 
@@ -2515,7 +2669,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         for label, table in (("outlet_stats.target", outlet_target), ("outlet_stats.mean", outlet_mean)):
             if table is not None:
                 _validate_explicit_references(
-                    table[COL_OID].tolist(), valid_oids, label=label, allow_wildcard=False
+                    table[COL_OID].tolist(), valid_oids, label=label, allow_default=False
                 )
 
         supplied_legacy_groundwater_keys = (
@@ -2564,7 +2718,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
 
             plet_inputs = _load_plet_parameter_table(
                 plet_source,
-                sel[COL_PID].astype(str).tolist(),
+                [int(pid) for pid in sel[COL_PID].tolist()],
                 logger,
                 distribution_catalog,
             )
@@ -2687,13 +2841,12 @@ def format_input_validation_report(data: Mapping[str, Any], cfg: Mapping[str, An
             name for name in list_geopackage_tables(package) if name.startswith("input_")
         )
 
-    wildcard_rows = 0
+    default_rows = 0
     override_rows = 0
     defaults_applied = 0
     if isinstance(plet_inputs, pd.DataFrame) and not plet_inputs.empty:
-        pid_values = plet_inputs[COL_PID].astype(str)
-        wildcard_rows = int((pid_values == "*").sum())
-        override_rows = int((pid_values != "*").sum())
+        default_rows = int(plet_inputs[COL_PID].isna().sum())
+        override_rows = int(plet_inputs[COL_PID].notna().sum())
         if "_default_applied" in plet_inputs.columns:
             defaults_applied = int(
                 plet_inputs["_default_applied"].fillna(False).astype(bool).sum()
@@ -2717,7 +2870,7 @@ def format_input_validation_report(data: Mapping[str, Any], cfg: Mapping[str, An
         f"Pollutants:               {', '.join(map(str, data.get('pollutants', [])))}",
         f"CPS codes:                {', '.join(map(str, data.get('cps', [])))}",
         f"Recognized input tables:  {len(input_tables)}",
-        f"Wildcard parameter rows:  {wildcard_rows}",
+        f"Default parameter rows:   {default_rows}",
         f"Parcel overrides:         {override_rows}",
         f"Optional defaults added:  {defaults_applied}",
         "Unknown input tables:     0",

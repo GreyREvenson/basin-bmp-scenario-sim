@@ -31,17 +31,17 @@ def test_load_parcel_selection_rejects_empty_parcels() -> None:
 
 
 def test_load_parcel_selection_normalizes_selection_weights(monkeypatch) -> None:
-    parcels = pd.DataFrame({"pid": ["p1", "p2", "p3"]})
-    weights = pd.DataFrame({"pid": ["p1", "p2", "p3"], "value": [1.0, 3.0, 1.0]})
+    parcels = pd.DataFrame({"pid": [1, 2, 3]})
+    weights = pd.DataFrame({"pid": [1, 2, 3], "value": [1.0, 3.0, 1.0]})
     monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
     loaded = input_config._load_parcel_selection({}, parcels, DummyLogger())
     probs = dict(zip(loaded["pid"].astype(str), loaded["probability"]))
-    assert probs == pytest.approx({"p1": 0.2, "p2": 0.6, "p3": 0.2})
+    assert probs == pytest.approx({"1": 0.2, "2": 0.6, "3": 0.2})
 
 
 def test_load_parcel_selection_rejects_negative_weight(monkeypatch) -> None:
-    parcels = pd.DataFrame({"pid": ["p1", "p2"]})
-    weights = pd.DataFrame({"pid": ["p1", "p2"], "value": [1.0, -1.0]})
+    parcels = pd.DataFrame({"pid": [1, 2]})
+    weights = pd.DataFrame({"pid": [1, 2], "value": [1.0, -1.0]})
     monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
     with pytest.raises(ValueError, match="finite and >= 0"):
         input_config._load_parcel_selection({}, parcels, DummyLogger())

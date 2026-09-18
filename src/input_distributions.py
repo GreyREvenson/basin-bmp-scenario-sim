@@ -247,7 +247,7 @@ def _nonblank(value: Any) -> bool:
 def sample_group_key(row: Mapping[str, Any], *, pid: str, variable: str) -> Tuple[str, str]:
     """Return a cache key for optional shared draws.
 
-        Without an explicit ``sample_group``, wildcard defaults are sampled
+        Without an explicit ``sample_group``, NULL-key defaults are sampled
         independently for each parcel. Reusing a ``distribution_id`` never creates
         correlation by itself.
 

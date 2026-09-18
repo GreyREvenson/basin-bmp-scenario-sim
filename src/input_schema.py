@@ -1,7 +1,7 @@
 """Declarative schema for consolidated model input GeoPackages.
 
 The registry in this module is the single source of truth for user-facing
-``input_*`` tables stored in ``parcels.gpkg``.  Loaders may still perform
+``input_*`` tables stored in ``parcels.gpkg``. Parcel IDs are positive integers; where a variable supports a package-wide default, ``pid IS NULL`` represents that default and exact integer ``pid`` rows override it.  Loaders may still perform
 variable-specific semantic validation, but table discovery, key columns,
 required modes, and basic input kinds are defined here so the contract is not
 spread across several modules.
@@ -24,7 +24,7 @@ from .constants import (
 )
 
 INPUT_SCHEMA_TABLE = "model_input_schema"
-INPUT_SCHEMA_VERSION = 1
+INPUT_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,7 @@ class InputVariableSpec:
     kind: str
     required_modes: Tuple[str, ...] = ()
     canonical_units: str | None = None
-    wildcard_allowed: bool = False
+    default_row_allowed: bool = False
 
 
 _PLET_REQUIRED_PARAMETERS = {
@@ -62,7 +62,7 @@ def _build_registry() -> Dict[str, InputVariableSpec]:
             key_columns=("pid",),
             kind=kind,
             required_modes=required_modes,
-            wildcard_allowed=True,
+            default_row_allowed=True,
         )
 
     registry[GPKG_INPUT_SELECTION_WEIGHT] = InputVariableSpec(
@@ -70,7 +70,7 @@ def _build_registry() -> Dict[str, InputVariableSpec]:
         table=GPKG_INPUT_SELECTION_WEIGHT,
         key_columns=("pid",),
         kind="fixed_numeric",
-        wildcard_allowed=True,
+        default_row_allowed=True,
     )
     registry[GPKG_INPUT_CURVE_NUMBER] = InputVariableSpec(
         name="cn",
@@ -92,21 +92,21 @@ def _build_registry() -> Dict[str, InputVariableSpec]:
         key_columns=("pid", "pollutant"),
         kind="numeric_distribution",
         required_modes=("statistical",),
-        wildcard_allowed=True,
+        default_row_allowed=True,
     )
     registry[GPKG_INPUT_SURFACE_CONCENTRATION] = InputVariableSpec(
         name="surface_concentration",
         table=GPKG_INPUT_SURFACE_CONCENTRATION,
         key_columns=("pid", "pollutant"),
         kind="numeric_distribution",
-        wildcard_allowed=True,
+        default_row_allowed=True,
     )
     registry[GPKG_INPUT_SUBSURFACE_CONCENTRATION] = InputVariableSpec(
         name="subsurface_concentration",
         table=GPKG_INPUT_SUBSURFACE_CONCENTRATION,
         key_columns=("pid", "pollutant"),
         kind="numeric_distribution",
-        wildcard_allowed=True,
+        default_row_allowed=True,
     )
 
     for name, table in GPKG_DELIVERY_RATIO_TABLES.items():
@@ -115,7 +115,7 @@ def _build_registry() -> Dict[str, InputVariableSpec]:
             table=table,
             key_columns=("pid", "oid"),
             kind="fixed_numeric",
-            wildcard_allowed=True,
+            default_row_allowed=True,
         )
 
     return registry

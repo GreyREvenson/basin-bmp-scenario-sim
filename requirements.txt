@@ -5,4 +5,5 @@ shapely
 pyproj
 matplotlib
 pyyaml
+pyarrow
 pytest

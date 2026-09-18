@@ -25,8 +25,10 @@ Parcel-side model variables are stored inside `parcels.gpkg`. The GeoPackage fil
 
 `parcels` is the required spatial layer. It contains only parcel identity and geometry:
 
-- `pid` — unique parcel identifier.
+- `pid` — unique integer parcel identifier and the GeoPackage feature/primary key (`INTEGER PRIMARY KEY`). There is no separate `fid` parcel identifier.
 - geometry — polygon/multipolygon geometry.
+
+All parcel references in other GeoPackage tables (`pid`, `pid_up`) are integers. Non-spatial attribute tables use a technical integer `id` primary key where QGIS needs a stable editable row identifier; the model ignores that `id`.
 
 Parcel area and perimeter are derived from geometry after clipping to the domain.
 
@@ -34,16 +36,16 @@ Parcel area and perimeter are derived from geometry after clipping to the domain
 
 ```text
 pid | pid_up
-P3  | P1
-P3  | P2
+3   | 1
+3   | 2
 ```
 
 `parcel_outlets` is required and contains one parcel-to-outlet relationship per row:
 
 ```text
 pid | oid
-P1  | O1
-P1  | O2
+1   | O1
+1   | O2
 ```
 
 The structural tables do not contain modeled input variables.
@@ -53,12 +55,18 @@ A parcel GeoPackage may also contain the metadata table:
 ```text
 model_input_schema
 schema_version
-1
+2
 ```
 
-Schema version `1` identifies the current one-variable-per-table layout. Unknown
+Schema version `2` identifies the integer-PID/NULL-default one-variable-per-table layout. Unknown
 `input_*` tables are rejected so misspelled variable names cannot be silently
 ignored.
+
+### Editing in QGIS
+
+Schema-v2 GeoPackages are designed to be editable directly in QGIS. The spatial `parcels` layer uses `pid` itself as its integer feature/primary key. Attribute-only tables have a separate technical `id INTEGER PRIMARY KEY` so QGIS can identify and edit individual rows; this `id` is not a parcel identifier and is ignored by the model.
+
+For a default row, leave `pid` empty/NULL in QGIS. Do not enter `*`. For delivery-ratio defaults, leave both `pid` and `oid` NULL. Parcel-specific rows must use an existing integer `pid`. Because relationship and input tables reference `parcels.pid`, changing an existing parcel PID should be treated as a schema/data migration rather than an ordinary attribute edit.
 
 ## One variable per `input_*` table
 
@@ -72,7 +80,7 @@ sample_group, units, notes
 
 Only the columns needed to define a row need values. A row must define either a fixed `value`, a `distribution_id`, or a valid inline distribution. See [Standardized numeric inputs and distributions](input_distributions.md).
 
-Most parcel-specific variable tables are keyed by `pid`. `pid="*"` supplies a default; an exact `pid` row overrides the default.
+Most parcel-specific variable tables are keyed by integer `pid`. Where a table supports a package-wide default, leave `pid` as SQL `NULL`; an exact integer `pid` row overrides that default. The legacy string `"*"` is invalid in PID fields.
 
 ### Parcel selection
 
@@ -82,7 +90,7 @@ Most parcel-specific variable tables are keyed by `pid`. `pid="*"` supplies a de
 pid | value | units | notes
 ```
 
-Weights are deterministic, finite, and nonnegative. If the table is absent, parcel selection is uniform. A `pid="*"` row may supply a default.
+Weights are deterministic, finite, and nonnegative. If the table is absent, parcel selection is uniform. A row with `pid IS NULL` may supply a default.
 
 ### PLET parcel variables
 
@@ -141,7 +149,7 @@ Keys:
 - `pollutant`
 - optional `pathway`
 
-The table uses the common numeric/distribution schema. `pid="*"` defaults and parcel-specific overrides are supported.
+The table uses the common numeric/distribution schema. `pid IS NULL` defaults and parcel-specific integer-PID overrides are supported.
 
 ### PLET pollutant concentrations
 
@@ -173,7 +181,7 @@ Keys:
 pid | oid
 ```
 
-These are deterministic fractions in `[0, 1]`. An exact parcel/outlet row overrides an optional global `pid="*", oid="*"` default. If a table is absent, the neutral value `1.0` is used.
+These are deterministic fractions in `[0, 1]`. An exact parcel/outlet row overrides an optional global row where both `pid` and `oid` are SQL `NULL`. Partial defaults (only one key NULL) are invalid. If a table is absent, the neutral value `1.0` is used.
 
 ## `outlets.gpkg`
 

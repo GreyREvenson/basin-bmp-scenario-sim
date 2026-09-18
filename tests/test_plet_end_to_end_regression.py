@@ -38,13 +38,13 @@ def _fixed_plet_tables() -> tuple[
     """Return fixed PLET/RUSLE and concentration tables for the golden case."""
     plet = pd.DataFrame(
         [
-            {"pid": "*", "parameter": "annual_precip_in", "value": 40.0},
-            {"pid": "*", "parameter": "rain_days", "value": 100.0},
-            {"pid": "*", "parameter": "rain_correction_fraction", "value": 0.80},
-            {"pid": "*", "parameter": "runoff_day_fraction", "value": 0.25},
-            {"pid": "*", "parameter": "ia_ratio", "value": 0.20},
-            {"pid": "*", "parameter": "land_cover", "value": "cropland"},
-            {"pid": "*", "parameter": "hsg", "value": "B"},
+            {"pid": None, "parameter": "annual_precip_in", "value": 40.0},
+            {"pid": None, "parameter": "rain_days", "value": 100.0},
+            {"pid": None, "parameter": "rain_correction_fraction", "value": 0.80},
+            {"pid": None, "parameter": "runoff_day_fraction", "value": 0.25},
+            {"pid": None, "parameter": "ia_ratio", "value": 0.20},
+            {"pid": None, "parameter": "land_cover", "value": "cropland"},
+            {"pid": None, "parameter": "hsg", "value": "B"},
         ]
     )
     hydrology = pd.DataFrame(
@@ -65,27 +65,27 @@ def _fixed_plet_tables() -> tuple[
     )
     rusle = pd.DataFrame(
         [
-            {"pid": "*", "parameter": "r", "value": 100.0},
-            {"pid": "*", "parameter": "k", "value": 0.20},
-            {"pid": "*", "parameter": "ls", "value": 1.5},
-            {"pid": "*", "parameter": "c", "value": 0.10},
-            {"pid": "*", "parameter": "p", "value": 0.50},
-            {"pid": "*", "parameter": "sdr", "value": 0.40},
-            {"pid": "*", "parameter": "sediment_n_pct", "value": 1.0},
-            {"pid": "*", "parameter": "sediment_p_pct", "value": 0.50},
-            {"pid": "*", "parameter": "enrichment_ratio", "value": 2.0},
+            {"pid": None, "parameter": "r", "value": 100.0},
+            {"pid": None, "parameter": "k", "value": 0.20},
+            {"pid": None, "parameter": "ls", "value": 1.5},
+            {"pid": None, "parameter": "c", "value": 0.10},
+            {"pid": None, "parameter": "p", "value": 0.50},
+            {"pid": None, "parameter": "sdr", "value": 0.40},
+            {"pid": None, "parameter": "sediment_n_pct", "value": 1.0},
+            {"pid": None, "parameter": "sediment_p_pct", "value": 0.50},
+            {"pid": None, "parameter": "enrichment_ratio", "value": 2.0},
         ]
     )
     runoff_concentrations = pd.DataFrame(
         [
-            {"pid": "*", "pollutant": "TN", "value": 2.0},
-            {"pid": "*", "pollutant": "TP", "value": 0.2},
+            {"pid": None, "pollutant": "TN", "value": 2.0},
+            {"pid": None, "pollutant": "TP", "value": 0.2},
         ]
     )
     groundwater_concentrations = pd.DataFrame(
         [
-            {"pid": "*", "pollutant": "TN", "value": 3.0},
-            {"pid": "*", "pollutant": "TP", "value": 0.3},
+            {"pid": None, "pollutant": "TN", "value": 3.0},
+            {"pid": None, "pollutant": "TP", "value": 0.3},
         ]
     )
     return plet, hydrology, rusle, runoff_concentrations, groundwater_concentrations

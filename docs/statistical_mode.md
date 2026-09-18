@@ -31,19 +31,19 @@ Example aggregate rows:
 
 ```text
 pid | pollutant | distribution_id | units
-*   | TN        | yield_tn        | kg/ha/year
-*   | TP        | yield_tp        | kg/ha/year
+NULL| TN        | yield_tn        | kg/ha/year
+NULL| TP        | yield_tp        | kg/ha/year
 ```
 
 Example pathway-aware rows:
 
 ```text
 pid | pollutant | pathway            | mean | sd  | units
-*   | TN        | surface            | 8.0  | 1.5 | kg/ha/year
-*   | TN        | shallow subsurface | 2.0  | 0.5 | kg/ha/year
+NULL| TN        | surface            | 8.0  | 1.5 | kg/ha/year
+NULL| TN        | shallow subsurface | 2.0  | 0.5 | kg/ha/year
 ```
 
-`pid="*"` provides defaults; exact parcel rows override matching wildcard rows.
+`pid IS NULL` provides defaults; exact integer parcel rows override matching default rows. The legacy string `"*"` is not a valid PID.
 
 ## Aggregate inputs and pathway fractions
 

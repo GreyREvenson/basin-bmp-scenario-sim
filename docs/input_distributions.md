@@ -86,7 +86,7 @@ The catalog contains one row per `distribution_id` and uses the same distributio
 A use-site row can then be short:
 
     pid,parameter,distribution_id,units
-    *,annual_precip_in,annual_precip_default,in/year
+    ,annual_precip_in,annual_precip_default,in/year
 
 `distribution_id` reuses the **distribution definition**. It does **not** mean that different parcels receive the same sampled number.
 
@@ -96,4 +96,4 @@ The catalog is most useful when many rows share the same uncertainty assumption.
 
 Assigning the same text label to different variables does not create a multivariate or correlated distribution between those variables.
 
-A wildcard row or reused `distribution_id` also does not create a shared draw by itself. Where an input type supports `sample_group`, use that explicitly when multiple rows are intended to share the same sampled value within a scenario.
+A default row (`pid IS NULL`) or reused `distribution_id` also does not create a shared draw by itself. Where an input type supports `sample_group`, use that explicitly when multiple rows are intended to share the same sampled value within a scenario.

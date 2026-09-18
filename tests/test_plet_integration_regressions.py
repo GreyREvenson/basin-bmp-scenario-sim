@@ -75,7 +75,7 @@ def _patch_loader_preamble(monkeypatch) -> None:
     monkeypatch.setattr(
         input_config,
         "_load_parcels",
-        lambda cfg, domain, logger: pd.DataFrame({"pid": ["P1"]}),
+        lambda cfg, domain, logger: pd.DataFrame({"pid": [1]}),
     )
     monkeypatch.setattr(
         input_config,
@@ -85,13 +85,13 @@ def _patch_loader_preamble(monkeypatch) -> None:
     monkeypatch.setattr(
         input_config,
         "_load_parcel_outlets",
-        lambda cfg, logger: pd.DataFrame({"pid": ["P1"], "oid": ["O1"]}),
+        lambda cfg, logger: pd.DataFrame({"pid": [1], "oid": ["O1"]}),
     )
     monkeypatch.setattr(
         input_config,
         "_load_parcel_selection",
         lambda cfg, parcels, logger: pd.DataFrame(
-            {"pid": ["P1"], "probability": [1.0]}
+            {"pid": [1], "probability": [1.0]}
         ),
     )
     monkeypatch.setattr(input_config, "_load_pollutants", lambda cfg: ["TN"])
@@ -151,8 +151,8 @@ def test_removed_watershed_area_rusle_input_is_rejected(label) -> None:
     """Ensure a stale watershed-area row cannot be silently ignored at 100% delivery."""
     rusle_inputs = pd.DataFrame(
         [
-            {"pid": "*", "parameter": "r", "value": 100.0},
-            {"pid": "*", "parameter": label, "value": 5.0},
+            {"pid": None, "parameter": "r", "value": 100.0},
+            {"pid": None, "parameter": label, "value": 5.0},
         ]
     )
 

@@ -31,13 +31,13 @@ def test_parameter_tables_are_assembled_into_runtime_long_form(tmp_path) -> None
         gpkg,
         {
             "input_annual_precip_in": pd.DataFrame(
-                [{"pid": "*", "value": 42.0, "units": "in/year"}]
+                [{"pid": None, "value": 42.0, "units": "in/year"}]
             ),
             "input_land_cover": pd.DataFrame(
-                [{"pid": "*", "value": "cropland", "units": "classification"}]
+                [{"pid": None, "value": "cropland", "units": "classification"}]
             ),
             "input_rusle_k": pd.DataFrame(
-                [{"pid": "*", "mean": 0.32, "sd": 0.03, "min": 0.2, "max": 0.5}]
+                [{"pid": None, "mean": 0.32, "sd": 0.03, "min": 0.2, "max": 0.5}]
             ),
         },
     )
@@ -72,10 +72,10 @@ def test_surface_and_subsurface_concentrations_are_distinct_variable_tables(tmp_
         gpkg,
         {
             "input_surface_concentration": pd.DataFrame(
-                [{"pid": "*", "pollutant": "TN", "value": 2.0}]
+                [{"pid": None, "pollutant": "TN", "value": 2.0}]
             ),
             "input_subsurface_concentration": pd.DataFrame(
-                [{"pid": "*", "pollutant": "TN", "value": 5.5}]
+                [{"pid": None, "pollutant": "TN", "value": 5.5}]
             ),
         },
     )
@@ -93,7 +93,7 @@ def test_delivery_ratio_tables_support_global_default_and_exact_override(tmp_pat
             "parcel_outlets": pd.DataFrame([{"pid": "1", "oid": "A"}, {"pid": "2", "oid": "A"}]),
             "input_sdr_f_to_s": pd.DataFrame(
                 [
-                    {"pid": "*", "oid": "*", "value": 0.9},
+                    {"pid": None, "oid": None, "value": 0.9},
                     {"pid": "2", "oid": "A", "value": 0.5},
                 ]
             ),
@@ -101,11 +101,11 @@ def test_delivery_ratio_tables_support_global_default_and_exact_override(tmp_pat
     )
     out = input_config._load_delivery_ratios({"parcels": str(gpkg)}, Logger())
     rows = {(r.pid, r.oid): r for r in out.itertuples()}
-    assert rows[("1", "A")].sdr_f_to_s == pytest.approx(0.9)
-    assert rows[("2", "A")].sdr_f_to_s == pytest.approx(0.5)
-    assert rows[("1", "A")].sdr_s_to_o == pytest.approx(1.0)
-    assert rows[("1", "A")].ndr_f_to_s == pytest.approx(1.0)
-    assert rows[("1", "A")].ndr_s_to_o == pytest.approx(1.0)
+    assert rows[(1, "A")].sdr_f_to_s == pytest.approx(0.9)
+    assert rows[(2, "A")].sdr_f_to_s == pytest.approx(0.5)
+    assert rows[(1, "A")].sdr_s_to_o == pytest.approx(1.0)
+    assert rows[(1, "A")].ndr_f_to_s == pytest.approx(1.0)
+    assert rows[(1, "A")].ndr_s_to_o == pytest.approx(1.0)
 
 
 def test_old_hydrology_path_config_is_rejected() -> None:

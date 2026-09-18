@@ -598,27 +598,21 @@ def validate_trajectory_table(df: pd.DataFrame) -> None:
             )
 
 
-def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
-    """Resolve wildcard parameter rows plus parcel-specific overrides.
-
-        Parameters
-        ----------
-        table : Optional[pd.DataFrame]
-            Input table containing model data.
-        pid : str
-            Parcel identifier.
-
-        Returns
-        -------
-        List[pd.Series]
-            Rows applicable to the specified parcel.
-        
-    """
+def _rows_for_pid(table: Optional[pd.DataFrame], pid: object) -> List[pd.Series]:
+    """Resolve NULL default parameter rows plus parcel-specific overrides."""
     if table is None or table.empty:
         return []
     from .plet_rusle import canonical_parameter_name
-    pids = table[COL_PID].astype(str)
-    combined = pd.concat([table[pids == "*"], table[pids == str(pid)]], ignore_index=True)
+    defaults = table[table[COL_PID].isna()]
+    try:
+        target_pid = int(pid)
+        pid_values = pd.to_numeric(table[COL_PID], errors="coerce")
+        exact = table[table[COL_PID].notna() & (pid_values == target_pid)]
+    except (TypeError, ValueError):
+        exact = table[
+            table[COL_PID].notna() & (table[COL_PID].astype(str) == str(pid))
+        ]
+    combined = pd.concat([defaults, exact], ignore_index=True)
     if combined.empty:
         return []
     combined = combined.assign(
@@ -626,7 +620,6 @@ def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
     )
     combined = combined.drop_duplicates(subset=["_canonical_parameter"], keep="last")
     return [row for _, row in combined.iterrows()]
-
 
 def validate_plet_input_table(table: pd.DataFrame, parcel_ids: Sequence[str]) -> pd.DataFrame:
     """Validate and normalize required PLET classifications for every parcel.
@@ -781,9 +774,14 @@ def validate_plet_runtime_inputs(
         """
         if table is None or table.empty:
             return False
-        pids = table[COL_PID].astype(str)
         pols = table[COL_POLLUTANT].astype(str)
-        return bool((((pids == "*") | (pids == pid)) & (pols == pollutant)).any())
+        try:
+            target_pid = int(pid)
+            pids = pd.to_numeric(table[COL_PID], errors="coerce")
+            pid_match = table[COL_PID].isna() | (pids == target_pid)
+        except (TypeError, ValueError):
+            pid_match = table[COL_PID].isna() | (table[COL_PID].astype(str) == str(pid))
+        return bool((pid_match & (pols == pollutant)).any())
 
     for pid in map(str, parcel_ids):
         plet_effective = effective_parameters(plet_inputs, pid)
@@ -1026,7 +1024,7 @@ def validate_statistical_load_rates(
             If statistical pollutant load rates do not provide complete parcel/pollutant/pathway coverage.
         
     """
-    parcel_ids = parcels[COL_PID].astype(str).tolist()
+    parcel_ids = parcels[COL_PID].tolist()
     explicit = COL_PATHWAY in df.columns
     pathways = list(dict.fromkeys(df[COL_PATHWAY].astype(str).tolist())) if explicit else []
     keys = [COL_PID, COL_POLLUTANT] + ([COL_PATHWAY] if explicit else [])

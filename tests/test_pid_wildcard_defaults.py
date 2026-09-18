@@ -32,16 +32,16 @@ class RecordingLogger:
 
 
 def test_selection_weight_table_is_normalized(monkeypatch) -> None:
-    parcels = pd.DataFrame({COL_PID: ["A", "B", "C"]})
-    weights = pd.DataFrame({COL_PID: ["A", "B", "C"], "value": [1.0, 2.0, 1.0]})
+    parcels = pd.DataFrame({COL_PID: [1, 2, 3]})
+    weights = pd.DataFrame({COL_PID: [1, 2, 3], "value": [1.0, 2.0, 1.0]})
     monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
     loaded = input_config._load_parcel_selection({}, parcels, RecordingLogger())
-    assert loaded[COL_PID].tolist() == ["A", "B", "C"]
+    assert loaded[COL_PID].tolist() == [1, 2, 3]
     assert loaded[COL_PROBABILITY].tolist() == pytest.approx([0.25, 0.50, 0.25])
 
 
 def test_missing_selection_weight_means_equal_weights(monkeypatch) -> None:
-    parcels = pd.DataFrame({COL_PID: ["A", "B", "C"]})
+    parcels = pd.DataFrame({COL_PID: [1, 2, 3]})
     monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: None)
     loaded = input_config._load_parcel_selection({}, parcels, RecordingLogger())
     assert loaded[COL_PROBABILITY].tolist() == pytest.approx([1 / 3, 1 / 3, 1 / 3])
@@ -50,29 +50,29 @@ def test_missing_selection_weight_means_equal_weights(monkeypatch) -> None:
 def test_parcel_up_uses_one_edge_per_row() -> None:
     edges = pd.DataFrame(
         [
-            {COL_PID: "B", COL_PID_UP: "A"},
-            {COL_PID: "C", COL_PID_UP: "A"},
-            {COL_PID: "C", COL_PID_UP: "B"},
+            {COL_PID: 2, COL_PID_UP: 1},
+            {COL_PID: 3, COL_PID_UP: 1},
+            {COL_PID: 3, COL_PID_UP: 2},
         ]
     )
-    assert _build_parcel_up_map(edges, ["A", "B", "C", "D"]) == {
-        "A": [],
-        "B": ["A"],
-        "C": ["A", "B"],
-        "D": [],
+    assert _build_parcel_up_map(edges, [1, 2, 3, 4]) == {
+        "1": [],
+        "2": ["1"],
+        "3": ["1", "2"],
+        "4": [],
     }
 
 
 def test_parcel_up_rejects_legacy_compound_relationships() -> None:
-    edges = pd.DataFrame([{COL_PID: "C", COL_PID_UP: "A,B"}])
+    edges = pd.DataFrame([{COL_PID: 3, COL_PID_UP: "1,2"}])
     with pytest.raises(ValueError, match="one-edge-per-row"):
-        _build_parcel_up_map(edges, ["A", "B", "C"])
+        _build_parcel_up_map(edges, [1, 2, 3])
 
 
 def test_missing_delivery_ratio_columns_receive_neutral_defaults() -> None:
     out = _complete_delivery_ratio_defaults(
         None,
-        {"A": ["1"], "B": ["1", "2"]},
+        {"1": ["1"], "2": ["1", "2"]},
     )
     got = {
         (str(row[COL_PID]), str(row[COL_OID])): (
@@ -84,7 +84,7 @@ def test_missing_delivery_ratio_columns_receive_neutral_defaults() -> None:
         for _, row in out.iterrows()
     }
     assert got == {
-        ("A", "1"): (1.0, 1.0, 1.0, 1.0),
-        ("B", "1"): (1.0, 1.0, 1.0, 1.0),
-        ("B", "2"): (1.0, 1.0, 1.0, 1.0),
+        ("1", "1"): (1.0, 1.0, 1.0, 1.0),
+        ("2", "1"): (1.0, 1.0, 1.0, 1.0),
+        ("2", "2"): (1.0, 1.0, 1.0, 1.0),
     }

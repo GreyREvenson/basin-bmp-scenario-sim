@@ -93,7 +93,7 @@ def test_sample_plet_hydrology_uses_cached_value_for_same_pid_and_pair() -> None
 
 def test_wildcard_parameter_distributions_are_independent_without_sample_group() -> None:
     ctx = Ctx(seed=7)
-    table = pd.DataFrame([{"pid": "*", "parameter": "annual_precip_in", "mean": 42.0, "sd": 3.0}])
+    table = pd.DataFrame([{"pid": None, "parameter": "annual_precip_in", "mean": 42.0, "sd": 3.0}])
 
     values = _sample_parameter_table(ctx, table, ["P1", "P2"], cache_prefix="plet")
 
@@ -105,7 +105,7 @@ def test_sample_group_explicitly_shares_parameter_draw() -> None:
     table = pd.DataFrame(
         [
             {
-                "pid": "*",
+                "pid": None,
                 "parameter": "annual_precip_in",
                 "mean": 42.0,
                 "sd": 3.0,
@@ -123,13 +123,13 @@ def test_sample_parameter_table_exact_pid_override_wins_over_wildcard_default() 
     ctx = Ctx(seed=7)
     table = pd.DataFrame(
         [
-            {"pid": "*", "parameter": "annual_precip_in", "value": 42.0},
+            {"pid": None, "parameter": "annual_precip_in", "value": 42.0},
             {"pid": "P2", "parameter": "annual_precip_in", "value": 55.0},
-            {"pid": "*", "parameter": "rain_days", "value": 120.0},
-            {"pid": "*", "parameter": "rain_correction_fraction", "value": 0.9},
-            {"pid": "*", "parameter": "runoff_day_fraction", "value": 0.35},
-            {"pid": "*", "parameter": "land_cover", "value": "cropland"},
-            {"pid": "*", "parameter": "hsg", "value": "B"},
+            {"pid": None, "parameter": "rain_days", "value": 120.0},
+            {"pid": None, "parameter": "rain_correction_fraction", "value": 0.9},
+            {"pid": None, "parameter": "runoff_day_fraction", "value": 0.35},
+            {"pid": None, "parameter": "land_cover", "value": "cropland"},
+            {"pid": None, "parameter": "hsg", "value": "B"},
         ]
     )
 
@@ -147,17 +147,17 @@ def test_initialize_plet_rusle_state_returns_baseline_and_surface_subsurface_sta
     ctx.pollutants = ["TN"]
     ctx.plet_inputs = pd.DataFrame(
         [
-            {"pid": "*", "parameter": "annual_precip_in", "value": 42.0},
-            {"pid": "*", "parameter": "rain_days", "value": 120.0},
-            {"pid": "*", "parameter": "rain_correction_fraction", "value": 0.9},
-            {"pid": "*", "parameter": "runoff_day_fraction", "value": 0.35},
-            {"pid": "*", "parameter": "land_cover", "value": "cropland"},
-            {"pid": "*", "parameter": "hsg", "value": "B"},
+            {"pid": None, "parameter": "annual_precip_in", "value": 42.0},
+            {"pid": None, "parameter": "rain_days", "value": 120.0},
+            {"pid": None, "parameter": "rain_correction_fraction", "value": 0.9},
+            {"pid": None, "parameter": "runoff_day_fraction", "value": 0.35},
+            {"pid": None, "parameter": "land_cover", "value": "cropland"},
+            {"pid": None, "parameter": "hsg", "value": "B"},
         ]
     )
     ctx.rusle_inputs = None
-    ctx.pollutant_concentrations = pd.DataFrame([{"pid": "*", "pollutant": "TN", "value": 3.0}])
-    ctx.groundwater_concentrations = pd.DataFrame([{"pid": "*", "pollutant": "TN", "value": 5.5}])
+    ctx.pollutant_concentrations = pd.DataFrame([{"pid": None, "pollutant": "TN", "value": 3.0}])
+    ctx.groundwater_concentrations = pd.DataFrame([{"pid": None, "pollutant": "TN", "value": 5.5}])
 
     table = hydrology_rows()
     table.loc[(table.land_cover == "cropland") & (table.hsg == "B") & (table.parameter == "cn"), "value"] = 61.0
@@ -182,18 +182,18 @@ def test_initialize_plet_rusle_state_preserves_one_parameter_mapping_per_selecte
     ctx.pollutants = ["TN"]
     ctx.plet_inputs = pd.DataFrame(
         [
-            {"pid": "*", "parameter": "annual_precip_in", "value": 42.0},
-            {"pid": "*", "parameter": "rain_days", "value": 120.0},
-            {"pid": "*", "parameter": "rain_correction_fraction", "value": 0.9},
-            {"pid": "*", "parameter": "runoff_day_fraction", "value": 0.35},
-            {"pid": "*", "parameter": "land_cover", "value": "cropland"},
-            {"pid": "*", "parameter": "hsg", "value": "B"},
+            {"pid": None, "parameter": "annual_precip_in", "value": 42.0},
+            {"pid": None, "parameter": "rain_days", "value": 120.0},
+            {"pid": None, "parameter": "rain_correction_fraction", "value": 0.9},
+            {"pid": None, "parameter": "runoff_day_fraction", "value": 0.35},
+            {"pid": None, "parameter": "land_cover", "value": "cropland"},
+            {"pid": None, "parameter": "hsg", "value": "B"},
             {"pid": "P2", "parameter": "annual_precip_in", "value": 50.0},
         ]
     )
     ctx.rusle_inputs = None
-    ctx.pollutant_concentrations = pd.DataFrame([{"pid": "*", "pollutant": "TN", "value": 3.0}])
-    ctx.groundwater_concentrations = pd.DataFrame([{"pid": "*", "pollutant": "TN", "value": 5.5}])
+    ctx.pollutant_concentrations = pd.DataFrame([{"pid": None, "pollutant": "TN", "value": 3.0}])
+    ctx.groundwater_concentrations = pd.DataFrame([{"pid": None, "pollutant": "TN", "value": 5.5}])
     ctx.load_generation = {"_hydrology_lookup_table": hydrology_rows()}
 
     baseline, state = initialize_plet_rusle_state(ctx)

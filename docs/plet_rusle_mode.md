@@ -35,7 +35,7 @@ Each variable gets its own table keyed by `pid`:
 - `input_hsg`
 - `input_ia_ratio`
 
-Numeric tables use the standard fixed-value/distribution schema. `input_land_cover` and `input_hsg` require fixed categorical values. `pid="*"` defaults are supported.
+Numeric tables use the standard fixed-value/distribution schema. `input_land_cover` and `input_hsg` require fixed categorical values. Where defaults are supported, `pid IS NULL` supplies the default and an exact integer `pid` row overrides it.
 
 ## User-controlled hydrology
 
@@ -73,7 +73,7 @@ input_surface_concentration
 input_subsurface_concentration
 ```
 
-Each table is keyed by `pid × pollutant` and uses the common numeric/distribution schema. `pid="*"` supplies defaults.
+Each table is keyed by `pid × pollutant` and uses the common numeric/distribution schema. A row with `pid IS NULL` supplies the pollutant default; an exact integer `pid` overrides it.
 
 Surface concentrations are required for TN and TP and for TSS when complete RUSLE inputs are unavailable. Subsurface concentrations are required for modeled non-TSS pollutants.
 

@@ -65,7 +65,7 @@ def test_distribution_catalog_reference_expands(tmp_path):
     path = tmp_path / "d.csv"
     pd.DataFrame([{"distribution_id": "rain", "mean": 42, "sd": 3, "min": 30, "max": 55}]).to_csv(path, index=False)
     catalog = load_distribution_catalog(path)
-    use = pd.DataFrame([{"pid": "*", "parameter": "annual_precip_in", "distribution_id": "rain"}])
+    use = pd.DataFrame([{"pid": None, "parameter": "annual_precip_in", "distribution_id": "rain"}])
     resolved = resolve_distribution_references(use, catalog, "plet_inputs")
     assert resolved.loc[0, "mean"] == 42
     assert resolved.loc[0, "sd"] == 3
@@ -101,21 +101,21 @@ def test_hydrology_lookup_accepts_stochastic_cn_and_infiltration(tmp_path):
 
 def test_wildcard_parameter_distributions_are_independent_without_sample_group():
     ctx = Ctx(seed=7)
-    table = pd.DataFrame([{"pid": "*", "parameter": "annual_precip_in", "mean": 42.0, "sd": 3.0}])
+    table = pd.DataFrame([{"pid": None, "parameter": "annual_precip_in", "mean": 42.0, "sd": 3.0}])
     values = _sample_parameter_table(ctx, table, ["P1", "P2"], cache_prefix="plet")
     assert values[0]["annual_precip_in"] != values[1]["annual_precip_in"]
 
 
 def test_sample_group_explicitly_shares_parameter_draw():
     ctx = Ctx(seed=7)
-    table = pd.DataFrame([{"pid": "*", "parameter": "annual_precip_in", "mean": 42.0, "sd": 3.0, "sample_group": "watershed_year"}])
+    table = pd.DataFrame([{"pid": None, "parameter": "annual_precip_in", "mean": 42.0, "sd": 3.0, "sample_group": "watershed_year"}])
     values = _sample_parameter_table(ctx, table, ["P1", "P2"], cache_prefix="plet")
     assert values[0]["annual_precip_in"] == values[1]["annual_precip_in"]
 
 
 def test_pollutant_load_rate_wildcard_defaults_expand_with_exact_override():
     table = pd.DataFrame([
-        {"pid": "*", "pollutant": "TN", "pathway": "surface", "value": 10.0},
+        {"pid": None, "pollutant": "TN", "pathway": "surface", "value": 10.0},
         {"pid": "P2", "pollutant": "TN", "pathway": "surface", "value": 20.0},
     ])
     out = _expand_pollutant_load_rate_defaults(table, ["P1", "P2"], ["TN"])
@@ -140,16 +140,16 @@ def test_plet_initializer_uses_configured_hydrology_table():
     ctx.parcel_selection_ids = ["P1"]
     ctx.pollutants = ["TN"]
     ctx.plet_inputs = pd.DataFrame([
-        {"pid": "*", "parameter": "annual_precip_in", "value": 42.0},
-        {"pid": "*", "parameter": "rain_days", "value": 120.0},
-        {"pid": "*", "parameter": "rain_correction_fraction", "value": 0.9},
-        {"pid": "*", "parameter": "runoff_day_fraction", "value": 0.35},
-        {"pid": "*", "parameter": "land_cover", "value": "cropland"},
-        {"pid": "*", "parameter": "hsg", "value": "B"},
+        {"pid": None, "parameter": "annual_precip_in", "value": 42.0},
+        {"pid": None, "parameter": "rain_days", "value": 120.0},
+        {"pid": None, "parameter": "rain_correction_fraction", "value": 0.9},
+        {"pid": None, "parameter": "runoff_day_fraction", "value": 0.35},
+        {"pid": None, "parameter": "land_cover", "value": "cropland"},
+        {"pid": None, "parameter": "hsg", "value": "B"},
     ])
     ctx.rusle_inputs = None
-    ctx.pollutant_concentrations = pd.DataFrame([{"pid": "*", "pollutant": "TN", "value": 3.0}])
-    ctx.groundwater_concentrations = pd.DataFrame([{"pid": "*", "pollutant": "TN", "value": 5.5}])
+    ctx.pollutant_concentrations = pd.DataFrame([{"pid": None, "pollutant": "TN", "value": 3.0}])
+    ctx.groundwater_concentrations = pd.DataFrame([{"pid": None, "pollutant": "TN", "value": 5.5}])
     table = hydrology_rows()
     table.loc[(table.land_cover == "cropland") & (table.hsg == "B") & (table.parameter == "cn"), "value"] = 61.0
     table.loc[(table.land_cover == "cropland") & (table.hsg == "B") & (table.parameter == "infiltration_fraction"), "value"] = 0.41
@@ -178,9 +178,9 @@ def test_numeric_schema_rejects_mixed_percentile_and_normal_forms():
 def test_plet_classifications_reject_distribution_statistics(tmp_path):
     path = tmp_path / "plet_inputs.csv"
     pd.DataFrame([
-        {"pid": "*", "parameter": "annual_precip_in", "value": 42.0},
-        {"pid": "*", "parameter": "land_cover", "value": "cropland", "mean": 1.0},
-        {"pid": "*", "parameter": "hsg", "value": "B"},
+        {"pid": None, "parameter": "annual_precip_in", "value": 42.0},
+        {"pid": None, "parameter": "land_cover", "value": "cropland", "mean": 1.0},
+        {"pid": None, "parameter": "hsg", "value": "B"},
     ]).to_csv(path, index=False)
     with pytest.raises(ValueError, match="classifications and must use only a fixed value"):
         _load_plet_parameter_table(path, ["P1"], Logger())

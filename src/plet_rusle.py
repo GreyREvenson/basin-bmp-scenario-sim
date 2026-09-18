@@ -599,9 +599,15 @@ def _sample_concentrations(ctx: Any, table: Optional[pd.DataFrame], parcel_ids: 
         return [{} for _ in parcel_ids]
     for pid in parcel_ids:
         values: Dict[str, float] = {}
-        pids = table["pid"].astype(str)
-        defaults = table[pids == "*"]
-        exact = table[pids == str(pid)]
+        defaults = table[table["pid"].isna()]
+        try:
+            target_pid = int(pid)
+            pids = pd.to_numeric(table["pid"], errors="coerce")
+            exact = table[table["pid"].notna() & (pids == target_pid)]
+        except (TypeError, ValueError):
+            exact = table[
+                table["pid"].notna() & (table["pid"].astype(str) == str(pid))
+            ]
         combined = pd.concat([defaults, exact], ignore_index=True)
         if not combined.empty:
             combined = combined.drop_duplicates(subset=["pollutant"], keep="last")
