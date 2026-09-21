@@ -4,7 +4,7 @@ outputs: ../../outputs/plet/run_1
 random_seed: 42
 
 domain: ../domain/domain.gpkg
-parcels: ../parcels/parcels.gpkg
+parcels: ../parcels/parcels_static.gpkg
 outlets: ../outlets/outlets.gpkg
 
 pollutants: ["TN", "TP", "TSS"]

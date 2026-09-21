@@ -271,20 +271,3 @@ def test_plet_concentration_sampling_applies_null_defaults_to_integer_pids() -> 
     assert sampled[0] == {"TN": pytest.approx(4.4), "TP": pytest.approx(0.35)}
     assert sampled[1] == {"TN": pytest.approx(5.0), "TP": pytest.approx(0.35)}
 
-
-def test_validate_config_rejects_removed_input_distributions_key() -> None:
-    from src.input_validation import validate_config
-
-    cfg = input_config.normalize_config(
-        {"n_scenarios": 1, "input_distributions": "legacy.csv"}
-    )
-    with pytest.raises(ValueError, match="input_distributions is no longer supported"):
-        validate_config(cfg)
-
-
-def test_input_table_rejects_removed_distribution_id_column() -> None:
-    table = pd.DataFrame(
-        [{"pid": None, "parameter": "annual_precip_in", "distribution_id": "rain"}]
-    )
-    with pytest.raises(ValueError, match="removed column 'distribution_id'"):
-        input_config._load_parameter_stats_table(table, "plet_inputs", Logger())

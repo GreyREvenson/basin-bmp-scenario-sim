@@ -333,11 +333,6 @@ def _validate_input_package_schema(cfg: Dict[str, Any], load_mode: str, logger: 
         for table_name in sorted(editable_tables):
             info = read_geopackage_table_info(package, table_name)
             metadata = {row["name"].lower(): row for row in info}
-            if "distribution_id" in metadata:
-                raise ValueError(
-                    f"GeoPackage schema v3 does not support {table_name}.distribution_id; "
-                    "define distribution statistics directly on the input row"
-                )
             if not any(int(row["pk"]) > 0 for row in info):
                 raise ValueError(
                     f"GeoPackage schema v3 requires {table_name!r} to have an integer primary-key row ID so it is editable in QGIS"
@@ -385,7 +380,6 @@ def _merge_csvs(
         logger.verbose(f"Reading {label} from {p}")
         df = read_csv_table(p)
         df = normalize_columns(df)
-        _reject_distribution_id_column(df, f"{label} ({p})")
         require_columns(df, required_cols, f"{label} ({p})", logger)
         frames.append(df)
     out = pd.concat(frames, ignore_index=True)
@@ -435,7 +429,6 @@ def _read_gpkg_input_table(
             f"Failed to read {label} table/layer '{table_name}' from {package}: {exc}"
         ) from exc
     frame = normalize_columns(pd.DataFrame(frame))
-    _reject_distribution_id_column(frame, label)
     # ``id``/``fid`` are technical SQLite/QGIS row identifiers for attribute
     # tables; they are deliberately not part of the model's logical schema.
     technical_ids = [column for column in ("fid", "id", "row_id") if column in frame.columns and column not in required_cols]
@@ -588,7 +581,6 @@ def _load_table_source(
     """Load a logical input table from either an in-memory frame or CSV path(s)."""
     if isinstance(source, pd.DataFrame):
         frame = normalize_columns(source.copy())
-        _reject_distribution_id_column(frame, label)
         require_columns(frame, required_cols, label, logger)
         return _sort_input_table(frame, required_cols)
     return _merge_csvs(source, required_cols, label, logger)
@@ -809,16 +801,6 @@ def _nonblank(value: Any) -> bool:
         ``True`` when the value is nonblank; otherwise ``False``.
     """
     return value is not None and not pd.isna(value) and str(value).strip() != ""
-
-
-def _reject_distribution_id_column(df: pd.DataFrame, label: str) -> pd.DataFrame:
-    """Reject the removed named-distribution indirection feature."""
-    if "distribution_id" in df.columns:
-        raise ValueError(
-            f"{label} contains removed column 'distribution_id'; define the fixed value "
-            "or distribution statistics directly on that row"
-        )
-    return df
 
 
 def _row_stats_raw(row: Mapping[str, Any]) -> Dict[str, float]:
