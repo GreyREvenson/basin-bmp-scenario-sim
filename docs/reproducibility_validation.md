@@ -37,13 +37,14 @@ Parallel execution should not be treated as a substitute for recording the seed 
 
 ## Validate inputs before simulation
 
-Use the validation-only CLI before expensive or production runs:
+The runner currently has no `--validate-only` option. A normal run starts with input validation:
 
-    python run_model.py config.yaml --validate-only
+    python run_model.py config.yaml
 
-This performs the same configuration, GeoPackage, distribution, physical-domain,
-foreign-key, and coverage validation used by a normal run, but exits before any
-scenario workers start. Spatial area/perimeter calculations use one metric
+This validates the configuration, GeoPackages, distributions,
+physical domains, foreign keys, and coverage before any scenarios begin. When
+using HUC12 forcing, validation also checks the spatial `huc12` layer, the
+parcel-to-HUC12 mapping, and forcing rows. Spatial area/perimeter calculations use one metric
 analysis CRS established from the domain; parcel and outlet layers are
 transformed into that CRS before geometry-derived quantities are calculated.
 

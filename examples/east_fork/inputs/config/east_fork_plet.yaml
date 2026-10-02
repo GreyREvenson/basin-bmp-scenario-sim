@@ -5,6 +5,10 @@ random_seed: 42
 
 domain: ../domain/domain.gpkg
 parcels: ../parcels/parcels_static.gpkg
+# Optional HUC12-scale PLET climate forcing. The GeoPackage contains a spatial
+# huc12 layer plus HUC12-keyed input_* tables with fixed/distribution values.
+# See docs/plet_rusle_mode.md.
+plet_forcing: ../plet/plet_inputs_per_huc12.gpkg
 outlets: ../outlets/outlets.gpkg
 
 pollutants: ["TN", "TP", "TSS"]

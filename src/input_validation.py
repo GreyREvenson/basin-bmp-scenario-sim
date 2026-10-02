@@ -111,6 +111,7 @@ _TABLE_PHYSICAL_DOMAINS: Dict[str, PhysicalDomain] = {
 
 _PARAMETER_PHYSICAL_DOMAINS: Dict[str, PhysicalDomain] = {
     "annual_precip_in": NONNEGATIVE_DOMAIN,
+    "avg_rain_in": NONNEGATIVE_DOMAIN,
     "rain_days": NONNEGATIVE_DOMAIN,
     "rain_correction_fraction": FRACTION_DOMAIN,
     "runoff_day_fraction": FRACTION_DOMAIN,
@@ -758,6 +759,17 @@ def validate_plet_runtime_inputs(
         missing_plet = [name for name in _REQUIRED_PLET_INPUTS if name not in plet_effective]
         if missing_plet:
             raise ValueError(f"PLET inputs for pid={pid} are missing required parameters: {missing_plet}")
+        has_avg_rain = "avg_rain_in" in plet_effective
+        has_legacy_precip = all(
+            name in plet_effective
+            for name in ("annual_precip_in", "rain_correction_fraction")
+        )
+        if not (has_avg_rain or has_legacy_precip):
+            raise ValueError(
+                f"PLET inputs for pid={pid} must provide input_avg_rain_in "
+                "(PLET AVG_RAIN) or both input_annual_precip_in and "
+                "input_rain_correction_fraction"
+            )
         rusle_effective = effective_parameters(rusle_inputs, pid)
         if rusle_effective:
             missing_rusle = [name for name in _REQUIRED_RUSLE if name not in rusle_effective]
@@ -824,7 +836,7 @@ def validate_config(cfg: Dict[str, Any]) -> None:
             )
 
     allowed_top_level = {
-        "domain", "parcels", "outlets", "pollutants", "cps",
+        "domain", "parcels", "plet_forcing", "outlets", "pollutants", "cps",
         "bmp_efficiency", "bmp_cost", "bmp_sel", "n_scenarios",
         "bmp_limit_n", "bmp_limit_usd", "parallel", "random_seed",
         "outputs", "verbose", "buffer_depth_ft", "bmp_sel_prob_via_costs",

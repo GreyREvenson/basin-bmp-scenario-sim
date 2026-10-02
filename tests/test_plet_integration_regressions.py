@@ -164,3 +164,31 @@ def test_removed_watershed_area_rusle_input_is_rejected(label) -> None:
             ["P1"],
             ["TN"],
         )
+
+
+def test_runtime_validation_accepts_avg_rain_without_annual_rainfall_pair() -> None:
+    """AVG_RAIN is a complete precipitation forcing alternative with corrected rain days."""
+    plet_inputs = pd.DataFrame(
+        [
+            {"pid": None, "parameter": "avg_rain_in", "value": 0.60},
+            {"pid": None, "parameter": "rain_days", "value": 150.0},
+            {"pid": None, "parameter": "runoff_day_fraction", "value": 0.40},
+            {"pid": None, "parameter": "land_cover", "value": "cropland"},
+            {"pid": None, "parameter": "hsg", "value": "B"},
+        ]
+    )
+    surface = pd.DataFrame(
+        [{"pid": None, "pollutant": "TN", "value": 2.0}]
+    )
+    subsurface = pd.DataFrame(
+        [{"pid": None, "pollutant": "TN", "value": 1.0}]
+    )
+
+    validate_plet_runtime_inputs(
+        plet_inputs,
+        None,
+        surface,
+        subsurface,
+        [1],
+        ["TN"],
+    )

@@ -102,7 +102,13 @@ In statistical mode, parcel loads come from `input_pollutant_load_rate` inside `
     load_generation:
       mode: plet_rusle
 
-Every parcel-side model variable then comes from its own `input_*` table in the same GeoPackage. Curve number and infiltration fraction are user-owned tables (`input_curve_number` and `input_infiltration_fraction`), and surface/subsurface concentrations are stored separately.
+Parcel-side model variables then come from dedicated `input_*` tables in the parcel GeoPackage. Curve number and infiltration fraction are user-owned tables (`input_curve_number` and `input_infiltration_fraction`), and surface/subsurface concentrations are stored separately. Optionally, PLET climate variables may come from a HUC12 forcing GeoPackage:
+
+    plet_forcing: ../plet/plet_inputs_per_huc12.gpkg
+
+### HUC12-scale PLET climate forcing
+
+With `plet_forcing`, the forcing GeoPackage contains a spatial `huc12` layer with USGS WBD geometry/metadata and separate HUC12-keyed `input_*` tables for PLET precipitation variables. Those tables use the same fixed/distribution schema as parcel inputs; a HUC12 distribution is sampled once per HUC12 per scenario and shared by its parcels. `parcels.gpkg` stores the `parcel_huc12` relationship. Parcel-specific climate rows override HUC12 forcing, which overrides parcel defaults. See [PLET/RUSLE mode](docs/plet_rusle_mode.md).
 
 See the docs below for complete examples and mode-specific requirements.
 

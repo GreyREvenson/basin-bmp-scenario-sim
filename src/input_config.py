@@ -36,6 +36,7 @@ from .constants import (
     CFG_OUTLETS,
     CFG_PARALLEL,
     CFG_PARCELS,
+    CFG_PLET_FORCING,
     CFG_POLLUTANT_LOAD_RATE,
     CFG_POLLUTANTS,
     CFG_POLLUTANT_LOAD_RATE_FRAC_SURFACE,
@@ -72,9 +73,12 @@ from .constants import (
     GPKG_PARCELS_LAYER,
     GPKG_PARCEL_UP_TABLE,
     GPKG_PARCEL_OUTLETS_TABLE,
+    GPKG_PARCEL_HUC12_TABLE,
+    GPKG_PLET_HUC12_LAYER,
     GPKG_OUTLETS_LAYER,
     GPKG_OUTLET_STATS_TABLE,
     PARCEL_PARAMETER_INPUT_TABLES,
+    HUC12_PLET_PARAMETER_INPUT_TABLES,
     GPKG_INPUT_SELECTION_WEIGHT,
     GPKG_INPUT_CURVE_NUMBER,
     GPKG_INPUT_INFILTRATION_FRACTION,
@@ -83,6 +87,8 @@ from .constants import (
     GPKG_INPUT_SUBSURFACE_CONCENTRATION,
     GPKG_DELIVERY_RATIO_TABLES,
     RUSLE_PARAMETER_NAMES,
+    COL_HUC12,
+    COL_AREA_FRACTION,
 )
 from .io_utils import (
     MissingInputTableError,
@@ -329,7 +335,7 @@ def _validate_input_package_schema(cfg: Dict[str, Any], load_mode: str, logger: 
                 "and does not use a separate fid column"
             )
 
-        editable_tables = (set(KNOWN_INPUT_TABLES) | {GPKG_PARCEL_UP_TABLE, GPKG_PARCEL_OUTLETS_TABLE}) & table_names
+        editable_tables = (set(KNOWN_INPUT_TABLES) | {GPKG_PARCEL_UP_TABLE, GPKG_PARCEL_OUTLETS_TABLE, GPKG_PARCEL_HUC12_TABLE}) & table_names
         for table_name in sorted(editable_tables):
             info = read_geopackage_table_info(package, table_name)
             metadata = {row["name"].lower(): row for row in info}
@@ -1068,6 +1074,7 @@ def apply_config_defaults(cfg: Dict[str, Any]) -> None:
 _CONFIG_PATH_KEYS = (
     CFG_DOMAIN,
     CFG_PARCELS,
+    CFG_PLET_FORCING,
     CFG_OUTLETS,
     CFG_BMP_EFFICIENCY,
     CFG_BMP_COST,
@@ -1546,6 +1553,239 @@ def _load_parcels(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) ->
     )
     parcels.attrs["source_pid_universe"] = sorted(source_pid_universe)
     return parcels
+
+def _normalize_huc12(value: Any, *, label: str) -> str:
+    """Normalize and validate one HUC12 code as a 12-character text value."""
+    if value is None or pd.isna(value):
+        raise ValueError(f"{label} must not be null")
+    text = str(value).strip()
+    if not (len(text) == 12 and text.isdigit()):
+        raise ValueError(
+            f"{label}={value!r} must be a 12-digit HUC stored as text "
+            "(for example '050902021001')"
+        )
+    return text
+
+
+def _load_parcel_huc12(
+    cfg: Dict[str, Any],
+    parcel_ids: Sequence[int],
+    source_parcel_ids: Sequence[int],
+    logger: Any,
+) -> pd.DataFrame:
+    """Load the dominant-HUC12 assignment for each modeled parcel."""
+    table = _read_gpkg_input_table(
+        ci_get(cfg, CFG_PARCELS),
+        GPKG_PARCEL_HUC12_TABLE,
+        [COL_PID, COL_HUC12],
+        GPKG_PARCEL_HUC12_TABLE,
+        logger,
+    ).copy()
+    table[COL_HUC12] = table[COL_HUC12].map(
+        lambda value: _normalize_huc12(value, label=f"{GPKG_PARCEL_HUC12_TABLE}.{COL_HUC12}")
+    )
+    validate_unique_rows(table, [COL_PID], GPKG_PARCEL_HUC12_TABLE)
+
+    if COL_AREA_FRACTION in table.columns:
+        table[COL_AREA_FRACTION] = pd.to_numeric(table[COL_AREA_FRACTION], errors="raise")
+        validate_numeric_columns_in_domain(
+            table, [COL_AREA_FRACTION], FRACTION_DOMAIN, GPKG_PARCEL_HUC12_TABLE
+        )
+
+    source_ids = {int(pid) for pid in source_parcel_ids}
+    modeled_ids = {int(pid) for pid in parcel_ids}
+    unknown = sorted(set(table[COL_PID].astype(int)) - source_ids)
+    if unknown:
+        raise ValueError(
+            f"{GPKG_PARCEL_HUC12_TABLE} references parcel IDs not found in the source parcels layer: {unknown[:10]}"
+        )
+    table = table.loc[table[COL_PID].astype(int).isin(modeled_ids)].copy()
+    missing = sorted(modeled_ids - set(table[COL_PID].astype(int)))
+    if missing:
+        raise ValueError(
+            f"{GPKG_PARCEL_HUC12_TABLE} must assign every modeled parcel to one HUC12; missing pid values: {missing[:10]}"
+        )
+    if COL_AREA_FRACTION in table.columns:
+        low = table[table[COL_AREA_FRACTION] < 0.75]
+        if not low.empty:
+            preview = low[[COL_PID, COL_HUC12, COL_AREA_FRACTION]].head(10).to_dict(orient="records")
+            logger.warning(
+                "Some parcels have less than 75% of their area in the assigned dominant HUC12; "
+                f"review boundary parcels if needed: {preview}",
+                extra={"file_only": True},
+            )
+    return table.reset_index(drop=True)
+
+
+def _load_plet_huc12_layer(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
+    """Validate the spatial HUC12 layer and return its identifiers/metadata.
+
+    HUC12 geometry is structural/provenance information only. PLET model
+    variables are stored in separate ``input_*`` attribute tables in the same
+    GeoPackage so they can use the standard fixed-value/distribution schema.
+    """
+    package = ci_get(cfg, CFG_PLET_FORCING)
+    if package is None:
+        return pd.DataFrame(columns=[COL_HUC12])
+    package = Path(package)
+    if not package.exists():
+        raise FileNotFoundError(f"PLET forcing GeoPackage not found: {package}")
+
+    tables = set(list_geopackage_tables(package))
+    if GPKG_PLET_HUC12_LAYER not in tables:
+        raise MissingInputTableError(
+            f"PLET forcing GeoPackage {package} must contain spatial layer "
+            f"{GPKG_PLET_HUC12_LAYER!r}"
+        )
+
+    spatial = read_geodataframe(package, layer=GPKG_PLET_HUC12_LAYER)
+    if spatial.empty:
+        raise ValueError(f"{package}:{GPKG_PLET_HUC12_LAYER} must not be empty")
+    if spatial.crs is None:
+        raise ValueError(f"{package}:{GPKG_PLET_HUC12_LAYER} must declare a CRS")
+    if spatial.geometry.isna().any() or spatial.geometry.is_empty.any():
+        raise ValueError(
+            f"{package}:{GPKG_PLET_HUC12_LAYER} contains null or empty geometry"
+        )
+    if (~spatial.geometry.is_valid).any():
+        raise ValueError(f"{package}:{GPKG_PLET_HUC12_LAYER} contains invalid geometry")
+
+    table = pd.DataFrame(spatial.drop(columns=[spatial.geometry.name], errors="ignore"))
+    table = normalize_columns(table)
+    technical_ids = [c for c in ("fid", "id", "row_id") if c in table.columns]
+    if technical_ids:
+        table = table.drop(columns=technical_ids)
+    require_columns(
+        table, [COL_HUC12],
+        f"{GPKG_PLET_HUC12_LAYER} ({package})", logger,
+    )
+    table[COL_HUC12] = table[COL_HUC12].map(
+        lambda value: _normalize_huc12(
+            value, label=f"{GPKG_PLET_HUC12_LAYER}.{COL_HUC12}"
+        )
+    )
+    validate_unique_rows(table, [COL_HUC12], GPKG_PLET_HUC12_LAYER)
+    return table.reset_index(drop=True)
+
+
+def _assemble_huc12_plet_parameter_source(
+    cfg: Dict[str, Any],
+    huc12_layer: pd.DataFrame,
+    logger: Any,
+) -> Optional[pd.DataFrame]:
+    """Assemble HUC12 ``input_*`` tables into the runtime long form.
+
+    Every numeric HUC12-scale PLET variable uses the same distribution schema
+    as parcel inputs. One row describes one HUC12/parameter combination.
+    """
+    package = ci_get(cfg, CFG_PLET_FORCING)
+    if package is None:
+        return None
+
+    valid_hucs = set(huc12_layer[COL_HUC12].astype(str))
+    frames: List[pd.DataFrame] = []
+    existing_tables = set(list_geopackage_tables(package))
+    for parameter, table_name in HUC12_PLET_PARAMETER_INPUT_TABLES.items():
+        if table_name not in existing_tables:
+            continue
+        table = _read_gpkg_input_table(
+            package, table_name, [COL_HUC12], table_name, logger
+        ).copy()
+        if table.empty:
+            continue
+        table[COL_HUC12] = table[COL_HUC12].map(
+            lambda value: _normalize_huc12(value, label=f"{table_name}.{COL_HUC12}")
+        )
+        validate_unique_rows(table, [COL_HUC12], table_name)
+        unknown = sorted(set(table[COL_HUC12].astype(str)) - valid_hucs)
+        if unknown:
+            raise ValueError(
+                f"{table_name} references HUC12 value(s) not found in the spatial "
+                f"{GPKG_PLET_HUC12_LAYER} layer: {unknown[:10]}"
+            )
+
+        # Add the known parameter context before validating distribution rows.
+        # Unit labels such as ``fraction`` are intentionally ambiguous without
+        # parameter/table context because they may represent several
+        # dimensionless model quantities.  Parcel long-form inputs already
+        # carry a ``parameter`` column; HUC12 one-variable-per-table inputs must
+        # materialize that context here before unit-aware validation.
+        table.insert(1, "parameter", parameter)
+        validate_stats_rows(table, table_name)
+        frames.append(table)
+
+    if not frames:
+        return None
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _merge_huc12_plet_parameters(
+    parcel_source: pd.DataFrame,
+    parcel_huc12: pd.DataFrame,
+    huc_source: Optional[pd.DataFrame],
+    parcel_ids: Sequence[int],
+) -> pd.DataFrame:
+    """Merge HUC12 parameter rows into parcel PLET rows with explicit precedence.
+
+    Precedence is parcel-specific ``input_*`` row > HUC12 ``input_*`` row >
+    NULL-pid parcel default. Distributional HUC12 inputs are materialized for
+    parcels assigned to that HUC12. Unless the user supplies ``sample_group``,
+    an automatic HUC12/parameter sample group is assigned so one value is drawn
+    per HUC12 per scenario and shared by all parcels in that HUC12.
+    """
+    from .plet_rusle import canonical_parameter_name
+
+    out = parcel_source.copy()
+    if huc_source is None or huc_source.empty:
+        return out
+
+    mapping = parcel_huc12.set_index(COL_PID)
+    huc_rows = huc_source.copy()
+    huc_rows["parameter"] = huc_rows["parameter"].map(canonical_parameter_name)
+    validate_unique_rows(huc_rows, [COL_HUC12, "parameter"], "HUC12 PLET inputs")
+
+    available_hucs = set(huc_rows[COL_HUC12].astype(str))
+    used_hucs = set(mapping[COL_HUC12].astype(str))
+    # A HUC may legitimately omit a particular parameter because parcel-level
+    # defaults can provide it, but every mapped HUC must exist in at least one
+    # HUC input row when a HUC forcing source is configured.
+    missing_hucs = sorted(used_hucs - available_hucs)
+    if missing_hucs:
+        raise ValueError(
+            "HUC12 PLET input tables have no parameter rows for HUC12 value(s): "
+            f"{missing_hucs[:10]}"
+        )
+
+    canonical = out["parameter"].map(canonical_parameter_name)
+    exact_keys = {
+        (int(pid), str(param))
+        for pid, param in zip(out[COL_PID], canonical)
+        if not pd.isna(pid)
+    }
+
+    rows: List[Dict[str, Any]] = []
+    for pid in map(int, parcel_ids):
+        huc12 = str(mapping.at[pid, COL_HUC12])
+        subset = huc_rows[huc_rows[COL_HUC12].astype(str) == huc12]
+        for _, source_row in subset.iterrows():
+            parameter = str(source_row["parameter"])
+            if (pid, parameter) in exact_keys:
+                continue
+            row = source_row.to_dict()
+            row.pop(COL_HUC12, None)
+            row[COL_PID] = pid
+            raw_group = row.get("sample_group")
+            if raw_group is None or pd.isna(raw_group) or str(raw_group).strip() == "":
+                row["sample_group"] = f"huc12:{huc12}:{parameter}"
+            note = row.get("notes")
+            prefix = f"HUC12 forcing from {huc12}"
+            row["notes"] = prefix if note is None or pd.isna(note) or not str(note).strip() else f"{prefix}; {note}"
+            rows.append(row)
+
+    if rows:
+        out = pd.concat([out, pd.DataFrame(rows)], ignore_index=True, sort=False)
+    return out
+
 
 def _load_parcel_graph(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
     """Load optional normalized parcel-to-parcel upstream edges from ``parcels.gpkg``."""
@@ -2243,7 +2483,7 @@ def _expand_pollutant_load_rate_defaults(
         else:
             exact[(key, pollutant, path)] = row
 
-    expanded: List[pd.Series] = []
+    expanded: List[Dict[str, Any]] = []
     for raw_pid in parcel_ids:
         pid = pid_key(raw_pid)
         for pollutant in map(str, pollutants):
@@ -2253,7 +2493,7 @@ def _expand_pollutant_load_rate_defaults(
                     row = defaults.get((pollutant, path))
                 if row is None:
                     continue
-                copied = row.copy()
+                copied = row.to_dict()
                 copied[COL_PID] = pid
                 expanded.append(copied)
     if not expanded:
@@ -2452,6 +2692,18 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         source_parcel_ids = [
             int(pid) for pid in parcels.attrs.get("source_pid_universe", parcel_ids)
         ]
+        plet_forcing_path = ci_get(cfg, CFG_PLET_FORCING)
+        parcel_huc12 = None
+        plet_huc12_source = None
+        if plet_forcing_path is not None:
+            parcel_huc12 = _load_parcel_huc12(
+                cfg, parcel_ids, source_parcel_ids, logger
+            )
+            plet_huc12_layer = _load_plet_huc12_layer(cfg, logger)
+            plet_huc12_source = _assemble_huc12_plet_parameter_source(
+                cfg, plet_huc12_layer, logger
+            )
+
         parcel_up_map = _build_parcel_up_map(
             up, parcel_ids, source_parcel_ids=source_parcel_ids, logger=logger
         )
@@ -2556,6 +2808,10 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             canonical_names = package_parameters["parameter"].map(canonical_parameter_name)
             rusle_mask = canonical_names.isin(set(RUSLE_PARAMETER_NAMES))
             plet_source = package_parameters.loc[~rusle_mask].copy()
+            if plet_huc12_source is not None:
+                plet_source = _merge_huc12_plet_parameters(
+                    plet_source, parcel_huc12, plet_huc12_source, parcel_ids
+                )
             rusle_rows = package_parameters.loc[rusle_mask].copy()
             rusle_source = None if rusle_rows.empty else rusle_rows
 

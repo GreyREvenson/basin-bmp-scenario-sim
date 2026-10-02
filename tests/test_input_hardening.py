@@ -185,6 +185,10 @@ def test_example_parcels_geopackage_uses_integer_pid_primary_key_and_editable_at
     assert annual["id"]["pk"] == 1
     assert "INT" in annual["pid"]["type"].upper()
 
+    avg_rain = {row["name"].lower(): row for row in read_geopackage_table_info(package, "input_avg_rain_in")}
+    assert avg_rain["id"]["pk"] == 1
+    assert "INT" in avg_rain["pid"]["type"].upper()
+
     with sqlite3.connect(package) as con:
         assert con.execute("SELECT schema_version FROM model_input_schema").fetchone()[0] == 3
         default_pid = con.execute("SELECT pid FROM input_annual_precip_in LIMIT 1").fetchone()[0]

@@ -24,6 +24,18 @@ def test_plet_precipitation_mm_per_year_converts_to_inches_per_year() -> None:
     assert stats == pytest.approx({"mean": 40.0, "sd": 10.0, "min": 20.0, "max": 60.0})
 
 
+def test_plet_avg_rain_mm_per_event_converts_to_inches_per_event() -> None:
+    stats = stats_from_row(
+        {
+            "pid": None,
+            "parameter": "avg_rain_in",
+            "value": 25.4,
+            "units": "mm/event",
+        }
+    )
+    assert stats["value"] == pytest.approx(1.0)
+
+
 def test_concentration_micrograms_per_liter_converts_to_mg_per_liter() -> None:
     stats = stats_from_row(
         {"pid": None, "pollutant": "TN", "value": 2500.0, "units": "ug/L"},

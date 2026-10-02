@@ -41,10 +41,9 @@ class InputVariableSpec:
 
 
 _PLET_REQUIRED_PARAMETERS = {
-    "annual_precip_in",
-    "rain_days",
-    "rain_correction_fraction",
-    "runoff_day_fraction",
+    # Climate forcing may come from HUC12-scale plet_forcing input_* tables,
+    # parcel defaults, or parcel-specific overrides and is therefore checked
+    # semantically at runtime. Classifications remain parcel-side required tables.
     "land_cover",
     "hsg",
 }

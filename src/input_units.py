@@ -107,6 +107,25 @@ PRECIP_SPEC = _spec(
         "m/yr": 100.0 / 2.54,
     },
 )
+EVENT_PRECIP_SPEC = _spec(
+    "in/event",
+    {
+        "in": 1.0,
+        "inch": 1.0,
+        "inches": 1.0,
+        "inch/event": 1.0,
+        "inches/event": 1.0,
+        "in/storm": 1.0,
+        "inch/storm": 1.0,
+        "inches/storm": 1.0,
+        "mm": 1.0 / 25.4,
+        "mm/event": 1.0 / 25.4,
+        "mm/storm": 1.0 / 25.4,
+        "cm": 1.0 / 2.54,
+        "cm/event": 1.0 / 2.54,
+        "cm/storm": 1.0 / 2.54,
+    },
+)
 DAYS_PER_YEAR_SPEC = _spec(
     "days/year",
     {
@@ -236,6 +255,7 @@ _KIND_SPECS: Dict[str, Tuple[UnitSpec, ...]] = {
     "percent": (PERCENT_SPEC,),
     "dimensionless": (DIMENSIONLESS_SPEC,),
     "precip": (PRECIP_SPEC,),
+    "event_precip": (EVENT_PRECIP_SPEC,),
     "days_per_year": (DAYS_PER_YEAR_SPEC,),
     "concentration": (CONCENTRATION_SPEC,),
     "load_rate": (LOAD_RATE_SPEC,),
@@ -247,6 +267,7 @@ _KIND_SPECS: Dict[str, Tuple[UnitSpec, ...]] = {
 
 _PARAMETER_KINDS: Dict[str, str] = {
     "annual_precip_in": "precip",
+    "avg_rain_in": "event_precip",
     "rain_days": "days_per_year",
     "rain_correction_fraction": "fraction",
     "runoff_day_fraction": "fraction",

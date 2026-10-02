@@ -121,6 +121,18 @@ def test_pollutant_load_rate_wildcard_defaults_expand_with_exact_override():
     assert got == {"P1": 10.0, "P2": 20.0}
 
 
+def test_pollutant_load_rate_defaults_accept_integer_pids_in_arrow_string_rows():
+    table = pd.DataFrame([
+        {"pid": None, "pollutant": "TN", "pathway": "surface", "value": "10"},
+        {"pid": "2", "pollutant": "TN", "pathway": "surface", "value": "20"},
+    ]).astype("str")
+
+    out = _expand_pollutant_load_rate_defaults(table, [1, 2], ["TN"])
+
+    assert dict(zip(out.pid, out.value)) == {1: "10", 2: "20"}
+    assert pd.api.types.is_integer_dtype(out.pid)
+
+
 def test_generic_mean_sd_respects_row_min_max():
     ctx = Ctx(seed=22)
     for _ in range(100):

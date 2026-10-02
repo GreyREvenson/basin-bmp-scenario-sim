@@ -33,6 +33,9 @@ def test_parameter_tables_are_assembled_into_runtime_long_form(tmp_path) -> None
             "input_annual_precip_in": pd.DataFrame(
                 [{"pid": None, "value": 42.0, "units": "in/year"}]
             ),
+            "input_avg_rain_in": pd.DataFrame(
+                [{"pid": None, "value": 0.60, "units": "in/event"}]
+            ),
             "input_land_cover": pd.DataFrame(
                 [{"pid": None, "value": "cropland", "units": "classification"}]
             ),
@@ -42,7 +45,7 @@ def test_parameter_tables_are_assembled_into_runtime_long_form(tmp_path) -> None
         },
     )
     out = input_config._assemble_parcel_parameter_source({"parcels": str(gpkg)}, Logger())
-    assert set(out["parameter"]) == {"annual_precip_in", "land_cover", "k"}
+    assert set(out["parameter"]) == {"annual_precip_in", "avg_rain_in", "land_cover", "k"}
     assert out.loc[out["parameter"] == "land_cover", "value"].iloc[0] == "cropland"
 
 

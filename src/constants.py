@@ -29,6 +29,7 @@ CURRENT_TIMESTEP_YEARS = 1.0
 # Config keys
 CFG_DOMAIN = "domain"
 CFG_PARCELS = "parcels"
+CFG_PLET_FORCING = "plet_forcing"
 CFG_OUTLETS = "outlets"
 CFG_POLLUTANTS = "pollutants"
 CFG_CPS = "cps"
@@ -69,17 +70,17 @@ PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined"
 PLET_HSG_VALUES = ("A", "B", "C", "D")
 PLET_DERIVED_PARAMETERS = ("cn", "infiltration_fraction")
 PLET_REQUIRED_INPUTS = (
-    "annual_precip_in",
     "rain_days",
-    "rain_correction_fraction",
     "runoff_day_fraction",
     "land_cover",
     "hsg",
 )
+PLET_PRECIPITATION_INPUT_ALTERNATIVES = (
+    ("avg_rain_in",),
+    ("annual_precip_in", "rain_correction_fraction"),
+)
 PLET_REQUIRED_RESOLVED_INPUTS = (
-    "annual_precip_in",
     "rain_days",
-    "rain_correction_fraction",
     "runoff_day_fraction",
     "cn",
     "infiltration_fraction",
@@ -103,6 +104,11 @@ PLET_LAND_COVER_ALIASES = {
 }
 PLET_PARAMETER_ALIASES = {
     "annual_rainfall_in": "annual_precip_in",
+    "avg_rain": "avg_rain_in",
+    "average_rain": "avg_rain_in",
+    "average_rain_in": "avg_rain_in",
+    "average_rainfall": "avg_rain_in",
+    "average_rainfall_in": "avg_rain_in",
     "annual_precipitation_in": "annual_precip_in",
     "ar": "annual_precip_in",
     "rdays": "rain_days",
@@ -148,6 +154,8 @@ PLET_PARAMETER_ALIASES = {
 GPKG_PARCELS_LAYER = "parcels"
 GPKG_PARCEL_UP_TABLE = "parcel_up"
 GPKG_PARCEL_OUTLETS_TABLE = "parcel_outlets"
+GPKG_PARCEL_HUC12_TABLE = "parcel_huc12"
+GPKG_PLET_HUC12_LAYER = "huc12"
 GPKG_OUTLETS_LAYER = "outlets"
 GPKG_OUTLET_STATS_TABLE = "outlet_stats"
 
@@ -155,6 +163,7 @@ GPKG_OUTLET_STATS_TABLE = "outlet_stats"
 # same fixed-value/distribution columns; only their key columns differ.
 PARCEL_PARAMETER_INPUT_TABLES = {
     "annual_precip_in": "input_annual_precip_in",
+    "avg_rain_in": "input_avg_rain_in",
     "rain_days": "input_rain_days",
     "rain_correction_fraction": "input_rain_correction_fraction",
     "runoff_day_fraction": "input_runoff_day_fraction",
@@ -182,6 +191,19 @@ GPKG_DELIVERY_RATIO_TABLES = {
     "sdr_s_to_o": "input_sdr_s_to_o",
     "ndr_f_to_s": "input_ndr_f_to_s",
     "ndr_s_to_o": "input_ndr_s_to_o",
+}
+
+
+# HUC12-scale PLET forcing uses the same one-variable-per-table pattern as
+# parcels.gpkg, but rows are keyed by huc12 instead of pid.  The spatial
+# ``huc12`` layer contains only WBD geometry/metadata; model forcing belongs in
+# these attribute tables so every value may be fixed or distributional.
+HUC12_PLET_PARAMETER_INPUT_TABLES = {
+    "avg_rain_in": "input_avg_rain_in",
+    "annual_precip_in": "input_annual_precip_in",
+    "rain_days": "input_rain_days",
+    "rain_correction_fraction": "input_rain_correction_fraction",
+    "runoff_day_fraction": "input_runoff_day_fraction",
 }
 
 RUSLE_PARAMETER_NAMES = (
@@ -229,6 +251,8 @@ DATA_POLLUTANT_LOAD_RATE_IS_AGGREGATE = "pollutant_load_rate_is_aggregate"
 
 # Common column names
 COL_PID = "pid"
+COL_HUC12 = "huc12"
+COL_AREA_FRACTION = "area_fraction"
 COL_OID = "oid"
 COL_CPS = "cps"
 COL_POLLUTANT = "pollutant"

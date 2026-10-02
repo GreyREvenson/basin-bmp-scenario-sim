@@ -87,6 +87,52 @@ def test_annual_infiltration_includes_rain_correction_fraction() -> None:
     assert expected == pytest.approx(12.0)
 
 
+def test_avg_rain_direct_input_matches_equivalent_legacy_forcing() -> None:
+    """PLET AVG_RAIN should reproduce the legacy Equation 3 calculation."""
+    legacy = {
+        "annual_precip_in": 40.0,
+        "rain_days": 100.0,
+        "rain_correction_fraction": 0.80,
+        "runoff_day_fraction": 0.25,
+        "cn": 80.0,
+        "ia_ratio": 0.20,
+        "runoff_multiplier": 1.0,
+        "infiltration_fraction": 0.30,
+        "groundwater_multiplier": 1.0,
+    }
+    direct = {
+        "avg_rain_in": 1.28,
+        "rain_days": 100.0,
+        "runoff_day_fraction": 0.25,
+        "cn": 80.0,
+        "ia_ratio": 0.20,
+        "runoff_multiplier": 1.0,
+        "infiltration_fraction": 0.30,
+        "groundwater_multiplier": 1.0,
+    }
+
+    assert plet_annual_surface_runoff_in(direct) == pytest.approx(
+        plet_annual_surface_runoff_in(legacy)
+    )
+    assert plet_annual_infiltration_in(direct) == pytest.approx(
+        plet_annual_infiltration_in(legacy)
+    )
+
+
+def test_avg_rain_direct_input_is_authoritative_when_legacy_inputs_also_exist() -> None:
+    """Avoid silently recomputing AVG_RAIN when the direct field is supplied."""
+    params = {
+        "avg_rain_in": 0.60,
+        "annual_precip_in": 40.0,
+        "rain_days": 100.0,
+        "rain_correction_fraction": 0.80,
+        "runoff_day_fraction": 0.25,
+        "cn": 80.0,
+    }
+    event_rainfall, *_ = plet_annual_surface_runoff_in(params)
+    assert event_rainfall == pytest.approx(0.60)
+
+
 @pytest.mark.parametrize("sdr", [0.0, 0.4, 1.0])
 def test_rusle_sediment_load_rate_matches_hand_calculation(sdr: float) -> None:
     """Verify R*K*LS*C*P, SDR, unit conversion, and delivery multipliers."""
