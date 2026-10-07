@@ -1696,7 +1696,12 @@ def _assemble_huc12_plet_parameter_source(
         table[COL_HUC12] = table[COL_HUC12].map(
             lambda value: _normalize_huc12(value, label=f"{table_name}.{COL_HUC12}")
         )
-        validate_unique_rows(table, [COL_HUC12], table_name)
+        if parameter in {"r", "k", "ls", "c", "p"}:
+            require_columns(table, ["land_cover"], table_name, logger)
+            from .plet_rusle import normalize_plet_land_cover
+            table["land_cover"] = table["land_cover"].map(normalize_plet_land_cover)
+        keys = [COL_HUC12] + (["land_cover"] if parameter in {"r", "k", "ls", "c", "p"} else [])
+        validate_unique_rows(table, keys, table_name)
         unknown = sorted(set(table[COL_HUC12].astype(str)) - valid_hucs)
         if unknown:
             raise ValueError(
@@ -1711,7 +1716,15 @@ def _assemble_huc12_plet_parameter_source(
         # carry a ``parameter`` column; HUC12 one-variable-per-table inputs must
         # materialize that context here before unit-aware validation.
         table.insert(1, "parameter", parameter)
-        validate_stats_rows(table, table_name)
+        if parameter == "hsg":
+            from .plet_rusle import normalize_plet_hsg
+            require_columns(table, ["value"], table_name, logger)
+            other_stats = [col for col in statistic_columns(table.columns) if col != "value"]
+            if other_stats and table[other_stats].notna().any(axis=1).any():
+                raise ValueError(f"{table_name} must use fixed HSG values, not distributions")
+            table["value"] = table["value"].map(normalize_plet_hsg)
+        else:
+            validate_stats_rows(table, table_name)
         frames.append(table)
 
     if not frames:
@@ -1742,7 +1755,8 @@ def _merge_huc12_plet_parameters(
     mapping = parcel_huc12.set_index(COL_PID)
     huc_rows = huc_source.copy()
     huc_rows["parameter"] = huc_rows["parameter"].map(canonical_parameter_name)
-    validate_unique_rows(huc_rows, [COL_HUC12, "parameter"], "HUC12 PLET inputs")
+    huc_rows["land_cover"] = huc_rows.get("land_cover", pd.Series(index=huc_rows.index, dtype=object))
+    validate_unique_rows(huc_rows, [COL_HUC12, "parameter", "land_cover"], "HUC12 PLET inputs")
 
     available_hucs = set(huc_rows[COL_HUC12].astype(str))
     used_hucs = set(mapping[COL_HUC12].astype(str))
@@ -1767,16 +1781,25 @@ def _merge_huc12_plet_parameters(
     for pid in map(int, parcel_ids):
         huc12 = str(mapping.at[pid, COL_HUC12])
         subset = huc_rows[huc_rows[COL_HUC12].astype(str) == huc12]
+        land_rows = [row for row in _rows_for_pid(out, pid) if row["parameter"] == "land_cover"]
+        land_cover = str(land_rows[0]["value"]).strip().lower() if land_rows else None
         for _, source_row in subset.iterrows():
             parameter = str(source_row["parameter"])
+            source_land_cover = source_row["land_cover"]
+            if pd.notna(source_land_cover) and source_land_cover != land_cover:
+                continue
             if (pid, parameter) in exact_keys:
                 continue
             row = source_row.to_dict()
             row.pop(COL_HUC12, None)
+            row.pop("land_cover", None)
             row[COL_PID] = pid
             raw_group = row.get("sample_group")
             if raw_group is None or pd.isna(raw_group) or str(raw_group).strip() == "":
-                row["sample_group"] = f"huc12:{huc12}:{parameter}"
+                group_key = f"{huc12}:{parameter}"
+                if pd.notna(source_land_cover):
+                    group_key += f":{source_land_cover}"
+                row["sample_group"] = f"huc12:{group_key}"
             note = row.get("notes")
             prefix = f"HUC12 forcing from {huc12}"
             row["notes"] = prefix if note is None or pd.isna(note) or not str(note).strip() else f"{prefix}; {note}"
@@ -1785,6 +1808,83 @@ def _merge_huc12_plet_parameters(
     if rows:
         out = pd.concat([out, pd.DataFrame(rows)], ignore_index=True, sort=False)
     return out
+
+
+def _merge_huc12_plet_concentrations(
+    cfg: Dict[str, Any],
+    parcel_source: pd.DataFrame,
+    parcel_huc12: pd.DataFrame,
+    plet_inputs: pd.DataFrame,
+    parcel_ids: Sequence[int],
+    logger: Any,
+) -> pd.DataFrame:
+    """Apply HUC12/land-cover concentrations beneath parcel-specific rows."""
+    from .plet_rusle import normalize_plet_land_cover
+
+    package = ci_get(cfg, CFG_PLET_FORCING)
+    if package is None:
+        return parcel_source
+    existing = set(list_geopackage_tables(package))
+    frames = []
+    for pathway, table_name in (
+        ("surface", GPKG_INPUT_SURFACE_CONCENTRATION),
+        ("subsurface", GPKG_INPUT_SUBSURFACE_CONCENTRATION),
+    ):
+        if table_name not in existing:
+            continue
+        table = _read_gpkg_input_table(
+            package, table_name, [COL_HUC12, "land_cover", COL_POLLUTANT], table_name, logger
+        ).copy()
+        if table.empty:
+            continue
+        table[COL_HUC12] = table[COL_HUC12].map(
+            lambda value: _normalize_huc12(value, label=f"{table_name}.{COL_HUC12}")
+        )
+        table["land_cover"] = table["land_cover"].map(normalize_plet_land_cover)
+        validate_unique_rows(table, [COL_HUC12, "land_cover", COL_POLLUTANT], table_name)
+        validate_stats_rows(table, table_name)
+        table.insert(3, COL_PATHWAY, pathway)
+        frames.append(table)
+    if not frames:
+        return parcel_source
+
+    huc_rows = pd.concat(frames, ignore_index=True)
+    mapping = parcel_huc12.set_index(COL_PID)[COL_HUC12].astype(str)
+    # The spatial layer is the authority for valid HUC identifiers, including
+    # those not currently assigned to a modeled parcel.
+    layer = _load_plet_huc12_layer(cfg, logger)
+    unknown = sorted(set(huc_rows[COL_HUC12]) - set(layer[COL_HUC12]))
+    if unknown:
+        raise ValueError(f"HUC12 concentration rows reference unknown HUC12s: {unknown[:10]}")
+    exact = {
+        (int(row[COL_PID]), str(row[COL_POLLUTANT]), str(row[COL_PATHWAY]))
+        for _, row in parcel_source[parcel_source[COL_PID].notna()].iterrows()
+    }
+    rows: List[Dict[str, Any]] = []
+    for pid in map(int, parcel_ids):
+        huc12 = mapping.at[pid]
+        land_rows = [row for row in _rows_for_pid(plet_inputs, pid) if row["parameter"] == "land_cover"]
+        if not land_rows:
+            continue
+        land_cover = normalize_plet_land_cover(land_rows[0]["value"])
+        subset = huc_rows[
+            (huc_rows[COL_HUC12] == huc12) & (huc_rows["land_cover"] == land_cover)
+        ]
+        for _, source in subset.iterrows():
+            key = (pid, str(source[COL_POLLUTANT]), str(source[COL_PATHWAY]))
+            if key in exact:
+                continue
+            row = source.to_dict()
+            row.pop(COL_HUC12)
+            row.pop("land_cover")
+            row[COL_PID] = pid
+            group = row.get("sample_group")
+            if group is None or pd.isna(group) or not str(group).strip():
+                row["sample_group"] = f"huc12:{huc12}:{land_cover}:{key[1]}:{key[2]}"
+            rows.append(row)
+    if not rows:
+        return parcel_source
+    return pd.concat([parcel_source, pd.DataFrame(rows)], ignore_index=True, sort=False)
 
 
 def _load_parcel_graph(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
@@ -2805,13 +2905,13 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                     "plet_rusle mode requires dedicated input_* parameter tables in parcels.gpkg"
                 )
             from .plet_rusle import canonical_parameter_name
+            if plet_huc12_source is not None:
+                package_parameters = _merge_huc12_plet_parameters(
+                    package_parameters, parcel_huc12, plet_huc12_source, parcel_ids
+                )
             canonical_names = package_parameters["parameter"].map(canonical_parameter_name)
             rusle_mask = canonical_names.isin(set(RUSLE_PARAMETER_NAMES))
             plet_source = package_parameters.loc[~rusle_mask].copy()
-            if plet_huc12_source is not None:
-                plet_source = _merge_huc12_plet_parameters(
-                    plet_source, parcel_huc12, plet_huc12_source, parcel_ids
-                )
             rusle_rows = package_parameters.loc[rusle_mask].copy()
             rusle_source = None if rusle_rows.empty else rusle_rows
 
@@ -2837,8 +2937,13 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 rusle_source, LOAD_RUSLE_INPUTS, logger,
                 parcel_ids=parcel_ids,
             )
+            concentration_source = _assemble_plet_concentration_source(cfg, logger)
+            if plet_forcing_path is not None:
+                concentration_source = _merge_huc12_plet_concentrations(
+                    cfg, concentration_source, parcel_huc12, plet_inputs, parcel_ids, logger
+                )
             unified_concentrations = _load_pollutant_concentrations(
-                _assemble_plet_concentration_source(cfg, logger),
+                concentration_source,
                 pollutants,
                 logger,
                 parcel_ids=parcel_ids,

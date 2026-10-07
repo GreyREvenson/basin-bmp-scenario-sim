@@ -14,8 +14,9 @@ authors = [
 license = { text = "Apache-2.0" }
 dependencies = [
   "numpy",
-  "pandas",
-  "openpyxl",
+  "pandas>=2.2",
+  "python-calamine",
+  "xlsxwriter",
   "geopandas",
   "shapely",
   "pyproj",
@@ -23,6 +24,9 @@ dependencies = [
   "pyyaml",
   "pyarrow",
   "pytest",
+  "requests",
+  "rasterio",
+  "pyogrio",
 ]
 
 [tool.pytest.ini_options]

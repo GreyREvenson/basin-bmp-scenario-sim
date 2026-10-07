@@ -204,6 +204,14 @@ HUC12_PLET_PARAMETER_INPUT_TABLES = {
     "rain_days": "input_rain_days",
     "rain_correction_fraction": "input_rain_correction_fraction",
     "runoff_day_fraction": "input_runoff_day_fraction",
+    "hsg": "input_hsg",
+    "r": "input_rusle_r",
+    "k": "input_rusle_k",
+    "ls": "input_rusle_ls",
+    "c": "input_rusle_c",
+    "p": "input_rusle_p",
+    "sediment_n_pct": "input_sediment_n_pct",
+    "sediment_p_pct": "input_sediment_p_pct",
 }
 
 RUSLE_PARAMETER_NAMES = (

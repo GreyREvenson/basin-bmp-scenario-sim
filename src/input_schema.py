@@ -45,7 +45,6 @@ _PLET_REQUIRED_PARAMETERS = {
     # parcel defaults, or parcel-specific overrides and is therefore checked
     # semantically at runtime. Classifications remain parcel-side required tables.
     "land_cover",
-    "hsg",
 }
 
 

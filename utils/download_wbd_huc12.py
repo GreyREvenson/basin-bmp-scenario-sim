@@ -58,8 +58,20 @@ PLET_PARAMETER_TABLES = {
     "rain_days": "input_rain_days",
     "rain_correction_fraction": "input_rain_correction_fraction",
     "runoff_day_fraction": "input_runoff_day_fraction",
+    "hsg": "input_hsg",
+    "r": "input_rusle_r",
+    "k": "input_rusle_k",
+    "ls": "input_rusle_ls",
+    "c": "input_rusle_c",
+    "p": "input_rusle_p",
+    "sediment_n_pct": "input_sediment_n_pct",
+    "sediment_p_pct": "input_sediment_p_pct",
+    "surface_concentration": "input_surface_concentration",
+    "subsurface_concentration": "input_subsurface_concentration",
 }
-PLET_FORCING_FIELDS = tuple(PLET_PARAMETER_TABLES)
+LAND_COVER_PARAMETERS = frozenset(("r", "k", "ls", "c", "p", "surface_concentration", "subsurface_concentration"))
+CONCENTRATION_PARAMETERS = frozenset(("surface_concentration", "subsurface_concentration"))
+PLET_FORCING_FIELDS = ("avg_rain_in", "annual_precip_in", "rain_days", "rain_correction_fraction", "runoff_day_fraction")
 PLET_PARAMETER_UNITS = {
     "avg_rain_in": "in/event",
     "annual_precip_in": "in/year",
@@ -281,7 +293,7 @@ def _normalize_initial_export(table: pd.DataFrame, *, label: str) -> pd.DataFram
 def read_initial_plet_export(path: Path) -> pd.DataFrame:
     """Extract HUC12 climate forcing from an EPA PLET Excel export."""
     try:
-        table = pd.read_excel(path, sheet_name="1. Watershed Land Use")
+        table = pd.read_excel(path, sheet_name="1. Watershed Land Use", engine="calamine")
     except Exception as exc:
         raise ValueError(f"Could not read PLET export {path}: {exc}") from exc
 
@@ -315,8 +327,13 @@ def read_initial_plet_export(path: Path) -> pd.DataFrame:
     return _normalize_initial_export(out, label=str(path))
 
 
-def _empty_parameter_table() -> pd.DataFrame:
-    columns = ["huc12", *STAT_COLUMNS, "sample_group", "units", "notes"]
+def _parameter_keys(parameter: str) -> list[str]:
+    return ["huc12", *(["land_cover"] if parameter in LAND_COVER_PARAMETERS else []),
+            *(["pollutant"] if parameter in CONCENTRATION_PARAMETERS else [])]
+
+
+def _empty_parameter_table(parameter: str = "avg_rain_in") -> pd.DataFrame:
+    columns = [*_parameter_keys(parameter), *STAT_COLUMNS, "sample_group", "units", "notes"]
     return pd.DataFrame(columns=columns)
 
 
@@ -327,7 +344,7 @@ def parameter_tables_from_initial_export(
 ) -> Dict[str, pd.DataFrame]:
     """Convert a wide PLET export to one fixed-value table per parameter."""
     out: Dict[str, pd.DataFrame] = {
-        parameter: _empty_parameter_table() for parameter in PLET_PARAMETER_TABLES
+        parameter: _empty_parameter_table(parameter) for parameter in PLET_PARAMETER_TABLES
     }
     template_columns = list(_empty_parameter_table().columns)
     for parameter in ("avg_rain_in", "annual_precip_in", "rain_days"):
@@ -368,9 +385,11 @@ def read_existing_parameter_tables(package: Path) -> Dict[str, pd.DataFrame]:
             if "huc12" not in table.columns:
                 raise ValueError(f"{package}:{table_name} must contain huc12")
             table["huc12"] = table["huc12"].map(_normalize_huc12)
-            if table["huc12"].duplicated().any():
-                duplicated = table.loc[table["huc12"].duplicated(), "huc12"].tolist()
-                raise ValueError(f"Duplicate HUC12 rows in {package}:{table_name}: {duplicated[:10]}")
+            keys = _parameter_keys(parameter)
+            if not set(keys).issubset(table):
+                raise ValueError(f"{package}:{table_name} must contain {keys}")
+            if table.duplicated(subset=keys).any():
+                raise ValueError(f"Duplicate {keys} rows in {package}:{table_name}")
             out[parameter] = table
     except sqlite3.DatabaseError:
         return {}
@@ -383,9 +402,10 @@ def _normalize_parameter_table_for_write(
     table: Optional[pd.DataFrame],
     *,
     valid_hucs: set[str],
+    parameter: str = "avg_rain_in",
 ) -> pd.DataFrame:
     """Normalize one input table to the standard HUC12 distribution schema."""
-    base = _empty_parameter_table()
+    base = _empty_parameter_table(parameter)
     if table is None or table.empty:
         return base
     out = table.copy()
@@ -394,9 +414,12 @@ def _normalize_parameter_table_for_write(
         raise ValueError("HUC12 parameter table must contain huc12")
     out["huc12"] = out["huc12"].map(_normalize_huc12)
     out = out[out["huc12"].isin(valid_hucs)].copy()
-    if out["huc12"].duplicated().any():
-        duplicated = out.loc[out["huc12"].duplicated(), "huc12"].tolist()
-        raise ValueError(f"Duplicate HUC12 parameter rows: {duplicated[:10]}")
+    keys = _parameter_keys(parameter)
+    missing = set(keys) - set(out)
+    if missing:
+        raise ValueError(f"{parameter} missing key columns: {sorted(missing)}")
+    if out.duplicated(subset=keys).any():
+        raise ValueError(f"Duplicate {parameter} rows for keys {keys}")
     for column in base.columns:
         if column not in out.columns:
             out[column] = None
@@ -407,17 +430,28 @@ def _create_parameter_table(
     con: sqlite3.Connection,
     table_name: str,
     rows: pd.DataFrame,
+    parameter: str = "avg_rain_in",
 ) -> None:
     """Create/register one QGIS-editable HUC12 input table and insert rows."""
-    stat_defs = ",\n                ".join(f'"{column}" REAL' for column in STAT_COLUMNS)
+    stat_defs = ",\n                ".join(
+        f'"{column}" {"TEXT" if parameter == "hsg" and column == "value" else "REAL"}'
+        for column in STAT_COLUMNS
+    )
+    other_keys = (
+        ('                land_cover TEXT NOT NULL,\n' if parameter in LAND_COVER_PARAMETERS else '')
+        + ('                pollutant TEXT NOT NULL,\n' if parameter in CONCENTRATION_PARAMETERS else '')
+    )
+    keys = ", ".join(_parameter_keys(parameter))
     sql = (
         f'CREATE TABLE "{table_name}" (\n'
         '                id INTEGER PRIMARY KEY AUTOINCREMENT,\n'
-        '                huc12 TEXT NOT NULL UNIQUE CHECK(length(huc12)=12),\n'
+        '                huc12 TEXT NOT NULL CHECK(length(huc12)=12),\n'
+        f'{other_keys}'
         f'                {stat_defs},\n'
         '                sample_group TEXT,\n'
         '                units TEXT,\n'
-        '                notes TEXT\n'
+        '                notes TEXT,\n'
+        f'                UNIQUE ({keys})\n'
         '            )'
     )
     con.execute(sql)
@@ -428,7 +462,7 @@ def _create_parameter_table(
     )
     if rows.empty:
         return
-    columns = list(_empty_parameter_table().columns)
+    columns = list(_empty_parameter_table(parameter).columns)
     placeholders = ",".join("?" for _ in columns)
     quoted = ",".join(f'"{column}"' for column in columns)
     values = []
@@ -467,9 +501,9 @@ def write_huc12_package(
     try:
         for parameter, table_name in PLET_PARAMETER_TABLES.items():
             rows = _normalize_parameter_table_for_write(
-                parameter_tables.get(parameter), valid_hucs=valid_hucs
+                parameter_tables.get(parameter), valid_hucs=valid_hucs, parameter=parameter
             )
-            _create_parameter_table(con, table_name, rows)
+            _create_parameter_table(con, table_name, rows, parameter)
         con.commit()
     finally:
         con.close()

@@ -219,7 +219,7 @@ def test_read_initial_plet_export(tmp_path: Path) -> None:
             },
         ]
     )
-    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+    with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
         source.to_excel(writer, sheet_name="1. Watershed Land Use", index=False)
 
     table = wbd.read_initial_plet_export(path)

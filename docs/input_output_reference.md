@@ -119,14 +119,18 @@ PLET values are stored in separate HUC12-keyed tables:
 - `input_rain_days`
 - `input_rain_correction_fraction`
 - `input_runoff_day_fraction`
+- `input_hsg` (fixed HSG classification)
+- `input_rusle_r`, `input_rusle_k`, `input_rusle_ls`, `input_rusle_c`, `input_rusle_p` (also keyed by PLET `land_cover`)
+- `input_sediment_n_pct`, `input_sediment_p_pct` (sediment nutrient percentages)
+- `input_surface_concentration`, `input_subsurface_concentration` (also keyed by PLET `land_cover` and `pollutant`)
 
-Each table uses the common numeric distribution columns (`value`, `mean`, `sd`, bounds/percentiles, `sample_group`, `units`, `notes`). HUC12 distributions are sampled once per HUC12 per scenario and shared by parcels mapped to that HUC12 unless an explicit `sample_group` requests broader sharing. If any HUC12 input rows are supplied, every assigned HUC12 must have at least one; a missing variable can instead come from a parcel-specific row or parcel default. When all HUC12 tables are empty, climate inputs must come from parcel tables.
+Numeric tables use the common distribution columns (`value`, `mean`, `sd`, bounds/percentiles, `sample_group`, `units`, `notes`); HSG uses fixed `value` only. HUC12 distributions are sampled once per HUC12 per scenario and shared by parcels mapped to that HUC12 (and to its PLET land-cover class for land-cover-indexed inputs) unless an explicit `sample_group` requests broader sharing. If any HUC12 parameter rows are supplied, every assigned HUC12 must have at least one; a missing variable can instead come from a parcel-specific row or parcel default. When all HUC12 tables are empty, climate inputs must come from parcel tables.
 
 Use `utils/download_wbd_huc12.py` to download/refresh the HUC12 geometry and regenerate `parcel_huc12`. The optional `--initial-plet-export path/to/PLET_export.xlsx` initializes fixed values for `AVG_RAIN`, `RAIN_DAYS`, and `ANNUAL_RAINFALL` in their corresponding tables from the `1. Watershed Land Use` sheet. This option is unavailable after any HUC12 input table contains values. Subsequent refreshes preserve input rows only for HUC12s retained in the refreshed spatial layer; back up edited inputs first.
 
 The utility applies `--area-fraction-threshold` (default `0.75`) when deciding which downloaded HUC12 polygons to retain. A HUC12 is kept only if at least one parcel has at least that fraction of its area within the HUC12. The same threshold is used to report low-confidence dominant parcel assignments.
 
-For these forcing variables, precedence is **parcel-specific `input_*` row > HUC12 `input_*` row > `pid IS NULL` parcel default**.
+For these forcing variables, HSG, RUSLE factors, and concentrations, precedence is **parcel-specific `input_*` row > matching HUC12 `input_*` row > `pid IS NULL` parcel default**. RUSLE and concentration rows match the parcel's effective PLET land cover; concentration rows also match pollutant and pathway.
 
 ### PLET parcel variables
 

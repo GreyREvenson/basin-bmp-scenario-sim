@@ -107,6 +107,115 @@ def test_huc12_parameter_precedence_is_exact_then_huc_then_default() -> None:
     assert len(merged[(merged["pid"].isna()) & (merged["parameter"] == "runoff_day_fraction")]) == 1
 
 
+def test_huc12_hsg_and_land_cover_specific_rusle_respect_parcel_overrides() -> None:
+    parcel_source = pd.DataFrame([
+        {"pid": None, "parameter": "land_cover", "value": "cropland"},
+        {"pid": 2, "parameter": "land_cover", "value": "forest"},
+        {"pid": 2, "parameter": "hsg", "value": "D"},
+        {"pid": 2, "parameter": "r", "value": 17.0},
+    ])
+    mapping = pd.DataFrame([
+        {"pid": 1, "huc12": "050902021001"},
+        {"pid": 2, "huc12": "050902021001"},
+    ])
+    huc_source = pd.DataFrame([
+        {"huc12": "050902021001", "parameter": "hsg", "value": "B"},
+        {"huc12": "050902021001", "parameter": "r", "land_cover": "cropland", "value": 10.0},
+        {"huc12": "050902021001", "parameter": "r", "land_cover": "forest", "value": 20.0},
+        {"huc12": "050902021001", "parameter": "k", "land_cover": "forest", "value": 0.3},
+    ])
+
+    out = input_config._merge_huc12_plet_parameters(parcel_source, mapping, huc_source, [1, 2])
+
+    assert out[(out.pid == 1) & (out.parameter == "hsg")].iloc[0]["value"] == "B"
+    assert out[(out.pid == 1) & (out.parameter == "r")].iloc[0]["value"] == 10.0
+    assert out[(out.pid == 2) & (out.parameter == "hsg")].iloc[0]["value"] == "D"
+    assert out[(out.pid == 2) & (out.parameter == "r")].iloc[0]["value"] == 17.0
+    assert out[(out.pid == 2) & (out.parameter == "k")].iloc[0]["value"] == 0.3
+    assert out[(out.pid == 2) & (out.parameter == "k")].iloc[0]["sample_group"] == "huc12:050902021001:k:forest"
+
+
+def test_huc12_concentrations_respect_parcel_overrides(tmp_path: Path) -> None:
+    path = tmp_path / "forcing.gpkg"
+    hucs = gpd.GeoDataFrame(
+        {"huc12": ["050902021001"]},
+        geometry=[box(-84.0, 39.0, -83.9, 39.1)],
+        crs="EPSG:4326",
+    )
+    wbd.write_huc12_package(path, hucs, {
+        "surface_concentration": pd.DataFrame([
+            {"huc12": "050902021001", "land_cover": "cropland", "pollutant": "TN", "mean": 1.4, "sd": 0.1},
+            {"huc12": "050902021001", "land_cover": "forest", "pollutant": "TN", "value": 0.1},
+        ]),
+        "subsurface_concentration": pd.DataFrame([
+            {"huc12": "050902021001", "land_cover": "cropland", "pollutant": "TN", "value": 0.0},
+        ]),
+    })
+    parcel_source = pd.DataFrame([
+        {"pid": None, "pollutant": "TN", "pathway": "surface", "value": 5.0},
+        {"pid": 2, "pollutant": "TN", "pathway": "surface", "value": 8.0},
+    ])
+    mapping = pd.DataFrame([
+        {"pid": 1, "huc12": "050902021001"},
+        {"pid": 2, "huc12": "050902021001"},
+        {"pid": 3, "huc12": "050902021001"},
+    ])
+    plet = pd.DataFrame([
+        {"pid": 1, "parameter": "land_cover", "value": "cropland"},
+        {"pid": 2, "parameter": "land_cover", "value": "cropland"},
+        {"pid": 3, "parameter": "land_cover", "value": "forest"},
+    ])
+    out = input_config._merge_huc12_plet_concentrations(
+        {"plet_forcing": str(path)}, parcel_source, mapping, plet, [1, 2, 3], Logger()
+    )
+    surface = out[out.pathway == "surface"].set_index("pid")
+    assert surface.loc[1, "mean"] == pytest.approx(1.4)
+    assert surface.loc[1, "sample_group"] == "huc12:050902021001:cropland:TN:surface"
+    assert surface.loc[2, "value"] == pytest.approx(8.0)
+    assert surface.loc[3, "value"] == pytest.approx(0.1)
+    assert out[(out.pid == 1) & (out.pathway == "subsurface")].iloc[0]["value"] == 0.0
+
+
+def test_huc12_hsg_and_rusle_tables_load_with_expected_keys(tmp_path: Path) -> None:
+    path = tmp_path / "forcing.gpkg"
+    hucs = gpd.GeoDataFrame(
+        {"huc12": ["050902021001"]},
+        geometry=[box(-84.0, 39.0, -83.9, 39.1)],
+        crs="EPSG:4326",
+    )
+    wbd.write_huc12_package(path, hucs, {
+        "hsg": pd.DataFrame([{"huc12": "050902021001", "value": "C"}]),
+        "r": pd.DataFrame([
+            {"huc12": "050902021001", "land_cover": "cropland", "value": 150.0},
+            {"huc12": "050902021001", "land_cover": "forest", "mean": 100.0, "sd": 3.0},
+        ]),
+    })
+    layer = input_config._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
+    rows = input_config._assemble_huc12_plet_parameter_source(
+        {"plet_forcing": str(path)}, layer, Logger()
+    )
+    assert rows[rows.parameter == "hsg"].iloc[0]["value"] == "C"
+    assert set(rows[rows.parameter == "r"]["land_cover"]) == {"cropland", "forest"}
+    assert rows[(rows.parameter == "r") & (rows.land_cover == "forest")].iloc[0]["sd"] == 3.0
+
+
+def test_huc12_hsg_rejects_distributions(tmp_path: Path) -> None:
+    path = tmp_path / "forcing.gpkg"
+    hucs = gpd.GeoDataFrame(
+        {"huc12": ["050902021001"]},
+        geometry=[box(-84.0, 39.0, -83.9, 39.1)],
+        crs="EPSG:4326",
+    )
+    wbd.write_huc12_package(path, hucs, {
+        "hsg": pd.DataFrame([{"huc12": "050902021001", "value": "B", "sd": 0.2}]),
+    })
+    layer = input_config._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
+    with pytest.raises(ValueError, match="fixed HSG values"):
+        input_config._assemble_huc12_plet_parameter_source(
+            {"plet_forcing": str(path)}, layer, Logger()
+        )
+
+
 def test_huc12_distribution_is_sampled_once_per_huc12_per_scenario() -> None:
     parcel_source = pd.DataFrame(
         [
