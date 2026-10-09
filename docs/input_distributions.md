@@ -14,7 +14,7 @@ Use these columns where applicable:
 
     value, mean, sd, min, p05, p50, p95, max
 
-Other percentile levels such as `p10`, `p25`, `p75`, and `p90` are also supported. Metadata columns such as `units`, `unit`, `notes`, and `sample_group`, plus identifiers such as `pid`, `pollutant`, `parameter`, `pathway`, or `cps`, depend on the input table.
+Other percentile levels such as `p10`, `p25`, `p75`, and `p90` are also supported. Metadata columns such as `units`, `unit`, `notes`, `citations`, `cost_component`, and `sample_group`, plus identifiers such as `pid`, `pollutant`, `parameter`, `pathway`, or `cps`, depend on the input table.
 
 Recognized aliases remain accepted: `average`/`avg` → `mean`, `std` → `sd`, `minimum` → `min`, `maximum` → `max`, `p0` → `min`, and `p100` → `max`.
 

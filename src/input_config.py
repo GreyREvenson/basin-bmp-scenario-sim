@@ -53,6 +53,7 @@ from .constants import (
     LOAD_GROUNDWATER_LOADS,
     LOAD_TREAT_GROUNDWATER_WITH_BMPS,
     COL_CPS,
+    COL_COST_COMPONENT,
     COL_MEAN,
     COL_OID,
     COL_PID,
@@ -2516,7 +2517,33 @@ def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any) -> Optional
     path = ci_get(cfg, CFG_BMP_COST)
     if path is None:
         return None
-    df = _merge_csvs(path, [COL_CPS, COL_UNIT], CFG_BMP_COST, logger)
+    # BMP cost tables allow more than one row per CPS. Each row represents an
+    # additive cost component (for example seed + establishment + termination).
+    # Legacy one-row-per-CPS files remain valid: when ``cost_component`` is
+    # absent, the loader assigns the component name ``total``.
+    paths = [path] if isinstance(path, (str, Path)) else list(path)
+    frames: List[pd.DataFrame] = []
+    for p in paths:
+        logger.verbose(f"Reading {CFG_BMP_COST} from {p}")
+        frame = normalize_columns(read_csv_table(p))
+        require_columns(frame, [COL_CPS, COL_UNIT], f"{CFG_BMP_COST} ({p})", logger)
+        if COL_COST_COMPONENT not in frame.columns:
+            frame[COL_COST_COMPONENT] = "total"
+        else:
+            component = frame[COL_COST_COMPONENT].astype("string").str.strip()
+            frame[COL_COST_COMPONENT] = component.mask(component.isna() | (component == ""), "total")
+        frames.append(frame)
+
+    df = pd.concat(frames, ignore_index=True).drop_duplicates(keep="first")
+    logical_key = [COL_CPS, COL_COST_COMPONENT]
+    dup = df.duplicated(subset=logical_key, keep=False)
+    if dup.any():
+        preview = df.loc[dup, logical_key].head(10).to_dict(orient="records")
+        raise ValueError(
+            f"{CFG_BMP_COST} contains conflicting duplicate rows for logical key "
+            f"{logical_key}: {preview}"
+        )
+    df = df.reset_index(drop=True)
     df = _normalize_cps_column(df, CFG_BMP_COST)
     validate_stats_table(df, CFG_BMP_COST)
     df = df[df[COL_CPS].isin(cps)].copy()

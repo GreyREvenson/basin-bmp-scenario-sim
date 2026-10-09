@@ -65,7 +65,16 @@ Where applicable, the `parcel_up` table inside the parcel GeoPackage supplies up
 
 ## Cost and stopping conditions
 
-BMP costs may be sampled from `bmp_cost` when configured. Cost can also optionally influence BMP-selection probabilities when `bmp_sel_prob_via_costs` is enabled.
+BMP costs may be sampled from `bmp_cost` when configured. A CPS may have one
+or more named `cost_component` rows. For every individual BMP placement, the
+model makes a fresh draw from every component row associated with that CPS,
+scales each draw using that row's unit and the realized BMP quantity, and sums
+the components into the placement's `cost_usd`. Thus a cover crop can be
+represented as seed + establishment + termination, while a structural BMP can
+mix area-, length-, or project-based components. Cost can also optionally
+influence BMP-selection probabilities when `bmp_sel_prob_via_costs` is enabled;
+the representative costs of all components are summed before probabilities are
+calculated.
 
 Scenarios may be limited by BMP count, cost, or both. No additional BMPs are added once a configured stopping condition has been met. If both `bmp_limit_n` and `bmp_limit_usd` are configured, the scenario stops before another BMP is added as soon as **either** limit has been reached.
 

@@ -4,6 +4,7 @@ import pandas as pd
 from src.cost import _get_bmp_cost, _estimate_costs_for_probabilities
 from src.constants import (
     COL_CPS,
+    COL_COST_COMPONENT,
     COL_PROBABILITY,
     COL_UNIT,
     CFG_BUFFER_DEPTH_FT,
@@ -93,6 +94,86 @@ def test_get_bmp_cost_uses_canonical_project_unit_without_area_scaling():
     total = _get_bmp_cost(model, cps=590, quantity=5.0)
 
     assert math.isclose(total, 750.0, rel_tol=0.0, abs_tol=1e-9)
+
+
+def test_get_bmp_cost_sums_all_component_rows_for_each_placement():
+    df = pd.DataFrame(
+        [
+            {
+                COL_CPS: 340,
+                COL_COST_COMPONENT: "seed",
+                COL_UNIT: "usd/ha",
+                "value": 50.0,
+            },
+            {
+                COL_CPS: 340,
+                COL_COST_COMPONENT: "establishment",
+                COL_UNIT: "usd/ha",
+                "value": 40.0,
+            },
+            {
+                COL_CPS: 340,
+                COL_COST_COMPONENT: "termination",
+                COL_UNIT: "usd/ha",
+                "value": 30.0,
+            },
+        ]
+    )
+    model = DummyModel(df)
+
+    total = _get_bmp_cost(model, cps=340, quantity=2.0)
+
+    assert math.isclose(total, 240.0, rel_tol=0.0, abs_tol=1e-9)
+
+
+def test_get_bmp_cost_resamples_each_component_for_each_bmp_placement():
+    df = pd.DataFrame(
+        [
+            {COL_CPS: 340, COL_COST_COMPONENT: "seed", COL_UNIT: "usd/ha", "p50": 50.0},
+            {COL_CPS: 340, COL_COST_COMPONENT: "establishment", COL_UNIT: "usd/ha", "p50": 40.0},
+            {COL_CPS: 340, COL_COST_COMPONENT: "termination", COL_UNIT: "usd/ha", "p50": 30.0},
+        ]
+    )
+    model = DummyModel(df)
+    draws = iter([51.0, 41.0, 31.0, 61.0, 46.0, 36.0])
+    call_count = {"n": 0}
+
+    def sample_from_stats(stats, kind=None):
+        call_count["n"] += 1
+        return next(draws)
+
+    model._sample_from_stats = sample_from_stats
+
+    first = _get_bmp_cost(model, cps=340, quantity=1.0)
+    second = _get_bmp_cost(model, cps=340, quantity=1.0)
+
+    assert math.isclose(first, 123.0, rel_tol=0.0, abs_tol=1e-9)
+    assert math.isclose(second, 143.0, rel_tol=0.0, abs_tol=1e-9)
+    assert call_count["n"] == 6
+
+
+def test_get_bmp_cost_sums_mixed_area_and_project_components():
+    df = pd.DataFrame(
+        [
+            {
+                COL_CPS: 656,
+                COL_COST_COMPONENT: "mobilization",
+                COL_UNIT: "usd/project",
+                "value": 1000.0,
+            },
+            {
+                COL_CPS: 656,
+                COL_COST_COMPONENT: "earthwork",
+                COL_UNIT: "usd/ha",
+                "value": 20000.0,
+            },
+        ]
+    )
+    model = DummyModel(df)
+
+    total = _get_bmp_cost(model, cps=656, quantity=0.5)
+
+    assert math.isclose(total, 11000.0, rel_tol=0.0, abs_tol=1e-9)
 
 
 def test_get_bmp_cost_uses_buffer_length_conversion_for_usd_per_m():
@@ -187,6 +268,27 @@ def test_estimate_costs_for_probabilities_uses_representative_total_cost_for_are
 
     assert prob_by_cps[340] > prob_by_cps[329]
     assert math.isclose(sum(prob_by_cps.values()), 1.0, rel_tol=0.0, abs_tol=1e-12)
+
+
+def test_estimate_costs_for_probabilities_sums_component_rows():
+    df = pd.DataFrame(
+        [
+            {COL_CPS: 340, COL_COST_COMPONENT: "seed", COL_UNIT: "usd/ha", "value": 50.0},
+            {COL_CPS: 340, COL_COST_COMPONENT: "planting", COL_UNIT: "usd/ha", "value": 50.0},
+            {COL_CPS: 590, COL_COST_COMPONENT: "planning", COL_UNIT: "usd/ha", "value": 150.0},
+        ]
+    )
+    model = DummyModel(df, avg_area_ha=1.0)
+
+    probs = _estimate_costs_for_probabilities(model)
+    prob_by_cps = {
+        int(row[COL_CPS]): float(row[COL_PROBABILITY])
+        for _, row in probs.iterrows()
+    }
+
+    # CPS 340 representative total is 100/ha, not just the first 50/ha row.
+    assert math.isclose(prob_by_cps[340], 0.6, rel_tol=0.0, abs_tol=1e-12)
+    assert math.isclose(prob_by_cps[590], 0.4, rel_tol=0.0, abs_tol=1e-12)
 
 
 def test_cost_unit_alias_usd_per_ha_behaves_like_canonical_usd_per_ha():

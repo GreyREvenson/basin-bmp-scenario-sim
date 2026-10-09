@@ -27,7 +27,7 @@ WORKBOOK = (Path(__file__).resolve().parents[1] / "examples" / "east_fork"
 HUC_GEOMETRY = (Path(__file__).resolve().parents[1] / "examples" / "east_fork"
                 / "inputs" / "plet" / "plet_inputs_per_huc12.gpkg")
 EAST_FORK_PARCELS = (Path(__file__).resolve().parents[1] / "examples" / "east_fork"
-                     / "inputs" / "parcels" / "parcels_static.gpkg")
+                     / "inputs" / "parcels" / "parcels_plet_constants.gpkg")
 HUC_A = "050902021001"
 HUC_B = "050902021005"
 

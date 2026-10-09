@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 from .constants import (
     COL_CPS,
+    COL_COST_COMPONENT,
     DATA_AVG_PERIM_M,
     DATA_AVG_AREA_HA,
     DATA_BMP_COST,
@@ -296,24 +297,34 @@ def _get_bmp_cost(
             self.logger.verbose(f"no cost entry found for cps={cps}; returning cost=$0.0")
             return 0.0
 
-        row = bmp_cost_df.iloc[0]  # Assumes one row per CPS; validated upstream
-        unit = _canonical_cost_unit(row.get(COL_UNIT))
-        rate_value = _sample_cost_rate(self, row, cps=cps)
+        # Each row is one additive cost component. Sampling occurs here, inside
+        # the individual BMP-placement call, so every implemented BMP receives
+        # a fresh draw for every component associated with its CPS code.
+        cost_total = 0.0
+        for _, row in bmp_cost_df.iterrows():
+            component = str(row.get(COL_COST_COMPONENT, "total")).strip() or "total"
+            unit = _canonical_cost_unit(row.get(COL_UNIT))
+            rate_value = _sample_cost_rate(self, row, cps=cps)
 
-        self.logger.verbose(f"sampled cost rate {rate_value:.4f} for cps={cps}, unit={unit}")
+            component_total = _scale_cost_rate_to_total(
+                self=self,
+                cps=cps,
+                rate_value=rate_value,
+                unit=unit,
+                quantity=float(quantity),
+                use_selection_heuristics=False,
+            )
+            cost_total += component_total
 
-        cost_total = _scale_cost_rate_to_total(
-            self=self,
-            cps=cps,
-            rate_value=rate_value,
-            unit=unit,
-            quantity=float(quantity),
-            use_selection_heuristics=False,
-        )
+            self.logger.verbose(
+                f"sampled cost component '{component}' for cps={cps}: "
+                f"rate={rate_value:.4f}, unit='{unit}', realized_quantity={quantity:.4f} "
+                f"=> component_cost={component_total:.2f}"
+            )
 
         self.logger.verbose(
-            f"computed cost for cps={cps} using rate={rate_value:.4f}, unit='{unit}', "
-            f"realized_quantity={quantity:.4f} => cost={cost_total:.2f}"
+            f"computed total cost for cps={cps} from {len(bmp_cost_df)} component row(s) "
+            f"=> cost={cost_total:.2f}"
         )
         return float(cost_total)
 
@@ -394,19 +405,18 @@ def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
         rows: list[Dict[str, float]] = []
         for cps in configured_cps:
             sub = bmp_cost_df[bmp_cost_df[COL_CPS].astype(int) == int(cps)]
-            row = sub.iloc[0]
-
-            unit = _canonical_cost_unit(row.get(COL_UNIT))
-            rate_value = _representative_cost_rate(self, row, cps=cps)
-
-            total = _scale_cost_rate_to_total(
-                self=self,
-                cps=cps,
-                rate_value=rate_value,
-                unit=unit,
-                quantity=0.0,
-                use_selection_heuristics=True,
-            )
+            total = 0.0
+            for _, row in sub.iterrows():
+                unit = _canonical_cost_unit(row.get(COL_UNIT))
+                rate_value = _representative_cost_rate(self, row, cps=cps)
+                total += _scale_cost_rate_to_total(
+                    self=self,
+                    cps=cps,
+                    rate_value=rate_value,
+                    unit=unit,
+                    quantity=0.0,
+                    use_selection_heuristics=True,
+                )
 
             if not np.isfinite(total):
                 raise ValueError(f"Computed non-finite representative BMP cost for cps={cps}: {total}")

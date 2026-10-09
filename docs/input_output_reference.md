@@ -249,7 +249,23 @@ outlets: ../outlets/outlets.gpkg
 
 `bmp_efficiency` defines BMP efficiency values/distributions by CPS, pollutant, and pathway where applicable.
 
-`bmp_cost` is optional and defines BMP cost inputs.
+`bmp_cost` is optional and defines BMP cost inputs. Each row represents one
+additive cost component for a CPS code. Multiple rows may therefore share the
+same `cps`; their independently sampled/scaled component costs are summed for
+each individual BMP placement. Use `cost_component` to give each component a
+unique descriptive name. Supported units include `USD/ha`, `USD/m`, and
+`USD/project`, so components with different scaling can be combined for one
+BMP. Legacy files without `cost_component` remain valid and are interpreted as
+a single component named `total`.
+
+The optional `citations` and `notes` columns are metadata only and do not
+affect sampling. For example:
+
+```csv
+cps,cps_name,cost_component,unit,value,mean,sd,min,p05,p50,p95,max,citations,notes
+340,Cover Crop,seed,USD/ha,,,,40,45,55,70,80,https://example.org/source,Example only
+340,Cover Crop,establishment,USD/ha,,,,20,30,50,80,100,https://example.org/source,Example only
+```
 
 ## Canonical outputs
 
