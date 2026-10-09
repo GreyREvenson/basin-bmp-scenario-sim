@@ -55,7 +55,7 @@ load_generation:
 PLET/RUSLE parcel inputs—including curve number and infiltration fraction—are read from dedicated `input_*` tables in `parcels.gpkg`. HUC12-scale precipitation forcing may optionally be supplied with a top-level path:
 
 ```yaml
-plet_forcing: ../plet/plet_inputs_per_huc12.gpkg
+plet_forcing: ../plet/huc12s_plet_constants.gpkg
 ```
 
 In that case `parcels.gpkg` also contains `parcel_huc12`, while the forcing GeoPackage contains a spatial `huc12` WBD layer plus separate HUC12-keyed `input_*` tables for `avg_rain_in`, `annual_precip_in`, `rain_days`, `rain_correction_fraction`, and `runoff_day_fraction`. It can also hold HUC12 `input_hsg` and HUC12 × land-cover RUSLE factors and pollutant concentrations. Numeric tables use the same fixed/distribution schema as parcel inputs, while HSG is a fixed classification. Parcel-specific values override HUC12 rows, which override `pid=NULL` parcel defaults. If any HUC12 parameter rows are supplied, every assigned HUC12 must have at least one; other variables may fall back to parcel defaults. Empty forcing tables leave climate variables to parcel inputs. There is no separate `hydrology_lookup` path. See [PLET/RUSLE mode](plet_rusle_mode.md) for preparation and coverage rules.

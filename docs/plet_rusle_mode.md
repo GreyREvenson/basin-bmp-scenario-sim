@@ -88,7 +88,7 @@ For the East Fork example:
 ```bash
 python utils/download_wbd_huc12.py \
   examples/east_fork/inputs/parcels/parcels.gpkg \
-  examples/east_fork/inputs/plet/plet_inputs_per_huc12.gpkg \
+  examples/east_fork/inputs/plet/huc12s_plet_constants.gpkg \
   --initial-plet-export examples/east_fork/inputs/misc/EastFork_plet_inputs.xlsx
 ```
 

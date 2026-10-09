@@ -107,7 +107,7 @@ Each modeled parcel has one dominant HUC12; climate inputs are not area-weighted
 Configure the optional forcing file with:
 
 ```yaml
-plet_forcing: ../plet/plet_inputs_per_huc12.gpkg
+plet_forcing: ../plet/huc12s_plet_constants.gpkg
 ```
 
 The GeoPackage contains a spatial `huc12` layer keyed by 12-character `huc12` text. The layer stores WBD geometry and metadata (`name`, `states`, `areaacres`, `areasqkm`) but **not** PLET model values.

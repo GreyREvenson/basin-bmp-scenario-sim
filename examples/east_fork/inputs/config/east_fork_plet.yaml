@@ -16,7 +16,7 @@ cps: [340, 329, 590, 412, 656]
 
 
 bmp_efficiency: ../bmps/bmp_efficiency_plet_constants.csv
-bmp_cost: ../bmps/bmp_cost.csv
+bmp_cost: ../bmps/bmp_cost_constants.csv
 
 # Every parcel-side model variable is stored in its own input_* table
 # inside parcels.gpkg, including curve number and infiltration fraction.
@@ -31,5 +31,5 @@ parallel:
   n_jobs: 1
 
 bmp_sel_prob_via_costs: False
-bmp_fail_rate: 0.25
-bmp_fail_reduction: 0.25
+bmp_fail_rate: 0.0
+bmp_fail_reduction: 0.0

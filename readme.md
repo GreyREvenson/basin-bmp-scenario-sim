@@ -104,7 +104,7 @@ In statistical mode, parcel loads come from `input_pollutant_load_rate` inside `
 
 Parcel-side model variables then come from dedicated `input_*` tables in the parcel GeoPackage. Curve number and infiltration fraction are user-owned tables (`input_curve_number` and `input_infiltration_fraction`), and surface/subsurface concentrations are stored separately. Optionally, PLET climate variables may come from a HUC12 forcing GeoPackage:
 
-    plet_forcing: ../plet/plet_inputs_per_huc12.gpkg
+    plet_forcing: ../plet/huc12s_plet_constants.gpkg
 
 ### HUC12-scale PLET climate forcing
 
