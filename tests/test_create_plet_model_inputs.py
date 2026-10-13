@@ -25,9 +25,9 @@ from utils import create_plet_model_inputs as utility
 WORKBOOK = (Path(__file__).resolve().parents[1] / "examples" / "east_fork"
             / "inputs" / "misc" / "EastFork_plet_inputs.xlsx")
 HUC_GEOMETRY = (Path(__file__).resolve().parents[1] / "examples" / "east_fork"
-                / "inputs" / "plet" / "huc12s_plet_constants.gpkg")
+                / "inputs" / "plet" / "huc12s_plet_deterministic.gpkg")
 EAST_FORK_PARCELS = (Path(__file__).resolve().parents[1] / "examples" / "east_fork"
-                     / "inputs" / "parcels" / "parcels_plet_constants.gpkg")
+                     / "inputs" / "parcels" / "parcels_plet_deterministic.gpkg")
 HUC_A = "050902021001"
 HUC_B = "050902021005"
 
