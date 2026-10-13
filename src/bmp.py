@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 from .constants import (
     CFG_BUFFER_DEPTH_FT,
+    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
     BMP_CPS_NAME_MAP,
     COL_CPS,
     COL_PROBABILITY,
@@ -302,24 +303,35 @@ def _simulate_wetland(
 
         # wetland area (ha), clipped by field area
         area_field_ha = float(self.parcel_area_ha[parcel_idx])
-        wet_area_stats = {"min": 0.1, "p25": 0.4, "p50": 0.81, "p75": 2.0, "max": 4.0}  # heuristic
-        wet_area = self._sample_from_stats(stats=wet_area_stats, kind=None)
-        wet_area = min(wet_area, area_field_ha)
+        deterministic_design = self.cfg.get(CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS, False)
+        if deterministic_design:
+            wet_area = 0.20 * area_field_ha
+        else:
+            wet_area_stats = {"min": 0.1, "p25": 0.4, "p50": 0.81, "p75": 2.0, "max": 4.0}  # heuristic
+            wet_area = self._sample_from_stats(stats=wet_area_stats, kind=None)
+            wet_area = min(wet_area, area_field_ha)
         # Restored from legacy: detailed diagnostics
         self.logger.verbose(
             f"selected wetland area of {wet_area:.2f} ha in parcel idx={parcel_idx} of area={area_field_ha:.2f} ha"
         )
 
         # catchment area ratio (dimensionless)
-        ratio_stats = {"min": 1.0, "p25": 2.0, "p50": 5.0, "p75": 10.0, "max": 100.0}  # heuristic
-        cat_ratio = float(self._sample_from_stats(stats=ratio_stats, kind=None))
+        if deterministic_design:
+            cat_ratio = 4.0
+        else:
+            ratio_stats = {"min": 1.0, "p25": 2.0, "p50": 5.0, "p75": 10.0, "max": 100.0}  # heuristic
+            cat_ratio = float(self._sample_from_stats(stats=ratio_stats, kind=None))
 
         # Impacted area to satisfy ratio
         impacted_idxs: List[int] = [parcel_idx]
-        impacted_area_ha: float = wet_area * (1.0 + cat_ratio)
+        impacted_area_ha: float = (
+            area_field_ha if deterministic_design else wet_area * (1.0 + cat_ratio)
+        )
         total_available_ha = float(self.parcel_area_ha[parcel_idx])
 
         for up_idx in self.parcel_up_idxs[parcel_idx]:
+            if deterministic_design and total_available_ha >= impacted_area_ha:
+                break
             if up_idx not in impacted_idxs:
                 impacted_idxs.append(up_idx)
                 total_available_ha += float(self.parcel_area_ha[up_idx])
@@ -426,8 +438,12 @@ def _simulate_grassed(
 
         # Determine linear length as a fraction of parcel perimeter
         perim_m = float(self.parcel_perim_m[parcel_idx])
-        frac_stats = {"min": 0.1, "max": 0.3, "mean": 0.2}  # heuristic
-        perim_frac = self._sample_from_stats(stats=frac_stats, kind=None)
+        deterministic_design = self.cfg.get(CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS, False)
+        if deterministic_design:
+            perim_frac = 0.25
+        else:
+            frac_stats = {"min": 0.1, "max": 0.3, "mean": 0.2}  # heuristic
+            perim_frac = self._sample_from_stats(stats=frac_stats, kind=None)
         length_m = perim_m * perim_frac
         self.logger.verbose(
             f"grassed buffer length={length_m:.2f} m from fraction={perim_frac:.2f} of perimeter={perim_m:.2f} m"
@@ -442,8 +458,11 @@ def _simulate_grassed(
         )
 
         # Portion treated
-        frac_stats = {"min": 0.2, "max": 0.4, "mean": 0.3}  # heuristic
-        treated_area_fraction = self._sample_from_stats(stats=frac_stats, kind=None)
+        if deterministic_design:
+            treated_area_fraction = 0.25
+        else:
+            frac_stats = {"min": 0.2, "max": 0.4, "mean": 0.3}  # heuristic
+            treated_area_fraction = self._sample_from_stats(stats=frac_stats, kind=None)
 
         # Update record and outputs
         bmp_rec[OUTPUT_LINEAR_LENGTH] = float(length_m)

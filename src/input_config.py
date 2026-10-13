@@ -27,6 +27,9 @@ from .constants import (
     CFG_BMP_FAIL_REDUCTION,
     CFG_BMP_SEL_PROB_VIA_COSTS,
     CFG_BUFFER_DEPTH_FT,
+    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
+    CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+    CFG_DETERMINISTIC_PARCEL_ORDER,
     CFG_OUTPUTS,
     CFG_VERBOSE,
     CFG_CPS,
@@ -1068,6 +1071,9 @@ def apply_config_defaults(cfg: Dict[str, Any]) -> None:
     _set_case_insensitive_default(cfg, CFG_BMP_SEL_PROB_VIA_COSTS, False)
     _set_case_insensitive_default(cfg, CFG_BMP_FAIL_RATE, 0.0)
     _set_case_insensitive_default(cfg, CFG_BMP_FAIL_REDUCTION, DEFAULT_BMP_FAIL_REDUCTION)
+    _set_case_insensitive_default(cfg, CFG_DETERMINISTIC_PARCEL_ORDER, False)
+    _set_case_insensitive_default(cfg, CFG_DETERMINISTIC_BMP_TYPE_ORDER, False)
+    _set_case_insensitive_default(cfg, CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS, False)
     _set_case_insensitive_default(cfg, CFG_PARALLEL, {"n_jobs": 1})
     _set_case_insensitive_default(cfg, CFG_LOAD_GENERATION, {})
 

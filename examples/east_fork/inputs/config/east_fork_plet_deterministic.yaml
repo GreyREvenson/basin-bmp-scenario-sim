@@ -1,6 +1,6 @@
 # East Fork comparison run using PLET/RUSLE load generation
 verbose: True
-outputs: ../../outputs/plet/run_plet_semi_deterministic
+outputs: ../../outputs/run_plet_deterministic
 random_seed: 42
 
 domain: ../domain/domain.gpkg
@@ -33,3 +33,7 @@ parallel:
 bmp_sel_prob_via_costs: False
 bmp_fail_rate: 0.0
 bmp_fail_reduction: 0.0
+
+deterministic_parcel_order: True
+deterministic_bmp_type_order: True
+deterministic_bmp_design_parameters: True

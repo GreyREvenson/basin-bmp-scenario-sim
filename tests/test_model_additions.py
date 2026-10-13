@@ -5,12 +5,18 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from src.constants import OUTPUT_IMPACTED_PIDS
+from src.constants import (
+    CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+    CFG_DETERMINISTIC_PARCEL_ORDER,
+    OUTPUT_IMPACTED_PIDS,
+)
 from src.model import (
     _add_mass_metrics_to_bmp_record,
     _baseline_mass_before_bmp_kg,
     _bmp_impacted_parcel_indices,
+    _next_deterministic_bmp_type,
 )
+from src.parcel import _sample_parcel_index
 
 
 def test_bmp_impacted_parcel_indices_defaults_to_focal_parcel_when_field_missing() -> None:
@@ -22,6 +28,46 @@ def test_bmp_impacted_parcel_indices_defaults_to_focal_parcel_when_field_missing
     impacted = _bmp_impacted_parcel_indices(ctx, 1, {})
 
     assert impacted == [1]
+
+
+def test_deterministic_parcel_selection_sorts_unique_ids_and_repeats() -> None:
+    class Logger:
+        def verbose(self, message: str) -> None:
+            pass
+
+    ctx = SimpleNamespace(
+        cfg={CFG_DETERMINISTIC_PARCEL_ORDER: True},
+        parcel_selection_ids=["20", "3", "10", "3"],
+        parcel_selection_probs=np.asarray([0.25, 0.25, 0.25, 0.25]),
+        rng=np.random.default_rng(1),
+        logger=Logger(),
+    )
+
+    assert [_sample_parcel_index(ctx) for _ in range(5)] == [1, 2, 0, 1, 2]
+
+
+def test_deterministic_bmp_type_selection_cycles_and_skips_applied_types() -> None:
+    ordered_types = [329, 340, 412]
+
+    selected, cursor = _next_deterministic_bmp_type(ordered_types, set(), 0)
+    assert (selected, cursor) == (329, 1)
+
+    selected, cursor = _next_deterministic_bmp_type(ordered_types, {329}, cursor)
+    assert (selected, cursor) == (340, 2)
+
+    selected, cursor = _next_deterministic_bmp_type(ordered_types, set(), cursor)
+    assert (selected, cursor) == (412, 3)
+
+    selected, cursor = _next_deterministic_bmp_type(ordered_types, {329, 340}, cursor)
+    assert (selected, cursor) == (412, 3)
+
+    selected, cursor = _next_deterministic_bmp_type(ordered_types, set(), cursor)
+    assert (selected, cursor) == (329, 1)
+
+    assert _next_deterministic_bmp_type(ordered_types, set(ordered_types), cursor) == (
+        None,
+        cursor,
+    )
 
 
 def test_bmp_impacted_parcel_indices_defaults_to_focal_parcel_when_field_blank() -> None:

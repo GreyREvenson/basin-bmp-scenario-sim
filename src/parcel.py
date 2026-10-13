@@ -17,6 +17,7 @@ from .constants import (
     COL_CPS,
     COL_PERIM_M,
     COL_PID,
+    CFG_DETERMINISTIC_PARCEL_ORDER,
     DATA_PARCELS,
     DATA_PARCEL_UP_MAP,
 )
@@ -67,7 +68,22 @@ def _sample_parcel_index(self: "Model") -> int:
             Index of the selected parcel.
         
     """
-    idx = self.rng.choice(len(self.parcel_selection_ids), p=self.parcel_selection_probs)
+    if self.cfg.get(CFG_DETERMINISTIC_PARCEL_ORDER, False):
+        order = getattr(self, "_deterministic_parcel_selection_indices", None)
+        if order is None:
+            selection_index_by_pid: Dict[str, int] = {}
+            for selection_index, pid in enumerate(self.parcel_selection_ids):
+                selection_index_by_pid.setdefault(str(pid), selection_index)
+            ordered_pids = sorted(selection_index_by_pid, key=int)
+            order = [selection_index_by_pid[pid] for pid in ordered_pids]
+            self._deterministic_parcel_selection_indices = order
+        if not order:
+            raise ValueError("Cannot select a parcel: the parcel-selection universe is empty")
+        cursor = getattr(self, "_deterministic_parcel_cursor", 0)
+        idx = order[cursor % len(order)]
+        self._deterministic_parcel_cursor = cursor + 1
+    else:
+        idx = self.rng.choice(len(self.parcel_selection_ids), p=self.parcel_selection_probs)
     self.logger.verbose(f"selected parcel idx={idx} with pid={self.parcel_selection_ids[idx]}")
     return idx
 

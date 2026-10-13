@@ -28,7 +28,27 @@ outputs: ../../outputs/run_1
 random_seed: 42
 n_scenarios: 100
 bmp_limit_n: 50
+deterministic_parcel_order: false
+deterministic_bmp_type_order: false
+deterministic_bmp_design_parameters: false
 ```
+
+Set `deterministic_parcel_order: true` to place BMPs on eligible parcels in
+ascending parcel-ID order, cycling back to the first eligible parcel when
+additional BMPs are placed. When false (the default), parcel selection remains
+probability-weighted and random.
+
+Set `deterministic_bmp_type_order: true` to select BMP types in ascending
+CPS-code order, cycling through the available types. Types already applied to
+the selected parcel are skipped, and selection resumes at the next type in
+the cycle.
+
+Set `deterministic_bmp_design_parameters: true` to use fixed BMP geometry
+instead of the default sampled geometry: wetland area is 20% of the selected
+parcel's area with a 4:1 catchment-to-wetland ratio (the remaining 80% of that
+parcel), and grassed-waterway length is 25% of parcel perimeter with 25% of
+parcel area treated. This option does not make other model inputs or BMP
+selection deterministic.
 
 ## Path resolution
 

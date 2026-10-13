@@ -6,6 +6,9 @@ import pytest
 import src.input_config as input_config
 from src.constants import (
     CFG_CPS,
+    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
+    CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+    CFG_DETERMINISTIC_PARCEL_ORDER,
     CFG_LOAD_GENERATION,
     CFG_OUTLETS,
     CFG_OUTPUTS,
@@ -36,6 +39,16 @@ class _NullScope:
 
     def __exit__(self, exc_type, exc, tb):
         return False
+
+
+def test_apply_config_defaults_disables_deterministic_parcel_order() -> None:
+    cfg = {}
+
+    input_config.apply_config_defaults(cfg)
+
+    assert cfg[CFG_DETERMINISTIC_PARCEL_ORDER] is False
+    assert cfg[CFG_DETERMINISTIC_BMP_TYPE_ORDER] is False
+    assert cfg[CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS] is False
 
 
 def test_build_parcel_up_map_trims_normalized_edge_ids() -> None:

@@ -50,6 +50,7 @@ from src.summaries import BMPSummaryCollector
 from src.constants import (
     CFG_BMP_COST,
     CFG_BMP_SEL,
+    CFG_DETERMINISTIC_BMP_TYPE_ORDER,
     CFG_OUTPUTS,
     CFG_PARALLEL,
     CFG_VERBOSE,  # pass verbose to worker loggers
@@ -143,6 +144,18 @@ def _safe_mass_ratio(numerator: float, denominator: float) -> Optional[float]:
     if not np.isfinite(numerator) or not np.isfinite(denominator) or denominator <= 0.0:
         return None
     return numerator / denominator
+
+
+def _next_deterministic_bmp_type(
+    bmp_types: List[int], already_applied: set[int], cursor: int
+) -> Tuple[Optional[int], int]:
+    """Select the next BMP type in sequence that remains available."""
+    for offset in range(len(bmp_types)):
+        type_index = (cursor + offset) % len(bmp_types)
+        cps = bmp_types[type_index]
+        if cps not in already_applied:
+            return cps, type_index + 1
+    return None, cursor
 
 
 def _bmp_impacted_parcel_indices(ctx: Any, parcel_idx: int, bmp_rec: Dict[str, Any]) -> List[int]:
@@ -740,6 +753,12 @@ def _run_one_scenario(
 
         # Track CPS applied per parcel ID to prevent duplicates
         applied_by_pid: Dict[str, set] = defaultdict(set)
+        deterministic_bmp_types = (
+            sorted({int(cps) for cps in ctx.bmp_cps})
+            if cfg.get(CFG_DETERMINISTIC_BMP_TYPE_ORDER, False)
+            else []
+        )
+        deterministic_bmp_cursor = 0
 
         # Main loop
         idle_tries = 0
@@ -767,21 +786,35 @@ def _run_one_scenario(
                 continue
             idle_tries = 0  # reset on a viable placement
 
-            # Renormalize probabilities over the allowed CPS subset
-            probs_sub = ctx.bmp_selection_probs[allowed_idx]
-            probs_sum = float(np.sum(probs_sub))
-            if not np.isfinite(probs_sum) or probs_sum <= 0.0:
-                idle_tries += 1
-                if idle_tries >= max_idle_tries:
-                    logger.info("No selectable CPS probabilities remain across parcels; stopping early.")
-                    break
-                logger.warning(
-                    f"Skipping parcel pid={pid}: remaining BMP probabilities are non-finite or sum to zero."
+            if deterministic_bmp_types:
+                selected_cps, deterministic_bmp_cursor = _next_deterministic_bmp_type(
+                    deterministic_bmp_types,
+                    already,
+                    deterministic_bmp_cursor,
                 )
-                continue
-            probs_sub = probs_sub / probs_sum
-            sel = ctx.rng.choice(len(allowed_idx), p=probs_sub)
-            cps = int(ctx.bmp_cps[allowed_idx[sel]])
+                if selected_cps is None:
+                    idle_tries += 1
+                    if idle_tries >= max_idle_tries:
+                        logger.info("No remaining CPS options across parcels; stopping early to avoid infinite loop.")
+                        break
+                    continue
+                cps = selected_cps
+            else:
+                # Renormalize probabilities over the allowed CPS subset
+                probs_sub = ctx.bmp_selection_probs[allowed_idx]
+                probs_sum = float(np.sum(probs_sub))
+                if not np.isfinite(probs_sum) or probs_sum <= 0.0:
+                    idle_tries += 1
+                    if idle_tries >= max_idle_tries:
+                        logger.info("No selectable CPS probabilities remain across parcels; stopping early.")
+                        break
+                    logger.warning(
+                        f"Skipping parcel pid={pid}: remaining BMP probabilities are non-finite or sum to zero."
+                    )
+                    continue
+                probs_sub = probs_sub / probs_sum
+                sel = ctx.rng.choice(len(allowed_idx), p=probs_sub)
+                cps = int(ctx.bmp_cps[allowed_idx[sel]])
 
             # Scope each BMP placement for deeper indentation
             with log_scope(label=f"apply bmp cps={cps} pid={pid}", logger=logger):

@@ -1,7 +1,7 @@
 # East Fork run using stochastic PLET input distributions; other inputs stay as in the constants example.
 # East Fork comparison run using PLET/RUSLE load generation
 verbose: True
-outputs: ../../outputs/plet/run_plet_stochastic
+outputs: ../../outputs/run_plet_stochastic
 random_seed: 42
 
 domain: ../domain/domain.gpkg
@@ -24,13 +24,13 @@ bmp_cost: ../bmps/bmp_cost_stochastic.csv
 load_generation:
   mode: plet_rusle
 
-n_scenarios: 1
+n_scenarios: 10
 bmp_limit_n: 500
 buffer_depth_ft: 35
 
 parallel:
-  n_jobs: 1
+  n_jobs: 10
 
 bmp_sel_prob_via_costs: False
-bmp_fail_rate: 0.0
-bmp_fail_reduction: 0.0
+bmp_fail_rate: 0.1
+bmp_fail_reduction: 0.5

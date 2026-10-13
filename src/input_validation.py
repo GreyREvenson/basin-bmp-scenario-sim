@@ -21,6 +21,9 @@ from .constants import (
     CFG_BMP_LIMIT_N,
     CFG_BMP_LIMIT_USD,
     CFG_BUFFER_DEPTH_FT,
+    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
+    CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+    CFG_DETERMINISTIC_PARCEL_ORDER,
     CFG_N_SCENARIOS,
     CFG_PARALLEL,
     CFG_POLLUTANT_LOAD_RATE,
@@ -840,6 +843,8 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         "bmp_efficiency", "bmp_cost", "bmp_sel", "n_scenarios",
         "bmp_limit_n", "bmp_limit_usd", "parallel", "random_seed",
         "outputs", "verbose", "buffer_depth_ft", "bmp_sel_prob_via_costs",
+        CFG_DETERMINISTIC_PARCEL_ORDER, CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+        CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
         "load_generation", "bmp_fail_rate",
         "bmp_fail_reduction", "pollutant_load_rate_pathway_fractions",
         "pollutant_load_rate_frac_surface", "pollutant_load_rate_frac_shallow",
@@ -877,6 +882,24 @@ def validate_config(cfg: Dict[str, Any]) -> None:
     validate_scalar_in_domain(
         ci_get(cfg, CFG_BMP_FAIL_REDUCTION), FRACTION_DOMAIN, CFG_BMP_FAIL_REDUCTION
     )
+    deterministic_parcel_order = ci_get(cfg, CFG_DETERMINISTIC_PARCEL_ORDER)
+    if (
+        deterministic_parcel_order is not None
+        and not isinstance(deterministic_parcel_order, bool)
+    ):
+        raise ValueError(f"{CFG_DETERMINISTIC_PARCEL_ORDER} must be a boolean")
+    deterministic_bmp_type_order = ci_get(cfg, CFG_DETERMINISTIC_BMP_TYPE_ORDER)
+    if (
+        deterministic_bmp_type_order is not None
+        and not isinstance(deterministic_bmp_type_order, bool)
+    ):
+        raise ValueError(f"{CFG_DETERMINISTIC_BMP_TYPE_ORDER} must be a boolean")
+    deterministic_bmp_design_parameters = ci_get(cfg, CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS)
+    if (
+        deterministic_bmp_design_parameters is not None
+        and not isinstance(deterministic_bmp_design_parameters, bool)
+    ):
+        raise ValueError(f"{CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS} must be a boolean")
 
     limit_n = ci_get(cfg, CFG_BMP_LIMIT_N)
     if limit_n is not None:

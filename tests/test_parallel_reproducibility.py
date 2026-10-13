@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+import pandas as pd
+
 from model_test_cases import make_plet_rusle_case, make_statistical_case
 from test_reproducibility_helpers import (
     assert_cross_output_consistency,
@@ -10,6 +12,18 @@ from test_reproducibility_helpers import (
     read_canonical_outputs,
 )
 from src.model import Model
+from src.constants import (
+    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
+    CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+    CFG_DETERMINISTIC_PARCEL_ORDER,
+    DATA_BMP_EFFICIENCY,
+    DATA_CPS,
+    DATA_PARCELS,
+    DATA_PARCEL_P,
+    DATA_PARCEL_UP_MAP,
+    DATA_PARCEL_OUT_MAP,
+    DATA_POLLUTANT_LOAD_RATE,
+)
 
 
 def _run_case(builder, outputs_dir, *, n_jobs: int, random_seed: int) -> None:
@@ -90,3 +104,37 @@ def test_plet_mode_serial_equals_parallel(tmp_path) -> None:
     assert_cross_output_consistency(serial, expect_load_parameters=True)
     assert_cross_output_consistency(parallel, expect_load_parameters=True)
     assert_outputs_equal(serial, parallel)
+
+
+def test_deterministic_design_produces_identical_scenario_trajectories(tmp_path) -> None:
+    cfg, data = make_statistical_case(
+        tmp_path, n_jobs=2, n_scenarios=2, random_seed=17, bmp_limit_n=6
+    )
+    cfg.update({
+        CFG_DETERMINISTIC_PARCEL_ORDER: True,
+        CFG_DETERMINISTIC_BMP_TYPE_ORDER: True,
+        CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS: True,
+    })
+    pid_map = {"P1": "1", "P2": "2", "P3": "3"}
+    for key in (DATA_PARCELS, DATA_PARCEL_P, DATA_POLLUTANT_LOAD_RATE, "delivery_ratios"):
+        data[key]["pid"] = data[key]["pid"].map(pid_map)
+    for key in (DATA_PARCEL_UP_MAP, DATA_PARCEL_OUT_MAP):
+        data[key] = {pid_map[pid]: values for pid, values in data[key].items()}
+    data[DATA_CPS] = [412, 656]
+    data[DATA_BMP_EFFICIENCY]["cps"] = data[DATA_BMP_EFFICIENCY]["cps"].replace({340: 412, 345: 656})
+
+    Model(cfg, data, logging.getLogger("test_deterministic_design")).run_all_scenarios()
+
+    a = pd.read_parquet(tmp_path / "bmps" / "s1.parquet")
+    b = pd.read_parquet(tmp_path / "bmps" / "s2.parquet")
+    pd.testing.assert_frame_equal(a.drop(columns="scenario"), b.drop(columns="scenario"))
+    assert set(a["cps"]) == {412, 656}
+    trajectories = pd.read_parquet(
+        tmp_path / "outlet_trajectories" / "all_scenarios.parquet"
+    )
+    for (_, _, _, _), group in trajectories.groupby(["pollutant", "oid", "x_axis", "y_axis"]):
+        first = group[group["scenario"] == 1].sort_values("step").reset_index(drop=True)
+        second = group[group["scenario"] == 2].sort_values("step").reset_index(drop=True)
+        pd.testing.assert_frame_equal(
+            first.drop(columns="scenario"), second.drop(columns="scenario")
+        )

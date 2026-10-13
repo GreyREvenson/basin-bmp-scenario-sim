@@ -38,6 +38,12 @@ A correctly labeled `surface` efficiency is required. A missing or unusable corr
 
 The fraction of load affected by a BMP depends on the BMP type and its sampled or configured geometry or contributing area. An in-field practice may affect a different fraction than a grassed waterway or wetland. The model therefore applies efficiency to the BMP-relevant treated fraction rather than assuming every BMP treats every parcel identically.
 
+With `deterministic_bmp_design_parameters: true`, wetlands occupy 20% of the
+selected parcel area and have a 4:1 catchment-to-wetland area ratio, treating
+that parcel without adding upstream parcels. Grassed waterways span 25% of
+parcel perimeter and treat 25% of parcel area. The default (`false`) retains
+sampled design parameters; see [configuration](configuration.md).
+
 ## BMP failure
 
 BMP failure is optional. Example:
