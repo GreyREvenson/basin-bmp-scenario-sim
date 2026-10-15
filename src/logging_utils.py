@@ -174,6 +174,11 @@ class StackIndentFormatter(logging.Formatter):
         return super().format(record)
 
 
+class ConsoleVisibilityFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not getattr(record, "file_only", False)
+
+
 def _make_console_handler(verbose: bool) -> logging.Handler:
     """Create a console handler.
 
@@ -192,6 +197,7 @@ def _make_console_handler(verbose: bool) -> logging.Handler:
     """
     ch = logging.StreamHandler()
     ch.addFilter(StackIndentFilter(indent_unit="  "))
+    ch.addFilter(ConsoleVisibilityFilter())
     ch.setFormatter(StackIndentFormatter("%(indent)s%(message)s"))
     ch.setLevel(logging.INFO)  # INFO-only on console
     return ch

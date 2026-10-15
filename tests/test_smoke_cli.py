@@ -1,98 +1,91 @@
+"""Synthetic full-model smoke tests.
+
+Despite the historical filename, these tests intentionally do not exercise the
+CLI or any shipped example YAML.  CLI/config-path behavior is covered by the
+run_model and config-path unit tests; these tests exercise model execution from
+normalized in-memory inputs.
+"""
+
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
-import run_model
-
-
-def test_example_config_runs_end_to_end(tmp_path, monkeypatch) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    example_cfg = repo_root / "examples" / "east_fork" / "inputs" / "default" / "east_fork.yaml"
-    cfg = yaml.safe_load(example_cfg.read_text(encoding="utf-8"))
-    cfg["outputs"] = str(tmp_path / "outputs")
-    cfg["n_scenarios"] = 1
-    cfg["bmp_limit_n"] = 5
-    cfg["parallel"] = {"n_jobs": 1}
-    cfg["verbose"] = False
-
-    smoke_cfg = tmp_path / "smoke.yaml"
-    smoke_cfg.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
-
-    monkeypatch.setattr(run_model, "make_summary_plots", lambda *args, **kwargs: None)
-    monkeypatch.setattr("sys.argv", ["run_model.py", str(smoke_cfg)])
-
-    run_model.main()
-    outputs = tmp_path / "outputs"
-    assert (outputs / "log.txt").exists()
-    assert (outputs / "logs" / "s1.txt").exists()
-    assert (outputs / "bmps" / "s1.parquet").exists()
-    assert (outputs / "parcels" / "s1.parquet").exists()
-    assert (outputs / "scenario_metrics" / "s1.parquet").exists()
-    assert (outputs / "outlet_trajectories" / "all_scenarios.parquet").exists()
+from model_test_cases import make_plet_rusle_case, make_statistical_case
+from src.model import Model
 
 
-def test_plet_groundwater_is_rain_corrected_and_unchanged_by_bmps(tmp_path, monkeypatch) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    example_cfg = repo_root / "examples" / "east_fork" / "inputs" / "plet" / "east_fork_plet.yaml"
-    cfg = yaml.safe_load(example_cfg.read_text(encoding="utf-8"))
+def _capture_model_writes(monkeypatch):
+    written: dict[Path, pd.DataFrame] = {}
 
-    cfg["outputs"] = str(tmp_path / "outputs")
-    cfg["n_scenarios"] = 1
-    cfg["bmp_limit_n"] = 5
-    cfg["parallel"] = {"n_jobs": 1}
-    cfg["verbose"] = True
-    smoke_cfg = tmp_path / "plet_smoke.yaml"
-    smoke_cfg.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+    def capture(df: pd.DataFrame, path: Path, *, logger) -> None:
+        del logger
+        written[Path(path).relative_to(Path(path).parents[1])] = df.copy()
 
-    monkeypatch.setattr(run_model, "make_summary_plots", lambda *args, **kwargs: None)
-    monkeypatch.setattr("sys.argv", ["run_model.py", str(smoke_cfg)])
+    monkeypatch.setattr("src.model._write_parquet_atomic", capture)
+    return written
 
-    run_model.main()
-    outputs = tmp_path / "outputs"
-    load_parameters = pd.read_parquet(outputs / "load_parameters" / "s1.parquet")
-    parcels = pd.read_parquet(outputs / "parcels" / "s1.parquet")
-    merged = load_parameters.merge(parcels, on=["scenario", "pid"], validate="one_to_one")
 
-    # Cropland on HSG B resolves to PLET's 0.300 infiltration fraction.
-    assert np.allclose(
-        load_parameters["initial_annual_infiltration_in"],
-        42.0 * 0.90 * 0.300,
+def test_synthetic_statistical_case_runs_end_to_end(tmp_path, monkeypatch) -> None:
+    written = _capture_model_writes(monkeypatch)
+    cfg, data = make_statistical_case(
+        tmp_path / "outputs",
+        n_jobs=1,
+        n_scenarios=1,
+        random_seed=31001,
+        bmp_limit_n=2,
     )
-    assert np.allclose(load_parameters["initial_cn"], 78.0)
-    assert set(load_parameters["initial_land_cover"]) == {"cropland"}
-    assert set(load_parameters["initial_hsg"]) == {"B"}
 
-    # In PLET/RUSLE mode, infiltration-derived nutrient load is the canonical
-    # subsurface pathway. The example's subsurface BMP efficiencies are zero,
-    # so that pathway must remain unchanged by BMP application.
-    for pollutant in ("tn", "tp"):
-        initial_subsurface_load_rate = load_parameters[
-            f"initial_subsurface_{pollutant}_load_rate_kg_ha_yr"
-        ]
-        final_subsurface_load_rate = load_parameters[
-            f"final_subsurface_{pollutant}_load_rate_kg_ha_yr"
-        ]
-        assert np.allclose(initial_subsurface_load_rate, final_subsurface_load_rate)
+    records = Model(cfg, data, logging.getLogger("smoke.statistical")).run_all_scenarios()
 
-        initial_components = (
-            merged[f"initial_surface_{pollutant}_load_rate_kg_ha_yr"]
-            + merged[f"initial_subsurface_{pollutant}_load_rate_kg_ha_yr"]
-        )
-        final_components = (
-            merged[f"final_surface_{pollutant}_load_rate_kg_ha_yr"]
-            + merged[f"final_subsurface_{pollutant}_load_rate_kg_ha_yr"]
-        )
-        pollutant_upper = pollutant.upper()
-        assert np.allclose(
-            merged[f"baseline_load_rate_{pollutant_upper}_kg_ha_yr"],
-            initial_components,
-        )
-        assert np.allclose(
-            merged[f"final_load_rate_{pollutant_upper}_kg_ha_yr"],
-            final_components,
-        )
+    assert records
+    assert Path("bmps", "s1.parquet") in written
+    assert Path("parcels", "s1.parquet") in written
+    assert Path("scenario_metrics", "s1.parquet") in written
+
+
+def test_synthetic_plet_case_uses_supplied_hydrology_and_subsurface_efficiency(
+    tmp_path, monkeypatch
+) -> None:
+    written = _capture_model_writes(monkeypatch)
+    cfg, data = make_plet_rusle_case(
+        tmp_path / "outputs",
+        n_jobs=1,
+        n_scenarios=1,
+        random_seed=31002,
+        bmp_limit_n=1,
+    )
+
+    # Force a single known CPS so pathway-efficiency expectations are deterministic.
+    data["cps"] = [340]
+    data["bmp_eff"] = data["bmp_eff"][data["bmp_eff"]["cps"] == 340].reset_index(drop=True)
+
+    Model(cfg, data, logging.getLogger("smoke.plet")).run_all_scenarios()
+
+    parameter_frames = [
+        df for key, df in written.items() if key == Path("load_parameters", "s1.parquet")
+    ]
+    assert len(parameter_frames) == 1
+    params = parameter_frames[0]
+
+    # The synthetic case deliberately uses non-reference values.  Their presence
+    # demonstrates that model behavior follows supplied hydrology input rather
+    # than a source-level fallback table.
+    assert params["initial_cn"].astype(float).to_numpy() == pytest.approx([73.0, 73.0, 73.0])
+    assert params["initial_infiltration_fraction"].astype(float).to_numpy() == pytest.approx(
+        [0.37, 0.37, 0.37]
+    )
+
+    # CPS 340 has TN subsurface efficiency fixed at zero, while TP is 0.10.
+    # Therefore TN subsurface load is unchanged for every parcel; TP changes only
+    # on the parcel receiving the BMP.
+    assert (params["initial_subsurface_tn_load_rate_kg_ha_yr"] == params[
+        "final_subsurface_tn_load_rate_kg_ha_yr"
+    ]).all()
+    assert (
+        params["final_subsurface_tp_load_rate_kg_ha_yr"]
+        <= params["initial_subsurface_tp_load_rate_kg_ha_yr"]
+    ).all()

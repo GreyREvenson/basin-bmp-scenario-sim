@@ -81,7 +81,6 @@ def _base_efficiency_table() -> pd.DataFrame:
                 "pollutant": "TN",
                 "pathway": "surface",
                 "value": pd.NA,
-                "distribution_id": pd.NA,
                 "mean": np.float64(0.35),
                 "sd": pd.NA,
                 "min": np.float64(0.15),
@@ -98,7 +97,6 @@ def _base_efficiency_table() -> pd.DataFrame:
                 "pollutant": "TP",
                 "pathway": "surface",
                 "value": pd.NA,
-                "distribution_id": pd.NA,
                 "mean": np.float64(0.40),
                 "sd": pd.NA,
                 "min": np.float64(0.20),
@@ -115,7 +113,6 @@ def _base_efficiency_table() -> pd.DataFrame:
                 "pollutant": "TSS",
                 "pathway": "surface",
                 "value": pd.NA,
-                "distribution_id": pd.NA,
                 "mean": np.float64(0.60),
                 "sd": pd.NA,
                 "min": np.float64(0.40),
@@ -151,7 +148,7 @@ def test_plet_missing_subsurface_rows_are_completed_as_valid_fixed_zero_rows() -
     assert set(subsurface["pollutant"].tolist()) == {"TN", "TP", "TSS"}
     np.testing.assert_allclose(subsurface["value"].astype(float).to_numpy(), np.zeros(3, dtype=float))
 
-    for col in ["distribution_id", "mean", "sd", "min", "p05", "p50", "p95", "max"]:
+    for col in ["mean", "sd", "min", "p05", "p50", "p95", "max"]:
         assert subsurface[col].isna().all()
 
     log_text = logger.text()
@@ -210,8 +207,7 @@ def test_plet_missing_surface_row_is_error() -> None:
                         "pollutant": "TN",
                         "pathway": "subsurface",
                         "value": np.float64(0.0),
-                        "distribution_id": pd.NA,
-                        "mean": pd.NA,
+                                "mean": pd.NA,
                         "sd": pd.NA,
                         "min": pd.NA,
                         "p05": pd.NA,

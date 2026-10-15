@@ -5,32 +5,10 @@ import pytest
 
 from src.input_validation import (
     validate_bmp_selection_table,
-    validate_distribution_catalog,
     validate_numeric_distribution_rows,
 )
 
 
-def test_validate_distribution_catalog_rejects_duplicate_ids() -> None:
-    catalog = pd.DataFrame(
-        [
-            {"distribution_id": "rain", "value": 1.0},
-            {"distribution_id": "rain", "value": 2.0},
-        ]
-    )
-
-    with pytest.raises(ValueError, match="duplicate distribution_id"):
-        validate_distribution_catalog(catalog)
-
-
-def test_validate_distribution_catalog_accepts_unique_ids() -> None:
-    catalog = pd.DataFrame(
-        [
-            {"distribution_id": "rain", "mean": 42.0, "sd": 3.0, "min": 30.0, "max": 55.0},
-            {"distribution_id": "cn", "value": 78.0},
-        ]
-    )
-
-    validate_distribution_catalog(catalog)
 
 
 def test_validate_numeric_distribution_rows_accepts_blank_row() -> None:

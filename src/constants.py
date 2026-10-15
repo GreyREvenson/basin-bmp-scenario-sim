@@ -18,8 +18,6 @@ map through ``POLLUTANT_ALIAS_MAP``. Output prefixes such as ``treated_`` and
 ``total_cost_usd`` capture BMP costing.
 """
 
-from pathlib import Path
-
 # Unit conversions
 FT_TO_M = 0.3048
 M2_PER_HA = 10_000.0
@@ -31,29 +29,27 @@ CURRENT_TIMESTEP_YEARS = 1.0
 # Config keys
 CFG_DOMAIN = "domain"
 CFG_PARCELS = "parcels"
-CFG_OUTLET_LOC = "outlet_loc"
-CFG_PARCEL_OUT = "parcel_out"
-CFG_PARCEL_UP = "parcel_up"
-CFG_PARCEL_P = "parcel_p"
+CFG_PLET_FORCING = "plet_forcing"
+CFG_OUTLETS = "outlets"
 CFG_POLLUTANTS = "pollutants"
 CFG_CPS = "cps"
 CFG_POLLUTANT_LOAD_RATE = "pollutant_load_rate"
 CFG_BMP_EFFICIENCY = "bmp_efficiency"
 CFG_BMP_COST = "bmp_cost"
 CFG_DELIVERY_RATIOS = "delivery_ratios"
-CFG_OUTLET_TARGET = "outlet_target"
-CFG_OUTLET_MEAN = "outlet_mean"
 CFG_N_SCENARIOS = "n_scenarios"
 CFG_BMP_LIMIT_N = "bmp_limit_n"
 CFG_BMP_LIMIT_USD = "bmp_limit_usd"
 CFG_BMP_SEL = "bmp_sel"
 CFG_PARALLEL = "parallel"
+CFG_DETERMINISTIC_PARCEL_ORDER = "deterministic_parcel_order"
+CFG_DETERMINISTIC_BMP_TYPE_ORDER = "deterministic_bmp_type_order"
+CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS = "deterministic_bmp_design_parameters"
 CFG_RANDOM_SEED = "random_seed"
 CFG_OUTPUTS = "outputs"
 CFG_VERBOSE = "verbose"
 CFG_BUFFER_DEPTH_FT = "buffer_depth_ft"
 CFG_BMP_SEL_PROB_VIA_COSTS = "bmp_sel_prob_via_costs"
-CFG_INPUT_DISTRIBUTIONS = "input_distributions"
 
 # Canonical output folders/files
 DIR_SCENARIO_METRICS = "scenario_metrics"
@@ -65,7 +61,6 @@ CFG_LOAD_GENERATION = "load_generation"
 LOAD_MODE_STATISTICAL = "statistical"
 LOAD_MODE_PLET_RUSLE = "plet_rusle"
 LOAD_PLET_INPUTS = "plet_inputs"
-LOAD_HYDROLOGY_LOOKUP = "hydrology_lookup"
 LOAD_RUSLE_INPUTS = "rusle_inputs"
 LOAD_CONCENTRATIONS = "pollutant_concentrations"
 LOAD_GROUNDWATER_CONCENTRATIONS = "groundwater_concentrations"
@@ -76,23 +71,19 @@ LOAD_TREAT_GROUNDWATER_WITH_BMPS = "treat_groundwater_with_bmps"
 PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
 PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
 PLET_HSG_VALUES = ("A", "B", "C", "D")
-PLET_HYDROLOGY_LOOKUP_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "examples" / "east_fork" / "inputs" / "plet" / "plet_hydrology_lookup.csv"
-)
 PLET_DERIVED_PARAMETERS = ("cn", "infiltration_fraction")
 PLET_REQUIRED_INPUTS = (
-    "annual_precip_in",
     "rain_days",
-    "rain_correction_fraction",
     "runoff_day_fraction",
     "land_cover",
     "hsg",
 )
+PLET_PRECIPITATION_INPUT_ALTERNATIVES = (
+    ("avg_rain_in",),
+    ("annual_precip_in", "rain_correction_fraction"),
+)
 PLET_REQUIRED_RESOLVED_INPUTS = (
-    "annual_precip_in",
     "rain_days",
-    "rain_correction_fraction",
     "runoff_day_fraction",
     "cn",
     "infiltration_fraction",
@@ -116,6 +107,11 @@ PLET_LAND_COVER_ALIASES = {
 }
 PLET_PARAMETER_ALIASES = {
     "annual_rainfall_in": "annual_precip_in",
+    "avg_rain": "avg_rain_in",
+    "average_rain": "avg_rain_in",
+    "average_rain_in": "avg_rain_in",
+    "average_rainfall": "avg_rain_in",
+    "average_rainfall_in": "avg_rain_in",
     "annual_precipitation_in": "annual_precip_in",
     "ar": "annual_precip_in",
     "rdays": "rain_days",
@@ -153,6 +149,78 @@ PLET_PARAMETER_ALIASES = {
     "fraction_shallow_subsurface": "fraction_subsurface_shallow",
     "subsurface_shallow_fraction": "fraction_subsurface_shallow",
 }
+
+
+# Canonical tables/layers in consolidated GeoPackage inputs.
+# Structural tables have no ``input_`` prefix. Every user-supplied parcel-side
+# model variable is stored in its own ``input_*`` table.
+GPKG_PARCELS_LAYER = "parcels"
+GPKG_PARCEL_UP_TABLE = "parcel_up"
+GPKG_PARCEL_OUTLETS_TABLE = "parcel_outlets"
+GPKG_PARCEL_HUC12_TABLE = "parcel_huc12"
+GPKG_PLET_HUC12_LAYER = "huc12"
+GPKG_OUTLETS_LAYER = "outlets"
+GPKG_OUTLET_STATS_TABLE = "outlet_stats"
+
+# Standard per-variable parcel input tables. Values in these tables all use the
+# same fixed-value/distribution columns; only their key columns differ.
+PARCEL_PARAMETER_INPUT_TABLES = {
+    "annual_precip_in": "input_annual_precip_in",
+    "avg_rain_in": "input_avg_rain_in",
+    "rain_days": "input_rain_days",
+    "rain_correction_fraction": "input_rain_correction_fraction",
+    "runoff_day_fraction": "input_runoff_day_fraction",
+    "land_cover": "input_land_cover",
+    "hsg": "input_hsg",
+    "ia_ratio": "input_ia_ratio",
+    "r": "input_rusle_r",
+    "k": "input_rusle_k",
+    "ls": "input_rusle_ls",
+    "c": "input_rusle_c",
+    "p": "input_rusle_p",
+    "sdr": "input_sediment_delivery_ratio",
+    "sediment_n_pct": "input_sediment_n_pct",
+    "sediment_p_pct": "input_sediment_p_pct",
+    "enrichment_ratio": "input_enrichment_ratio",
+}
+GPKG_INPUT_SELECTION_WEIGHT = "input_selection_weight"
+GPKG_INPUT_CURVE_NUMBER = "input_curve_number"
+GPKG_INPUT_INFILTRATION_FRACTION = "input_infiltration_fraction"
+GPKG_INPUT_POLLUTANT_LOAD_RATE = "input_pollutant_load_rate"
+GPKG_INPUT_SURFACE_CONCENTRATION = "input_surface_concentration"
+GPKG_INPUT_SUBSURFACE_CONCENTRATION = "input_subsurface_concentration"
+GPKG_DELIVERY_RATIO_TABLES = {
+    "sdr_f_to_s": "input_sdr_f_to_s",
+    "sdr_s_to_o": "input_sdr_s_to_o",
+    "ndr_f_to_s": "input_ndr_f_to_s",
+    "ndr_s_to_o": "input_ndr_s_to_o",
+}
+
+
+# HUC12-scale PLET forcing uses the same one-variable-per-table pattern as
+# parcels.gpkg, but rows are keyed by huc12 instead of pid.  The spatial
+# ``huc12`` layer contains only WBD geometry/metadata; model forcing belongs in
+# these attribute tables so every value may be fixed or distributional.
+HUC12_PLET_PARAMETER_INPUT_TABLES = {
+    "avg_rain_in": "input_avg_rain_in",
+    "annual_precip_in": "input_annual_precip_in",
+    "rain_days": "input_rain_days",
+    "rain_correction_fraction": "input_rain_correction_fraction",
+    "runoff_day_fraction": "input_runoff_day_fraction",
+    "hsg": "input_hsg",
+    "r": "input_rusle_r",
+    "k": "input_rusle_k",
+    "ls": "input_rusle_ls",
+    "c": "input_rusle_c",
+    "p": "input_rusle_p",
+    "sediment_n_pct": "input_sediment_n_pct",
+    "sediment_p_pct": "input_sediment_p_pct",
+}
+
+RUSLE_PARAMETER_NAMES = (
+    "r", "k", "ls", "c", "p", "sdr",
+    "sediment_n_pct", "sediment_p_pct", "enrichment_ratio",
+)
 
 # New: BMP failure configuration
 CFG_BMP_FAIL_RATE = "bmp_fail_rate"            # probability [0,1] a BMP fails
@@ -194,12 +262,16 @@ DATA_POLLUTANT_LOAD_RATE_IS_AGGREGATE = "pollutant_load_rate_is_aggregate"
 
 # Common column names
 COL_PID = "pid"
+COL_HUC12 = "huc12"
+COL_AREA_FRACTION = "area_fraction"
 COL_OID = "oid"
 COL_CPS = "cps"
+COL_COST_COMPONENT = "cost_component"
 COL_POLLUTANT = "pollutant"
 COL_OIDS = "oids"
 COL_PID_UP = "pid_up"
 COL_PROBABILITY = "probability"
+COL_SELECTION_WEIGHT = "selection_weight"
 COL_UNIT = "unit"
 COL_AREA_M2 = "area_m2"
 COL_AREA_HA = "area_ha"
@@ -217,7 +289,6 @@ PERCENTILE_PREFIX = "p"
 
 # New: optional pathway column
 COL_PATHWAY = "pathway"
-COL_DISTRIBUTION_ID = "distribution_id"
 COL_SAMPLE_GROUP = "sample_group"
 COL_MASS_TIMESTEP_YEARS = "mass_timestep_years"
 

@@ -9,12 +9,29 @@ from __future__ import annotations
 
 from collections import defaultdict
 import logging
+import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple, Union
 
 import geopandas as gpd
 import pandas as pd
 import yaml
+
+
+class MissingInputTableError(ValueError):
+    """Raised when a requested GeoPackage attribute table does not exist."""
+
+
+def list_geopackage_tables(path: Union[str, Path]) -> List[str]:
+    """Return ordinary table names present in a GeoPackage/SQLite container."""
+    package = Path(path)
+    if not package.exists():
+        raise FileNotFoundError(f"GeoPackage not found: {package}")
+    with sqlite3.connect(package) as conn:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        ).fetchall()
+    return [str(row[0]) for row in rows]
 
 
 def read_config(path: Union[str, Path]) -> Dict[str, Any]:
@@ -87,13 +104,21 @@ def read_csv_tables(
     return [read_csv_table(item) for item in items]
 
 
-def read_geodataframe(path: Union[str, Path]) -> gpd.GeoDataFrame:
+def read_geodataframe(
+    path: Union[str, Path], *, layer: str | None = None, fid_as_index: bool = False
+) -> gpd.GeoDataFrame:
     """Deserialize a geospatial vector dataset without domain normalization.
 
         Parameters
         ----------
         path : Union[str, Path]
             Path to the geospatial vector dataset.
+        layer : str or None
+            Optional layer/table name for multi-layer containers such as GeoPackage.
+        fid_as_index : bool
+            When true, preserve the vector driver's feature ID as the dataframe
+            index. This is used for the parcels layer because schema v3 names
+            the GeoPackage integer feature ID column ``pid``.
 
         Returns
         -------
@@ -101,7 +126,104 @@ def read_geodataframe(path: Union[str, Path]) -> gpd.GeoDataFrame:
             Deserialized geospatial dataset.
         
     """
-    return gpd.read_file(path)
+    kwargs = {"fid_as_index": True} if fid_as_index else {}
+    return (
+        gpd.read_file(path, layer=layer, **kwargs)
+        if layer is not None
+        else gpd.read_file(path, **kwargs)
+    )
+
+
+def read_geopackage_table(path: Union[str, Path], table: str) -> pd.DataFrame:
+    """Read one non-spatial attribute table from a GeoPackage.
+
+    Attribute tables are stored as ordinary SQLite tables inside the GeoPackage.
+    Reading them with SQLite avoids imposing geospatial-layer semantics on data
+    such as parcel relationships, parameter rows, and outlet statistics.
+    """
+    package = Path(path)
+    if not package.exists():
+        raise FileNotFoundError(f"GeoPackage not found: {package}")
+    safe_table = str(table).replace('"', '""')
+    with sqlite3.connect(package) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (str(table),)
+        ).fetchone()
+        if exists is None:
+            raise MissingInputTableError(
+                f"GeoPackage table not found: {table} in {package}"
+            )
+        return pd.read_sql_query(f'SELECT * FROM "{safe_table}"', conn)
+
+
+
+
+def read_geopackage_integer_ids(
+    path: Union[str, Path], table: str, id_column: str
+) -> List[int]:
+    """Read an INTEGER PRIMARY KEY column from a GeoPackage in feature-ID order.
+
+    GeoPackage/OGR drivers commonly expose an INTEGER PRIMARY KEY as the feature
+    ID rather than as an ordinary attribute.  This helper reads that identifier
+    directly from SQLite so callers can recover it when a geospatial reader hides
+    the field.
+    """
+    package = Path(path)
+    if not package.exists():
+        raise FileNotFoundError(f"GeoPackage not found: {package}")
+    safe_table = str(table).replace('"', '""')
+    safe_column = str(id_column).replace('"', '""')
+    with sqlite3.connect(package) as conn:
+        info = conn.execute(f'PRAGMA table_info("{safe_table}")').fetchall()
+        if not info:
+            raise MissingInputTableError(
+                f"GeoPackage table not found: {table} in {package}"
+            )
+        match = next(
+            (row for row in info if str(row[1]).lower() == str(id_column).lower()),
+            None,
+        )
+        if match is None:
+            raise ValueError(
+                f"GeoPackage table '{table}' does not contain identifier column '{id_column}'"
+            )
+        declared_type = str(match[2] or "").upper()
+        if int(match[5]) != 1 or "INT" not in declared_type:
+            raise ValueError(
+                f"GeoPackage table '{table}' column '{id_column}' must be an INTEGER PRIMARY KEY"
+            )
+        rows = conn.execute(
+            f'SELECT "{safe_column}" FROM "{safe_table}" '
+            f'ORDER BY "{safe_column}"'
+        ).fetchall()
+    return [int(row[0]) for row in rows]
+
+
+def read_geopackage_table_info(path: Union[str, Path], table: str) -> List[Dict[str, Any]]:
+    """Return SQLite column metadata for one GeoPackage table.
+
+    Each row contains ``name``, declared ``type``, ``notnull``, ``default``,
+    and ``pk`` fields from ``PRAGMA table_info``.
+    """
+    package = Path(path)
+    if not package.exists():
+        raise FileNotFoundError(f"GeoPackage not found: {package}")
+    safe_table = str(table).replace('"', '""')
+    with sqlite3.connect(package) as conn:
+        rows = conn.execute(f'PRAGMA table_info("{safe_table}")').fetchall()
+    if not rows:
+        raise MissingInputTableError(f"GeoPackage table not found: {table} in {package}")
+    return [
+        {
+            "cid": int(row[0]),
+            "name": str(row[1]),
+            "type": str(row[2] or ""),
+            "notnull": bool(row[3]),
+            "default": row[4],
+            "pk": int(row[5]),
+        }
+        for row in rows
+    ]
 
 
 def read_parquet_table(path: Union[str, Path]) -> pd.DataFrame:

@@ -12,6 +12,9 @@ from src.constants import (
     CFG_BMP_LIMIT_N,
     CFG_BMP_LIMIT_USD,
     CFG_BUFFER_DEPTH_FT,
+    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
+    CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+    CFG_DETERMINISTIC_PARCEL_ORDER,
     CFG_N_SCENARIOS,
     CFG_PARALLEL,
     CFG_POLLUTANT_LOAD_RATE,
@@ -122,6 +125,51 @@ def test_config_rejects_negative_limits_and_nonintegral_counts():
     bad[CFG_BMP_LIMIT_N] = 1.5
     with pytest.raises(ValueError):
         validate_config(bad)
+
+
+@pytest.mark.parametrize("value", [True, False])
+@pytest.mark.parametrize(
+    "key",
+    [
+        CFG_DETERMINISTIC_PARCEL_ORDER,
+        CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+        CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
+    ],
+)
+def test_config_accepts_boolean_deterministic_order_options(key, value):
+    cfg = {
+        CFG_N_SCENARIOS: 1,
+        CFG_BUFFER_DEPTH_FT: 35.0,
+        CFG_BMP_FAIL_RATE: 0.0,
+        CFG_BMP_FAIL_REDUCTION: 0.25,
+        key: value,
+        CFG_PARALLEL: {"n_jobs": 1},
+    }
+
+    validate_config(cfg)
+
+
+@pytest.mark.parametrize("value", ["true", 1])
+@pytest.mark.parametrize(
+    "key",
+    [
+        CFG_DETERMINISTIC_PARCEL_ORDER,
+        CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+        CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
+    ],
+)
+def test_config_rejects_non_boolean_deterministic_order_options(key, value):
+    cfg = {
+        CFG_N_SCENARIOS: 1,
+        CFG_BUFFER_DEPTH_FT: 35.0,
+        CFG_BMP_FAIL_RATE: 0.0,
+        CFG_BMP_FAIL_REDUCTION: 0.25,
+        key: value,
+        CFG_PARALLEL: {"n_jobs": 1},
+    }
+
+    with pytest.raises(ValueError, match=f"{key} must be a boolean"):
+        validate_config(cfg)
 
 
 def test_plet_runoff_rejects_invalid_inputs_instead_of_sanitizing():

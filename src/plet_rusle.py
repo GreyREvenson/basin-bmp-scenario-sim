@@ -38,13 +38,6 @@ PLET_PATHWAY_NAMES = ("surface", "subsurface")
 PLET_CLASSIFICATION_PARAMETERS = ("land_cover", "hsg")
 PLET_LAND_COVERS = ("urban", "cropland", "pastureland", "forest", "user_defined")
 PLET_HSG_VALUES = ("A", "B", "C", "D")
-# Default example path retained only for the public deterministic helper.
-# Production plet_rusle runs require load_generation.hydrology_lookup explicitly.
-PLET_HYDROLOGY_LOOKUP_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "examples" / "east_fork" / "inputs" / "plet" / "plet_hydrology_lookup.csv"
-)
-
 _PLET_DERIVED_PARAMETERS = ("cn", "infiltration_fraction")
 _PLET_LAND_COVER_ALIASES: Dict[str, str] = {
     "urban": "urban",
@@ -67,6 +60,11 @@ _PLET_LAND_COVER_ALIASES: Dict[str, str] = {
 # less brittle without introducing ambiguous units.
 _PARAMETER_ALIASES: Dict[str, str] = {
     "annual_rainfall_in": "annual_precip_in",
+    "avg_rain": "avg_rain_in",
+    "average_rain": "avg_rain_in",
+    "average_rain_in": "avg_rain_in",
+    "average_rainfall": "avg_rain_in",
+    "average_rainfall_in": "avg_rain_in",
     "annual_precipitation_in": "annual_precip_in",
     "ar": "annual_precip_in",
     "rdays": "rain_days",
@@ -106,17 +104,17 @@ _PARAMETER_ALIASES: Dict[str, str] = {
 }
 
 _REQUIRED_PLET_INPUTS = (
-    "annual_precip_in",
     "rain_days",
-    "rain_correction_fraction",
     "runoff_day_fraction",
     "land_cover",
     "hsg",
 )
+_PLET_PRECIPITATION_INPUT_ALTERNATIVES = (
+    ("avg_rain_in",),
+    ("annual_precip_in", "rain_correction_fraction"),
+)
 _REQUIRED_RESOLVED_PLET = (
-    "annual_precip_in",
     "rain_days",
-    "rain_correction_fraction",
     "runoff_day_fraction",
     "cn",
     "infiltration_fraction",
@@ -281,14 +279,14 @@ def plet_hydrology_from_classifications(
     land_cover: Any,
     hsg: Any,
     *,
-    lookup_path: Optional[Path] = None,
+    lookup_path: Path,
 ) -> Dict[str, Any]:
     """Resolve fixed hydrology values from a lookup table.
 
-        This helper remains for compatibility and deterministic validation. The
-        actual PLET/RUSLE scenario path samples the required hydrology input table,
-        allowing each CN and infiltration fraction to be a fixed value or a
-        distribution.
+        This deterministic helper requires an explicit user-supplied hydrology
+        lookup path. The actual PLET/RUSLE scenario path samples the validated
+        hydrology input table loaded from configuration, allowing each CN and
+        infiltration fraction to be a fixed value or a distribution.
 
         Parameters
         ----------
@@ -296,8 +294,8 @@ def plet_hydrology_from_classifications(
             PLET land-cover classification.
         hsg : Any
             Hydrologic soil group classification.
-        lookup_path : Optional[Path]
-            Optional path to the PLET hydrology lookup table.
+        lookup_path : Path
+            Path to the user-supplied PLET hydrology lookup table.
 
         Returns
         -------
@@ -317,58 +315,23 @@ def plet_hydrology_from_classifications(
     }
 
 
-def plet_runoff_depth_in(
-    annual_precip_in: float,
-    rain_days: float,
-    rain_correction_fraction: float,
-    runoff_day_fraction: float,
+def _plet_event_runoff_depth_in(
+    event_rainfall_in: float,
+    runoff_days: float,
     cn: float,
     ia_ratio: float = 0.0,
 ) -> Tuple[float, float, float]:
-    """Calculate event rainfall and runoff depths using a CN-style equation.
-
-    The function computes a representative storm event depth, the associated
-    runoff depth, and annualized storm runoff depth using annual precipitation,
-    rain-day frequency, and curve number assumptions.
-
-    Parameters
-    ----------
-    annual_precip_in : float
-        Annual precipitation depth in inches.
-    rain_days : float
-        Number of rain days per year.
-    rain_correction_fraction : float
-        Fraction of annual precipitation attributed to runoff-producing events.
-    runoff_day_fraction : float
-        Fraction of rain days that generate runoff.
-    cn : float
-        Curve number used to estimate retention.
-    ia_ratio : float, optional
-        Initial abstraction ratio applied to retention. Default is ``0.0``.
-
-    Returns
-    -------
-    tuple[float, float, float]
-        Event rainfall depth, event runoff depth, and annual runoff depth in
-        inches.
-    """
-
-    annual_precip_in = validate_parameter_value("annual_precip_in", annual_precip_in)
-    rain_days = validate_parameter_value("rain_days", rain_days)
-    rain_correction_fraction = validate_parameter_value(
-        "rain_correction_fraction", rain_correction_fraction
-    )
-    runoff_day_fraction = validate_parameter_value(
-        "runoff_day_fraction", runoff_day_fraction
+    """Calculate event and annual runoff from an event rainfall depth."""
+    event_rainfall = validate_parameter_value("avg_rain_in", event_rainfall_in)
+    runoff_days = validate_scalar_in_domain(
+        runoff_days, NONNEGATIVE_DOMAIN, "corrected runoff days"
     )
     cn = validate_parameter_value("cn", cn)
     ia_ratio = validate_parameter_value("ia_ratio", ia_ratio)
 
-    runoff_days = rain_days * runoff_day_fraction
     if runoff_days <= 0.0:
-        return 0.0, 0.0, 0.0
+        return event_rainfall, 0.0, 0.0
 
-    event_rainfall = annual_precip_in * rain_correction_fraction / runoff_days
     retention = (1000.0 / cn) - 10.0
     # CN is validated in (0, 100]; max() only guards floating-point roundoff
     # in this derived state and never repairs a user input.
@@ -382,6 +345,94 @@ def plet_runoff_depth_in(
         event_runoff = numerator / denominator if denominator > 0.0 else 0.0
 
     return event_rainfall, event_runoff, event_runoff * runoff_days
+
+
+def plet_runoff_depth_in(
+    annual_precip_in: float,
+    rain_days: float,
+    rain_correction_fraction: float,
+    runoff_day_fraction: float,
+    cn: float,
+    ia_ratio: float = 0.0,
+) -> Tuple[float, float, float]:
+    """Calculate PLET runoff using annual rainfall and correction factors.
+
+    This is the original PLET forcing form. ``plet_annual_surface_runoff_in``
+    also accepts ``avg_rain_in`` directly, matching the ``AVG_RAIN`` field
+    supplied by the PLET Input Data Server.
+    """
+    annual_precip_in = validate_parameter_value("annual_precip_in", annual_precip_in)
+    rain_days = validate_parameter_value("rain_days", rain_days)
+    rain_correction_fraction = validate_parameter_value(
+        "rain_correction_fraction", rain_correction_fraction
+    )
+    runoff_day_fraction = validate_parameter_value(
+        "runoff_day_fraction", runoff_day_fraction
+    )
+    runoff_days = rain_days * runoff_day_fraction
+    if runoff_days <= 0.0:
+        return 0.0, 0.0, 0.0
+    event_rainfall = annual_precip_in * rain_correction_fraction / runoff_days
+    return _plet_event_runoff_depth_in(event_rainfall, runoff_days, cn, ia_ratio)
+
+
+def plet_avg_rain_runoff_depth_in(
+    avg_rain_in: float,
+    rain_days: float,
+    runoff_day_fraction: float,
+    cn: float,
+    ia_ratio: float = 0.0,
+) -> Tuple[float, float, float]:
+    """Calculate PLET runoff using Input Data Server ``AVG_RAIN`` directly.
+
+    ``AVG_RAIN`` is the representative runoff-producing event rainfall depth
+    (PLET Equation 3). Annual runoff still uses the corrected number of rain
+    days, ``rain_days * runoff_day_fraction`` (PLET Equation 5).
+    """
+    avg_rain_in = validate_parameter_value("avg_rain_in", avg_rain_in)
+    rain_days = validate_parameter_value("rain_days", rain_days)
+    runoff_day_fraction = validate_parameter_value(
+        "runoff_day_fraction", runoff_day_fraction
+    )
+    runoff_days = rain_days * runoff_day_fraction
+    return _plet_event_runoff_depth_in(avg_rain_in, runoff_days, cn, ia_ratio)
+
+
+def _plet_corrected_annual_precip_in(parameters: Mapping[str, Any]) -> float:
+    """Return precipitation represented by runoff-producing events.
+
+    When ``avg_rain_in`` is supplied it is authoritative and the corrected
+    annual precipitation is reconstructed as AVG_RAIN times corrected rain
+    days. Otherwise the original annual-rainfall/correction-factor form is
+    used.
+    """
+    if parameters.get("avg_rain_in") is not None:
+        rain_days = validate_parameter_value("rain_days", parameters["rain_days"])
+        runoff_day_fraction = validate_parameter_value(
+            "runoff_day_fraction", parameters["runoff_day_fraction"]
+        )
+        runoff_days = rain_days * runoff_day_fraction
+        avg_rain = validate_parameter_value("avg_rain_in", parameters["avg_rain_in"])
+        return float(avg_rain * runoff_days)
+
+    missing = [
+        name
+        for name in ("annual_precip_in", "rain_correction_fraction")
+        if parameters.get(name) is None
+    ]
+    if missing:
+        raise ValueError(
+            "PLET precipitation inputs must provide avg_rain_in (PLET AVG_RAIN) "
+            "or both annual_precip_in and rain_correction_fraction; "
+            f"missing {missing}"
+        )
+    annual_precip = validate_parameter_value(
+        "annual_precip_in", parameters["annual_precip_in"]
+    )
+    rain_correction_fraction = validate_parameter_value(
+        "rain_correction_fraction", parameters["rain_correction_fraction"]
+    )
+    return float(annual_precip * rain_correction_fraction)
 
 
 def rusle_sediment_load_rate_kg_ha_yr(parameters: Mapping[str, Any]) -> float:
@@ -424,28 +475,47 @@ def rusle_sediment_load_rate_kg_ha_yr(parameters: Mapping[str, Any]) -> float:
 def plet_annual_surface_runoff_in(
     parameters: Mapping[str, Any],
 ) -> Tuple[float, float, float, float]:
-    """Estimate annual surface runoff depth from precipitation.
+    """Estimate annual surface runoff depth from PLET precipitation inputs.
 
-    Parameters
-    ----------
-    parameters : Mapping[str, Any]
-        Mapping containing precipitation and runoff parameters.
+    Two precipitation forms are supported:
 
-    Returns
-    -------
-    tuple[float, float, float, float]
-        Event rainfall depth, event runoff depth, annual storm runoff depth,
-        and annual total runoff depth.
+    * ``avg_rain_in`` + ``rain_days`` + ``runoff_day_fraction``; or
+    * ``annual_precip_in`` + ``rain_correction_fraction`` + ``rain_days`` +
+      ``runoff_day_fraction``.
+
+    If ``avg_rain_in`` is present it is used directly as event rainfall.
     """
     parameters = apply_plet_parameter_defaults(parameters)
-    event_rainfall, event_runoff, annual_storm_runoff = plet_runoff_depth_in(
-        parameters["annual_precip_in"],
-        parameters["rain_days"],
-        parameters["rain_correction_fraction"],
-        parameters["runoff_day_fraction"],
-        parameters["cn"],
-        parameters["ia_ratio"],
-    )
+    if parameters.get("avg_rain_in") is not None:
+        event_rainfall, event_runoff, annual_storm_runoff = (
+            plet_avg_rain_runoff_depth_in(
+                parameters["avg_rain_in"],
+                parameters["rain_days"],
+                parameters["runoff_day_fraction"],
+                parameters["cn"],
+                parameters["ia_ratio"],
+            )
+        )
+    else:
+        missing = [
+            name
+            for name in ("annual_precip_in", "rain_correction_fraction")
+            if parameters.get(name) is None
+        ]
+        if missing:
+            raise ValueError(
+                "PLET precipitation inputs must provide avg_rain_in (PLET AVG_RAIN) "
+                "or both annual_precip_in and rain_correction_fraction; "
+                f"missing {missing}"
+            )
+        event_rainfall, event_runoff, annual_storm_runoff = plet_runoff_depth_in(
+            parameters["annual_precip_in"],
+            parameters["rain_days"],
+            parameters["rain_correction_fraction"],
+            parameters["runoff_day_fraction"],
+            parameters["cn"],
+            parameters["ia_ratio"],
+        )
     runoff_multiplier = validate_parameter_value(
         "runoff_multiplier", parameters["runoff_multiplier"]
     )
@@ -454,18 +524,12 @@ def plet_annual_surface_runoff_in(
 
 
 def plet_annual_infiltration_in(parameters: Mapping[str, Any]) -> float:
-    """Estimate annual infiltration depth from precipitation.
+    """Estimate annual infiltration depth from PLET precipitation forcing.
 
-    Parameters
-    ----------
-    parameters : Mapping[str, Any]
-        Mapping containing the lookup-derived ``infiltration_fraction`` and
-        precipitation inputs, plus an optional ``groundwater_multiplier``.
-
-    Returns
-    -------
-    float
-        Annual infiltration depth in inches.
+    With ``avg_rain_in`` input, the corrected annual precipitation is
+    ``avg_rain_in * rain_days * runoff_day_fraction``. This is algebraically
+    identical to ``annual_precip_in * rain_correction_fraction`` when
+    ``AVG_RAIN`` was generated by PLET Equation 3.
     """
     if "infiltration_fraction" not in parameters:
         raise ValueError(
@@ -475,18 +539,12 @@ def plet_annual_infiltration_in(parameters: Mapping[str, Any]) -> float:
     infiltration_fraction = validate_parameter_value(
         "infiltration_fraction", parameters["infiltration_fraction"]
     )
-    annual_precip = validate_parameter_value(
-        "annual_precip_in", parameters["annual_precip_in"]
-    )
-    rain_correction_fraction = validate_parameter_value(
-        "rain_correction_fraction", parameters["rain_correction_fraction"]
-    )
+    corrected_annual_precip = _plet_corrected_annual_precip_in(parameters)
     groundwater_multiplier = validate_parameter_value(
         "groundwater_multiplier", parameters["groundwater_multiplier"]
     )
-    infiltration = annual_precip * rain_correction_fraction * infiltration_fraction
+    infiltration = corrected_annual_precip * infiltration_fraction
     return float(infiltration * groundwater_multiplier)
-
 
 
 
@@ -566,7 +624,7 @@ def _sample_parameter_table(
                         cache[cache_key] = normalize_plet_hsg(raw_value)
                 else:
                     stats = stats_from_row(
-                        row, {"pid", "parameter", "sample_group", "distribution_id", "units"}
+                        row, {"pid", "parameter", "sample_group", "units"}
                     )
                     if not stats:
                         raise ValueError(
@@ -606,9 +664,15 @@ def _sample_concentrations(ctx: Any, table: Optional[pd.DataFrame], parcel_ids: 
         return [{} for _ in parcel_ids]
     for pid in parcel_ids:
         values: Dict[str, float] = {}
-        pids = table["pid"].astype(str)
-        defaults = table[pids == "*"]
-        exact = table[pids == str(pid)]
+        defaults = table[table["pid"].isna()]
+        try:
+            target_pid = int(pid)
+            pids = pd.to_numeric(table["pid"], errors="coerce")
+            exact = table[table["pid"].notna() & (pids == target_pid)]
+        except (TypeError, ValueError):
+            exact = table[
+                table["pid"].notna() & (table["pid"].astype(str) == str(pid))
+            ]
         combined = pd.concat([defaults, exact], ignore_index=True)
         if not combined.empty:
             combined = combined.drop_duplicates(subset=["pollutant"], keep="last")
@@ -620,7 +684,7 @@ def _sample_concentrations(ctx: Any, table: Optional[pd.DataFrame], parcel_ids: 
             key = (variable_key, group_key)
             if key not in cache:
                 stats = stats_from_row(
-                    row, {"pid", "pollutant", "sample_group", "distribution_id", "units"}
+                    row, {"pid", "pollutant", "sample_group", "units"}
                 )
                 if not stats:
                     raise ValueError(f"No concentration value or statistics supplied for {pid}/{pollutant}")
@@ -640,10 +704,10 @@ def _sample_plet_hydrology(
 ) -> Dict[str, Any]:
     """Sample CN and infiltration fraction for one parcel's PLET class pair.
 
-        Production ``plet_rusle`` runs require a user-supplied long-form hydrology
-        table stored in ``load_generation.hydrology_lookup``.  Each land-cover/HSG
-        pairing has one ``cn`` row and one ``infiltration_fraction`` row, and each
-        row may be a fixed value or a distribution.  Rows are sampled independently
+        Production ``plet_rusle`` runs assemble a validated hydrology table from
+        ``input_curve_number`` and ``input_infiltration_fraction`` in parcels.gpkg.
+        Each land-cover/HSG pairing has one row for each variable, and each row may
+        be a fixed value or a distribution. Rows are sampled independently
         for each parcel unless an explicit ``sample_group`` requests a shared draw.
 
         Parameters
@@ -674,7 +738,7 @@ def _sample_plet_hydrology(
     table = load_generation.get("_hydrology_lookup_table")
     if table is None or not isinstance(table, pd.DataFrame) or table.empty:
         raise ValueError(
-            "plet_rusle requires a validated load_generation.hydrology_lookup table"
+            "plet_rusle requires validated curve-number and infiltration-fraction input tables"
         )
 
     canonical_land_cover = normalize_plet_land_cover(land_cover)
@@ -691,7 +755,7 @@ def _sample_plet_hydrology(
         rows = subset[subset["parameter"].astype(str) == parameter]
         if len(rows) != 1:
             raise ValueError(
-                "hydrology_lookup must contain exactly one row for "
+                "PLET hydrology inputs must contain exactly one row for "
                 f"land_cover={canonical_land_cover}, hsg={canonical_hsg}, "
                 f"parameter={parameter}; found {len(rows)}"
             )
@@ -702,7 +766,6 @@ def _sample_plet_hydrology(
                 "land_cover",
                 "hsg",
                 "parameter",
-                "distribution_id",
                 "sample_group",
                 "units",
                 "notes",
@@ -710,7 +773,7 @@ def _sample_plet_hydrology(
         )
         if not stats:
             raise ValueError(
-                f"hydrology_lookup has no value/distribution for "
+                f"PLET hydrology inputs have no value/distribution for "
                 f"{canonical_land_cover}/{canonical_hsg}/{parameter}"
             )
         variable = f"hydrology:{canonical_land_cover}:{canonical_hsg}:{parameter}"
@@ -877,6 +940,8 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
     # Scenario workers provide the full hydrologic parcel universe via
     # ``parcel_ids``.  Fall back to ``parcel_selection_ids`` only for legacy
     # direct callers/tests that construct a minimal context without parcel_ids.
+    # TODO: remove legacy fallback to parcel_selection_ids. double-check that it
+    # will not break existing tests or direct calls.
     parcel_ids = [
         str(pid)
         for pid in getattr(ctx, "parcel_ids", getattr(ctx, "parcel_selection_ids", []))
@@ -918,6 +983,8 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
         # Compatibility field retained for callers/tests that inspect the old
         # protected-groundwater array. Actual PLET subsurface load is now in
         # pathway_load_rates[:, :, 1], so this stays zero.
+        # TODO: remove untreated_groundwater_load_rates but confirm that it
+        # will not break existing functionality
         untreated_groundwater_load_rates[i, :] = 0.0
         load_rates[i, :] = np.sum(pathway_load_rates[i, :, :], axis=1)
 

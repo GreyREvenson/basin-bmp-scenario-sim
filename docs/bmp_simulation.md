@@ -38,6 +38,12 @@ A correctly labeled `surface` efficiency is required. A missing or unusable corr
 
 The fraction of load affected by a BMP depends on the BMP type and its sampled or configured geometry or contributing area. An in-field practice may affect a different fraction than a grassed waterway or wetland. The model therefore applies efficiency to the BMP-relevant treated fraction rather than assuming every BMP treats every parcel identically.
 
+With `deterministic_bmp_design_parameters: true`, wetlands occupy 20% of the
+selected parcel area and have a 4:1 catchment-to-wetland area ratio, treating
+that parcel without adding upstream parcels. Grassed waterways span 25% of
+parcel perimeter and treat 25% of parcel area. The default (`false`) retains
+sampled design parameters; see [configuration](configuration.md).
+
 ## BMP failure
 
 BMP failure is optional. Example:
@@ -61,11 +67,20 @@ This is an important structural assumption. It is most natural where later pract
 
 ## Parcel connectivity and wetlands
 
-Where applicable, `parcel_up` supplies upstream parcel relationships used by BMP logic that depends on contributing drainage area. Cells containing multiple upstream parcel IDs are interpreted as multiple relationships rather than one compound ID.
+Where applicable, the `parcel_up` table inside the parcel GeoPackage supplies upstream parcel relationships used by BMP logic that depends on contributing drainage area. The table is normalized: each row is one `pid` → `pid_up` relationship; comma-separated relationship lists are not supported.
 
 ## Cost and stopping conditions
 
-BMP costs may be sampled from `bmp_cost` when configured. Cost can also optionally influence BMP-selection probabilities when `bmp_sel_prob_via_costs` is enabled.
+BMP costs may be sampled from `bmp_cost` when configured. A CPS may have one
+or more named `cost_component` rows. For every individual BMP placement, the
+model makes a fresh draw from every component row associated with that CPS,
+scales each draw using that row's unit and the realized BMP quantity, and sums
+the components into the placement's `cost_usd`. Thus a cover crop can be
+represented as seed + establishment + termination, while a structural BMP can
+mix area-, length-, or project-based components. Cost can also optionally
+influence BMP-selection probabilities when `bmp_sel_prob_via_costs` is enabled;
+the representative costs of all components are summed before probabilities are
+calculated.
 
 Scenarios may be limited by BMP count, cost, or both. No additional BMPs are added once a configured stopping condition has been met. If both `bmp_limit_n` and `bmp_limit_usd` are configured, the scenario stops before another BMP is added as soon as **either** limit has been reached.
 

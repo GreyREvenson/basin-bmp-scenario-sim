@@ -35,6 +35,19 @@ The model uses `joblib` for scenario-level parallelism.
 
 Parallel execution should not be treated as a substitute for recording the seed and software environment. Reproducibility claims should be verified for the exact runtime environment used in an analysis.
 
+## Validate inputs before simulation
+
+The runner currently has no `--validate-only` option. A normal run starts with input validation:
+
+    python run_model.py config.yaml
+
+This validates the configuration, GeoPackages, distributions,
+physical domains, foreign keys, and coverage before any scenarios begin. When
+using HUC12 forcing, validation also checks the spatial `huc12` layer, the
+parcel-to-HUC12 mapping, and forcing rows. Spatial area/perimeter calculations use one metric
+analysis CRS established from the domain; parcel and outlet layers are
+transformed into that CRS before geometry-derived quantities are calculated.
+
 ## Testing
 
 Scientific model development should maintain tests covering at least:
@@ -108,7 +121,7 @@ A scientific or technical report using the model should document:
 - selected load-generation mode
 - pathway definitions
 - all major input data sources
-- probability distributions, reusable distribution definitions, Curve Number and infiltration assumptions, and their rationale
+- probability-distribution assumptions, Curve Number and infiltration assumptions, and their rationale
 - BMP interaction and failure assumptions
 - number of Monte Carlo scenarios
 - random seed

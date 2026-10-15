@@ -4,42 +4,6 @@ from pathlib import Path
 from typing import Dict
 
 import pandas as pd
-import yaml
-
-import run_model
-
-
-def run_config_with_overrides(
-    *,
-    base_config_path: Path,
-    tmp_cfg_path: Path,
-    outputs_dir: Path,
-    n_jobs: int,
-    n_scenarios: int,
-    random_seed: int,
-    bmp_limit_n: int = 5,
-    verbose: bool = False,
-    monkeypatch=None,
-) -> Path:
-    """
-    Materialize a temporary config, run the CLI entry point, and return outputs_dir.
-    """
-    cfg = yaml.safe_load(base_config_path.read_text(encoding="utf-8"))
-    cfg["outputs"] = str(outputs_dir)
-    cfg["n_scenarios"] = int(n_scenarios)
-    cfg["bmp_limit_n"] = int(bmp_limit_n)
-    cfg["random_seed"] = int(random_seed)
-    cfg["parallel"] = {"n_jobs": int(n_jobs)}
-    cfg["verbose"] = bool(verbose)
-
-    tmp_cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
-
-    if monkeypatch is not None:
-        monkeypatch.setattr(run_model, "make_summary_plots", lambda *args, **kwargs: None)
-        monkeypatch.setattr("sys.argv", ["run_model.py", str(tmp_cfg_path)])
-
-    run_model.main()
-    return outputs_dir
 
 
 def canonical_output_paths(outputs_dir: Path, *, expect_load_parameters: bool) -> Dict[str, Path]:

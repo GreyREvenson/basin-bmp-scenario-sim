@@ -25,7 +25,7 @@ See the canonical implementation and tests in the snapshot.
 
 Usage
 -----
-python compare_plet_appendix_c_independent.py --base-config examples/east_fork/inputs/plet/east_fork_plet.yaml
+python compare_plet_appendix_c_independent.py --base-config examples/east_fork/inputs/config/east_fork_plet.yaml
 """
 
 from __future__ import annotations
@@ -34,21 +34,19 @@ import argparse
 import json
 import math
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import yaml
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.input_config import load_and_validate_all
+from src.input_config import load_and_validate_all, normalize_config, resolve_config_paths
 from src.logging_utils import make_logger
 from src.model import Model
 from src.plet_rusle import (
@@ -126,62 +124,6 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
     return {str(k).lower(): v for k, v in cfg.items()}
 
 
-def _resolve_path_like(value: Any, base_dir: Path) -> Any:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if text == "":
-        return value
-    p = Path(text)
-    if p.is_absolute():
-        return str(p)
-    cfg_relative = (base_dir / p).resolve()
-    if cfg_relative.exists():
-        return str(cfg_relative)
-    return str((ROOT / p).resolve())
-
-
-def _resolve_config_paths(cfg: Dict[str, Any], cfg_path: Path) -> Dict[str, Any]:
-    out = dict(cfg)
-    base_dir = cfg_path.parent
-
-    path_keys = [
-        "domain",
-        "parcels",
-        "outlet_loc",
-        "parcel_out",
-        "parcel_up",
-        "parcel_p",
-        "bmp_efficiency",
-        "bmp_cost",
-        "bmp_sel",
-        "outlet_target",
-        "outlet_mean",
-        "outputs",
-        "input_distributions",
-    ]
-    for key in path_keys:
-        if key in out:
-            out[key] = _resolve_path_like(out[key], base_dir)
-
-    lg = out.get("load_generation")
-    if isinstance(lg, dict):
-        lg2 = dict(lg)
-        for key in [
-            "plet_inputs",
-            "hydrology_lookup",
-            "rusle_inputs",
-            "pollutant_concentrations",
-            "groundwater_concentrations",
-            "input_distributions",
-        ]:
-            if key in lg2:
-                lg2[key] = _resolve_path_like(lg2[key], base_dir)
-        out["load_generation"] = lg2
-
-    return out
-
-
 def _normalize_pid(value: Any) -> str:
     text = str(value).strip()
     if text == "":
@@ -195,53 +137,28 @@ def _normalize_pid(value: Any) -> str:
     return text
 
 
-def _explicit_pids_from_parcel_p(base_cfg: Mapping[str, Any]) -> List[str]:
-    df = pd.read_csv(Path(str(base_cfg["parcel_p"])))
-    if "pid" not in df.columns or df.empty:
-        raise ValueError("parcel_p must contain a non-empty pid column")
-    pids = [_normalize_pid(v) for v in df["pid"].tolist()]
-    pids = [p for p in pids if p != "*"]
-    return list(dict.fromkeys(pids))
+def _safe_token(value: Any) -> str:
+    return "".join(
+        ch if ch.isalnum() or ch in {"-", "_", "."} else "_"
+        for ch in str(value)
+    )
 
 
-def _parcel_ids_from_parcels_layer(base_cfg: Mapping[str, Any]) -> List[str]:
-    gdf = gpd.read_file(Path(str(base_cfg["parcels"])))
-    if "pid" not in gdf.columns or gdf.empty:
-        raise ValueError("parcels layer must contain a non-empty pid column")
-    pids = [_normalize_pid(v) for v in gdf["pid"].tolist()]
-    pids = [p for p in pids if p != "*"]
-    return list(dict.fromkeys(pids))
-
-
-def _select_pid(base_cfg: Mapping[str, Any], requested_pid: Optional[str]) -> str:
+def _select_pid(data: Mapping[str, Any], requested_pid: Optional[str]) -> str:
+    parcels = data["parcels"]
+    parcel_ids = {_normalize_pid(pid) for pid in parcels["pid"].tolist()}
     if requested_pid is not None:
         pid = _normalize_pid(requested_pid)
         if pid == "*":
             raise ValueError("--pid may not be '*'")
+        if pid not in parcel_ids:
+            raise ValueError(f"Parcel pid={pid} is not present in the validated parcels input")
         return pid
-    pids = _explicit_pids_from_parcel_p(base_cfg)
-    if not pids:
-        pids = _parcel_ids_from_parcels_layer(base_cfg)
-    if not pids:
-        raise ValueError("No parcel IDs available")
-    return pids[0]
-
-
-def _safe_token(value: Any) -> str:
-    return "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in str(value))
-
-
-def _write_single_pid_probability(path: Path, pid: str) -> None:
-    pd.DataFrame([{"pid": pid, "probability": 1.0}]).to_csv(path, index=False)
-
-
-def _write_single_cps_selection(path: Path, cps: int, cps_values: Iterable[int]) -> None:
-    rows = [{"cps": int(c), "probability": 1.0 if int(c) == int(cps) else 0.0} for c in cps_values]
-    pd.DataFrame(rows).to_csv(path, index=False)
-
-
-def _write_empty_parcel_up(path: Path) -> None:
-    pd.DataFrame([{"pid": "*", "pid_up": None}]).to_csv(path, index=False)
+    selection = data["parcel_p"]
+    eligible = selection.loc[selection["probability"] > 0, "pid"]
+    if eligible.empty:
+        raise ValueError("The validated parcel selection has no positive-probability parcels")
+    return _normalize_pid(eligible.iloc[0])
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
@@ -269,67 +186,39 @@ def _first_present_float(row: Mapping[str, Any], candidates: Sequence[str], defa
     return default
 
 
-def _load_distribution_catalog(path: Optional[str]) -> Dict[str, float]:
-    if not path:
-        return {}
-    df = pd.read_csv(path)
-    if "distribution_id" not in df.columns:
-        return {}
-    out: Dict[str, float] = {}
-    for _, row in df.iterrows():
-        did = str(row.get("distribution_id", "")).strip()
-        if not did:
+def _runtime_concentrations(
+    row: Mapping[str, Any],
+    pollutants: Sequence[str],
+    column_prefix: str,
+) -> Dict[str, float]:
+    concentrations: Dict[str, float] = {}
+    for pollutant in pollutants:
+        if pollutant == "TSS":
             continue
-        if "value" in row and pd.notna(row["value"]):
-            try:
-                out[did] = float(row["value"])
-                continue
-            except Exception:
-                pass
-        if "mean" in row and pd.notna(row["mean"]):
-            try:
-                out[did] = float(row["mean"])
-            except Exception:
-                pass
-    return out
+        column = f"{column_prefix}{pollutant.lower()}_mg_l"
+        value = row.get(column)
+        if value is None or pd.isna(value):
+            raise ValueError(f"Missing realized runtime concentration column {column}")
+        concentrations[pollutant] = float(value)
+    return concentrations
 
 
-def _resolve_numeric_row(row: Mapping[str, Any], dist_map: Mapping[str, float]) -> float:
-    value = row.get("value")
-    if pd.notna(value):
-        text = str(value).strip()
-        try:
-            return float(text)
-        except Exception:
-            if text in dist_map:
-                return float(dist_map[text])
-    did = str(row.get("distribution_id", "")).strip()
-    if did and did in dist_map:
-        return float(dist_map[did])
-    if pd.notna(row.get("mean")):
-        return float(row.get("mean"))
-    return 0.0
-
-
-def _lookup_concentration(
-    table_path: str,
-    pid: str,
-    pollutant: str,
-    dist_map: Mapping[str, float],
-) -> float:
-    df = pd.read_csv(table_path)
-    df["pid"] = df["pid"].astype(str).str.strip()
-    df["pollutant"] = df["pollutant"].astype(str).str.upper().str.strip()
-
-    exact = df[(df["pid"] == str(pid)) & (df["pollutant"] == pollutant)]
-    if not exact.empty:
-        return _resolve_numeric_row(exact.iloc[0], dist_map)
-
-    wildcard = df[(df["pid"] == "*") & (df["pollutant"] == pollutant)]
-    if not wildcard.empty:
-        return _resolve_numeric_row(wildcard.iloc[0], dist_map)
-
-    return 0.0
+def _single_cps_config(
+    base_cfg: Mapping[str, Any],
+    cps: int,
+    scenario_out: Path,
+) -> Dict[str, Any]:
+    cfg = dict(base_cfg)
+    cfg["cps"] = [int(cps)]
+    cfg["n_scenarios"] = 1
+    cfg["bmp_limit_n"] = 1
+    cfg.pop("bmp_limit_usd", None)
+    cfg["bmp_fail_rate"] = 0.0
+    cfg["random_seed"] = 42
+    cfg["verbose"] = False
+    cfg["parallel"] = {"n_jobs": 1}
+    cfg["outputs"] = str(scenario_out)
+    return cfg
 
 
 def _extract_realized_parameters(
@@ -472,218 +361,192 @@ def _run_one_cps(
     scenario_out = root_out / f"pid_{_safe_token(pid)}" / f"cps_{int(cps)}"
     scenario_out.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix=f"cps_{int(cps)}_", dir=str(scenario_out)) as td:
-        tdir = Path(td)
-        parcel_p_single = tdir / "parcel_p_single.csv"
-        bmp_sel_single = tdir / "bmp_sel_single.csv"
-        parcel_up_empty = tdir / "parcel_up_empty.csv"
+    cfg = _single_cps_config(base_cfg, cps, scenario_out)
 
-        _write_single_pid_probability(parcel_p_single, pid)
-        _write_single_cps_selection(bmp_sel_single, cps, base_cfg.get("cps", []))
-        _write_empty_parcel_up(parcel_up_empty)
+    logger, _ = make_logger(scenario_out, verbose=False, console=False)
+    data = load_and_validate_all(cfg, logger)
 
-        cfg = dict(base_cfg)
-        cfg["n_scenarios"] = 1
-        cfg["bmp_limit_n"] = 1
-        cfg.pop("bmp_limit_usd", None)
-        cfg["bmp_fail_rate"] = 0.0
-        cfg["random_seed"] = 42
-        cfg["verbose"] = False
-        cfg["parallel"] = {"n_jobs": 1}
-        cfg["outputs"] = str(scenario_out)
-        cfg["parcel_p"] = str(parcel_p_single)
-        cfg["parcel_up"] = str(parcel_up_empty)
-        cfg["bmp_sel"] = str(bmp_sel_single)
+    if (
+        str(data.get("load_generation", {}).get("mode", "")).strip().lower()
+        != "plet_rusle"
+    ):
+        raise ValueError("This comparison requires load_generation.mode = 'plet_rusle'.")
 
-        lg = cfg.get("load_generation")
-        lg2 = dict(lg) if isinstance(lg, dict) else {}
-        lg2["process_parameter_mode"] = False
-        cfg["load_generation"] = lg2
+    data["parcel_p"] = pd.DataFrame(
+        [{"pid": int(pid), "probability": 1.0}]
+    )
+    model = Model(cfg, data, logger)
+    model.run_all_scenarios()
 
-        logger, _ = make_logger(scenario_out, verbose=False, console=False)
-        data = load_and_validate_all(cfg, logger)
+    bmps_path = scenario_out / "bmps" / "s1.parquet"
+    parcels_path = scenario_out / "parcels" / "s1.parquet"
+    lp_path = scenario_out / "load_parameters" / "s1.parquet"
 
-        if str(data.get("load_generation", {}).get("mode", "")).strip().lower() != "plet_rusle":
-            raise ValueError("This comparison requires load_generation.mode = 'plet_rusle'.")
+    if not bmps_path.exists() or not parcels_path.exists() or not lp_path.exists():
+        raise RuntimeError(f"Expected output files not found for cps={cps} in {scenario_out}")
 
-        model = Model(cfg, data, logger)
-        model.run_all_scenarios()
+    bmps = pd.read_parquet(bmps_path)
+    parcels = pd.read_parquet(parcels_path)
+    lp = pd.read_parquet(lp_path)
 
-        bmps_path = scenario_out / "bmps" / "s1.parquet"
-        parcels_path = scenario_out / "parcels" / "s1.parquet"
-        lp_path = scenario_out / "load_parameters" / "s1.parquet"
+    if bmps.empty:
+        raise RuntimeError(f"No BMP records found for cps={cps}")
+    if len(bmps) != 1:
+        raise RuntimeError(f"Expected exactly one BMP record for cps={cps}, found {len(bmps)}")
 
-        if not bmps_path.exists() or not parcels_path.exists() or not lp_path.exists():
-            raise RuntimeError(f"Expected output files not found for cps={cps} in {scenario_out}")
+    bmp_row = bmps.iloc[0]
+    pid_str = str(pid)
 
-        bmps = pd.read_parquet(bmps_path)
-        parcels = pd.read_parquet(parcels_path)
-        lp = pd.read_parquet(lp_path)
+    parcel_row = parcels[parcels["pid"].astype(str) == pid_str]
+    load_row = lp[lp["pid"].astype(str) == pid_str]
 
-        if bmps.empty:
-            raise RuntimeError(f"No BMP records found for cps={cps}")
-        if len(bmps) != 1:
-            raise RuntimeError(f"Expected exactly one BMP record for cps={cps}, found {len(bmps)}")
+    if parcel_row.empty:
+        raise RuntimeError(f"Parcel pid={pid_str} not found in parcels output for cps={cps}")
+    if load_row.empty:
+        raise RuntimeError(f"Parcel pid={pid_str} not found in load_parameters output for cps={cps}")
 
-        bmp_row = bmps.iloc[0]
-        pid_str = str(pid)
+    parcel_row = parcel_row.iloc[0]
+    load_row = load_row.iloc[0]
 
-        parcel_row = parcels[parcels["pid"].astype(str) == pid_str]
-        load_row = lp[lp["pid"].astype(str) == pid_str]
+    pollutants = [str(p).upper() for p in data["pollutants"]]
 
-        if parcel_row.empty:
-            raise RuntimeError(f"Parcel pid={pid_str} not found in parcels output for cps={cps}")
-        if load_row.empty:
-            raise RuntimeError(f"Parcel pid={pid_str} not found in load_parameters output for cps={cps}")
+    params, extracted_debug = _extract_realized_parameters(load_row)
 
-        parcel_row = parcel_row.iloc[0]
-        load_row = load_row.iloc[0]
+    runoff_conc = _runtime_concentrations(
+        load_row, pollutants, "initial_concentration_"
+    )
+    groundwater_conc = _runtime_concentrations(
+        load_row, pollutants, "initial_groundwater_concentration_"
+    )
 
-        pollutants = [str(p).upper() for p in data["pollutants"]]
+    raw_initial_surface, raw_initial_subsurface, baseline_debug = _canonical_raw_pathways(
+        params,
+        runoff_conc,
+        groundwater_conc,
+        pollutants,
+    )
+    raw_initial = {
+        pol: raw_initial_surface[pol] + raw_initial_subsurface[pol]
+        for pol in pollutants
+    }
 
-        params, extracted_debug = _extract_realized_parameters(load_row)
+    model_initial_surface, model_initial_subsurface = _extract_model_initial_pathways(load_row, pollutants)
 
-        lg_cfg = base_cfg["load_generation"]
-        dist_map = _load_distribution_catalog(base_cfg.get("input_distributions") or lg_cfg.get("input_distributions"))
-        runoff_conc = {
-            pol: _lookup_concentration(str(lg_cfg["pollutant_concentrations"]), pid_str, pol, dist_map)
-            for pol in pollutants
-            if pol != "TSS"
-        }
-        groundwater_conc = {
-            pol: _lookup_concentration(str(lg_cfg["groundwater_concentrations"]), pid_str, pol, dist_map)
-            for pol in pollutants
-            if pol != "TSS"
-        }
-
-        raw_initial_surface, raw_initial_subsurface, baseline_debug = _canonical_raw_pathways(
-            params,
-            runoff_conc,
-            groundwater_conc,
-            pollutants,
+    area_ha = _parcel_area_ha_from_data(data, pid_str)
+    mass_timestep_years = _as_float(bmp_row.get("mass_timestep_years"), 1.0)
+    denom = area_ha * mass_timestep_years
+    if denom <= 0.0:
+        raise RuntimeError(
+            f"Non-positive normalization denominator for pid={pid_str}: "
+            f"area_ha={area_ha}, mass_timestep_years={mass_timestep_years}"
         )
-        raw_initial = {
-            pol: raw_initial_surface[pol] + raw_initial_subsurface[pol]
-            for pol in pollutants
-        }
 
-        model_initial_surface, model_initial_subsurface = _extract_model_initial_pathways(load_row, pollutants)
+    bmp_baseline_mass_kg: Dict[str, float] = {}
+    bmp_treated_baseline_mass_kg: Dict[str, float] = {}
+    bmp_removed_mass_kg: Dict[str, float] = {}
+    bmp_baseline_load_rate: Dict[str, float] = {}
+    bmp_treated_baseline_load_rate: Dict[str, float] = {}
+    bmp_removed_load_rate: Dict[str, float] = {}
+    bmp_treatment_exposure_fraction: Dict[str, float] = {}
+    bmp_realized_efficiency: Dict[str, float] = {}
+    bmp_overall_reduction_fraction: Dict[str, float] = {}
+    raw_final: Dict[str, float] = {}
 
-        area_ha = _parcel_area_ha_from_data(data, pid_str)
-        mass_timestep_years = _as_float(bmp_row.get("mass_timestep_years"), 1.0)
-        denom = area_ha * mass_timestep_years
-        if denom <= 0.0:
-            raise RuntimeError(
-                f"Non-positive normalization denominator for pid={pid_str}: "
-                f"area_ha={area_ha}, mass_timestep_years={mass_timestep_years}"
-            )
+    for pol in pollutants:
+        bmp_baseline_mass_kg[pol] = _as_float(bmp_row.get(f"baseline_mass_{pol}_kg"))
+        bmp_treated_baseline_mass_kg[pol] = _as_float(bmp_row.get(f"treated_baseline_mass_{pol}_kg"))
+        bmp_removed_mass_kg[pol] = _as_float(bmp_row.get(f"removed_mass_{pol}_kg"))
 
-        bmp_baseline_mass_kg: Dict[str, float] = {}
-        bmp_treated_baseline_mass_kg: Dict[str, float] = {}
-        bmp_removed_mass_kg: Dict[str, float] = {}
-        bmp_baseline_load_rate: Dict[str, float] = {}
-        bmp_treated_baseline_load_rate: Dict[str, float] = {}
-        bmp_removed_load_rate: Dict[str, float] = {}
-        bmp_treatment_exposure_fraction: Dict[str, float] = {}
-        bmp_realized_efficiency: Dict[str, float] = {}
-        bmp_overall_reduction_fraction: Dict[str, float] = {}
-        raw_final: Dict[str, float] = {}
+        bmp_baseline_load_rate[pol] = bmp_baseline_mass_kg[pol] / denom
+        bmp_treated_baseline_load_rate[pol] = bmp_treated_baseline_mass_kg[pol] / denom
+        bmp_removed_load_rate[pol] = bmp_removed_mass_kg[pol] / denom
 
+        bmp_treatment_exposure_fraction[pol] = _as_float(
+            bmp_row.get(f"treatment_exposure_fraction_{pol}"), default=float("nan")
+        )
+        bmp_realized_efficiency[pol] = _as_float(
+            bmp_row.get(f"realized_efficiency_{pol}"), default=float("nan")
+        )
+        bmp_overall_reduction_fraction[pol] = _as_float(
+            bmp_row.get(f"overall_reduction_fraction_{pol}"), default=float("nan")
+        )
+
+        raw_final[pol] = raw_initial[pol] - bmp_removed_load_rate[pol]
+
+    model_initial = {
+        pol: _as_float(parcel_row.get(f"baseline_load_rate_{pol}_kg_ha_yr"))
+        for pol in pollutants
+    }
+    model_final = {
+        pol: _as_float(parcel_row.get(f"final_load_rate_{pol}_kg_ha_yr"))
+        for pol in pollutants
+    }
+
+    abs_diff_initial = {pol: abs(model_initial[pol] - raw_initial[pol]) for pol in pollutants}
+    abs_diff_final = {pol: abs(model_final[pol] - raw_final[pol]) for pol in pollutants}
+    pct_diff_initial = {pol: _pct_diff(model_initial[pol], raw_initial[pol]) for pol in pollutants}
+    pct_diff_final = {pol: _pct_diff(model_final[pol], raw_final[pol]) for pol in pollutants}
+
+    pathway_abs_diff_surface = {
+        pol: abs(model_initial_surface[pol] - raw_initial_surface[pol])
+        for pol in pollutants
+    }
+    pathway_abs_diff_subsurface = {
+        pol: abs(model_initial_subsurface[pol] - raw_initial_subsurface[pol])
+        for pol in pollutants
+    }
+
+    debug_inputs = dict(extracted_debug)
+    debug_inputs.update(baseline_debug)
+    debug_inputs["area_ha"] = area_ha
+    debug_inputs["mass_timestep_years"] = mass_timestep_years
+
+    if debug:
+        print(f"\n[DEBUG] CPS={cps} PID={pid_str}")
+        for k, v in debug_inputs.items():
+            print(f"[DEBUG] {k} = {v}")
         for pol in pollutants:
-            bmp_baseline_mass_kg[pol] = _as_float(bmp_row.get(f"baseline_mass_{pol}_kg"))
-            bmp_treated_baseline_mass_kg[pol] = _as_float(bmp_row.get(f"treated_baseline_mass_{pol}_kg"))
-            bmp_removed_mass_kg[pol] = _as_float(bmp_row.get(f"removed_mass_{pol}_kg"))
-
-            bmp_baseline_load_rate[pol] = bmp_baseline_mass_kg[pol] / denom
-            bmp_treated_baseline_load_rate[pol] = bmp_treated_baseline_mass_kg[pol] / denom
-            bmp_removed_load_rate[pol] = bmp_removed_mass_kg[pol] / denom
-
-            bmp_treatment_exposure_fraction[pol] = _as_float(
-                bmp_row.get(f"treatment_exposure_fraction_{pol}"), default=float("nan")
-            )
-            bmp_realized_efficiency[pol] = _as_float(
-                bmp_row.get(f"realized_efficiency_{pol}"), default=float("nan")
-            )
-            bmp_overall_reduction_fraction[pol] = _as_float(
-                bmp_row.get(f"overall_reduction_fraction_{pol}"), default=float("nan")
+            print(
+                f"[DEBUG] {pol}: "
+                f"model_surface={model_initial_surface[pol]:.12g}, "
+                f"raw_surface={raw_initial_surface[pol]:.12g}, "
+                f"model_subsurface={model_initial_subsurface[pol]:.12g}, "
+                f"raw_subsurface={raw_initial_subsurface[pol]:.12g}, "
+                f"bmp_removed_lr={bmp_removed_load_rate[pol]:.12g}"
             )
 
-            raw_final[pol] = raw_initial[pol] - bmp_removed_load_rate[pol]
-
-        model_initial = {
-            pol: _as_float(parcel_row.get(f"baseline_load_rate_{pol}_kg_ha_yr"))
-            for pol in pollutants
-        }
-        model_final = {
-            pol: _as_float(parcel_row.get(f"final_load_rate_{pol}_kg_ha_yr"))
-            for pol in pollutants
-        }
-
-        abs_diff_initial = {pol: abs(model_initial[pol] - raw_initial[pol]) for pol in pollutants}
-        abs_diff_final = {pol: abs(model_final[pol] - raw_final[pol]) for pol in pollutants}
-        pct_diff_initial = {pol: _pct_diff(model_initial[pol], raw_initial[pol]) for pol in pollutants}
-        pct_diff_final = {pol: _pct_diff(model_final[pol], raw_final[pol]) for pol in pollutants}
-
-        pathway_abs_diff_surface = {
-            pol: abs(model_initial_surface[pol] - raw_initial_surface[pol])
-            for pol in pollutants
-        }
-        pathway_abs_diff_subsurface = {
-            pol: abs(model_initial_subsurface[pol] - raw_initial_subsurface[pol])
-            for pol in pollutants
-        }
-
-        debug_inputs = dict(extracted_debug)
-        debug_inputs.update(baseline_debug)
-        debug_inputs["area_ha"] = area_ha
-        debug_inputs["mass_timestep_years"] = mass_timestep_years
-
-        if debug:
-            print(f"\n[DEBUG] CPS={cps} PID={pid_str}")
-            for k, v in debug_inputs.items():
-                print(f"[DEBUG] {k} = {v}")
-            for pol in pollutants:
-                print(
-                    f"[DEBUG] {pol}: "
-                    f"model_surface={model_initial_surface[pol]:.12g}, "
-                    f"raw_surface={raw_initial_surface[pol]:.12g}, "
-                    f"model_subsurface={model_initial_subsurface[pol]:.12g}, "
-                    f"raw_subsurface={raw_initial_subsurface[pol]:.12g}, "
-                    f"bmp_removed_lr={bmp_removed_load_rate[pol]:.12g}"
-                )
-
-        return ScenarioComparison(
-            cps=int(cps),
-            pid=pid_str,
-            pollutants=pollutants,
-            area_ha=area_ha,
-            mass_timestep_years=mass_timestep_years,
-            model_initial=model_initial,
-            model_final=model_final,
-            raw_initial=raw_initial,
-            raw_final=raw_final,
-            raw_initial_surface=raw_initial_surface,
-            raw_initial_subsurface=raw_initial_subsurface,
-            model_initial_surface=model_initial_surface,
-            model_initial_subsurface=model_initial_subsurface,
-            bmp_baseline_mass_kg=bmp_baseline_mass_kg,
-            bmp_treated_baseline_mass_kg=bmp_treated_baseline_mass_kg,
-            bmp_removed_mass_kg=bmp_removed_mass_kg,
-            bmp_baseline_load_rate=bmp_baseline_load_rate,
-            bmp_treated_baseline_load_rate=bmp_treated_baseline_load_rate,
-            bmp_removed_load_rate=bmp_removed_load_rate,
-            bmp_treatment_exposure_fraction=bmp_treatment_exposure_fraction,
-            bmp_realized_efficiency=bmp_realized_efficiency,
-            bmp_overall_reduction_fraction=bmp_overall_reduction_fraction,
-            abs_diff_initial=abs_diff_initial,
-            abs_diff_final=abs_diff_final,
-            pct_diff_initial=pct_diff_initial,
-            pct_diff_final=pct_diff_final,
-            pathway_abs_diff_surface=pathway_abs_diff_surface,
-            pathway_abs_diff_subsurface=pathway_abs_diff_subsurface,
-            debug_inputs=debug_inputs,
-            output_dir=scenario_out,
-        )
+    return ScenarioComparison(
+        cps=int(cps),
+        pid=pid_str,
+        pollutants=pollutants,
+        area_ha=area_ha,
+        mass_timestep_years=mass_timestep_years,
+        model_initial=model_initial,
+        model_final=model_final,
+        raw_initial=raw_initial,
+        raw_final=raw_final,
+        raw_initial_surface=raw_initial_surface,
+        raw_initial_subsurface=raw_initial_subsurface,
+        model_initial_surface=model_initial_surface,
+        model_initial_subsurface=model_initial_subsurface,
+        bmp_baseline_mass_kg=bmp_baseline_mass_kg,
+        bmp_treated_baseline_mass_kg=bmp_treated_baseline_mass_kg,
+        bmp_removed_mass_kg=bmp_removed_mass_kg,
+        bmp_baseline_load_rate=bmp_baseline_load_rate,
+        bmp_treated_baseline_load_rate=bmp_treated_baseline_load_rate,
+        bmp_removed_load_rate=bmp_removed_load_rate,
+        bmp_treatment_exposure_fraction=bmp_treatment_exposure_fraction,
+        bmp_realized_efficiency=bmp_realized_efficiency,
+        bmp_overall_reduction_fraction=bmp_overall_reduction_fraction,
+        abs_diff_initial=abs_diff_initial,
+        abs_diff_final=abs_diff_final,
+        pct_diff_initial=pct_diff_initial,
+        pct_diff_final=pct_diff_final,
+        pathway_abs_diff_surface=pathway_abs_diff_surface,
+        pathway_abs_diff_subsurface=pathway_abs_diff_subsurface,
+        debug_inputs=debug_inputs,
+        output_dir=scenario_out,
+    )
 
 
 def main() -> None:
@@ -693,11 +556,20 @@ def main() -> None:
     if not base_cfg_path.exists():
         raise FileNotFoundError(f"Base config not found: {base_cfg_path}")
 
-    base_cfg = _resolve_config_paths(_load_yaml(base_cfg_path), base_cfg_path)
-    pid = _select_pid(base_cfg, args.pid)
+    base_cfg = normalize_config(_load_yaml(base_cfg_path))
+    resolve_config_paths(base_cfg, base_cfg_path)
 
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    logger, _ = make_logger(out_dir, verbose=False, console=False)
+    selection_data = load_and_validate_all(base_cfg, logger)
+    if (
+        str(selection_data.get("load_generation", {}).get("mode", "")).strip().lower()
+        != "plet_rusle"
+    ):
+        raise ValueError("This comparison requires load_generation.mode = 'plet_rusle'.")
+    pid = _select_pid(selection_data, args.pid)
 
     cps_values = [int(x) for x in base_cfg.get("cps", [])]
     if not cps_values:

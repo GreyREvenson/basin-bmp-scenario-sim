@@ -7,8 +7,6 @@ import pytest
 
 from src.constants import (
     CFG_BMP_COST,
-    CFG_OUTLET_MEAN,
-    CFG_OUTLET_TARGET,
     COL_MEAN,
     COL_OID,
     COL_POLLUTANT,
@@ -154,8 +152,6 @@ def test_make_summary_plots_supports_target_and_mean_axes(tmp_path) -> None:
     logger = DummyLogger()
     cfg = {
         CFG_BMP_COST: "bmp_cost.csv",
-        CFG_OUTLET_TARGET: "outlet_target.csv",
-        CFG_OUTLET_MEAN: "outlet_mean.csv",
     }
     data = {
         DATA_POLLUTANTS: ["TN"],

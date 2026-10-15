@@ -2,181 +2,278 @@
 
 [← Back to main README](../readme.md)
 
-## Common numeric value and distribution schema
+## Physical input files
 
-Numeric model inputs use a common row-level schema. Depending on the table, identifier columns come first, followed by any of these distribution columns:
+A typical run uses:
 
-    value, distribution_id, mean, sd, min, p05, p50, p95, max
+```text
+inputs/
+  config/model.yaml
+  domain/domain.gpkg
+  parcels/parcels.gpkg
+  outlets/outlets.gpkg
+  bmps/bmp_efficiency.csv
+  bmps/bmp_cost.csv              # optional
+```
 
-Percentile columns may use other `pXX` levels. Accepted forms and validation rules are documented in [Standardized numeric inputs and distributions](input_distributions.md).
+Parcel-side model variables are stored inside `parcels.gpkg`. The GeoPackage file may be renamed or moved; update only the YAML `parcels` path. Internal table names are the model schema.
 
-The optional top-level `input_distributions` CSV stores reusable named distributions. A use-site row can reference one with `distribution_id` instead of repeating its statistics.
+## `parcels.gpkg`
 
-## Common input files
+### Structural tables
 
-### `domain`
+`parcels` is the required spatial layer. It contains only parcel identity and geometry:
 
-Watershed or domain geometry used to define the modeled spatial extent.
+- `pid` — unique integer parcel identifier and the GeoPackage feature/primary key (`INTEGER PRIMARY KEY`). There is no separate `fid` parcel identifier.
+- geometry — polygon/multipolygon geometry.
 
-### `parcels`
+All parcel references in other GeoPackage tables (`pid`, `pid_up`) are integers. Non-spatial attribute tables use a technical integer `id` primary key where QGIS needs a stable editable row identifier; the model ignores that `id`.
 
-Parcel or field polygons. Parcel IDs must be unique after any domain clipping performed by the model.
+Parcel area and perimeter are derived from geometry after clipping to the domain.
 
-### `outlet_loc`
+`parcel_up` is an optional attribute table with one upstream edge per row:
 
-Modeled outlet locations.
+```text
+pid | pid_up
+3   | 1
+3   | 2
+```
 
-### `parcel_out`
+`parcel_outlets` is required and contains one parcel-to-outlet relationship per row:
 
-Maps parcel IDs to one or more outlet IDs. Referenced outlet IDs must exist in `outlet_loc`.
+```text
+pid | oid
+1   | O1
+1   | O2
+```
 
-### `parcel_up`
+The structural tables do not contain modeled input variables.
 
-Optional upstream parcel connectivity. This is used by BMP calculations that require contributing-area relationships.
+A parcel GeoPackage may also contain the metadata table:
 
-### `parcel_p`
+```text
+model_input_schema
+schema_version
+3
+```
 
-Optional parcel-selection probability information. Probabilities must be valid for the parcels used by the scenario engine.
+Schema version `3` identifies the integer-PID/NULL-default one-variable-per-table layout with inline-only distributions (no named distribution IDs). Unknown
+`input_*` tables are rejected so misspelled variable names cannot be silently
+ignored.
 
-### `input_distributions`
+### Editing in QGIS
 
-Optional reusable numeric distribution catalog configured at the top level:
+Schema-v3 GeoPackages are designed to be editable directly in QGIS. The spatial `parcels` layer uses `pid` itself as its integer feature/primary key. Attribute-only tables have a separate technical `id INTEGER PRIMARY KEY` so QGIS can identify and edit individual rows; this `id` is not a parcel identifier and is ignored by the model.
 
-    input_distributions: ./inputs/input_distributions.csv
+For a default row, leave `pid` empty/NULL in QGIS. Do not enter `*`. For delivery-ratio defaults, leave both `pid` and `oid` NULL. Parcel-specific rows must use an existing integer `pid`. Because relationship and input tables reference `parcels.pid`, changing an existing parcel PID should be treated as a schema/data migration rather than an ordinary attribute edit.
 
-Key column: `distribution_id`. Every catalog row must contain one valid fixed-value or distribution specification.
+## One variable per `input_*` table
 
-### `bmp_efficiency`
+Every parcel-side user input variable has its own GeoPackage attribute table. Numeric tables use the same standardized value/distribution columns:
 
-BMP efficiency values and distributions by CPS, pollutant, and, when pathway-aware, pathway.
+```text
+value, mean, sd, min,
+p05, p10, p25, p50, p75, p90, p95, max,
+sample_group, units, notes
+```
 
-Statistical mode requires complete coverage for every active pathway. `plet_rusle` requires surface coverage and defaults missing correctly labeled subsurface efficiency to zero with logging.
 
-### `bmp_cost`
+Most parcel-specific variable tables are keyed by integer `pid`. Where a table supports a package-wide default, leave `pid` as SQL `NULL`; an exact integer `pid` row overrides that default. The legacy string `"*"` is invalid in PID fields.
 
-Optional BMP cost values and distributions used for cost accounting and, when configured, BMP-selection weighting. The existing `unit` column remains required because cost scaling depends on the cost unit.
+### Parcel selection
 
-### `delivery_ratios`
+`input_selection_weight`
 
-Optional parcel-to-outlet delivery ratios used to attenuate loads before outlet evaluation.
+```text
+pid | value | units | notes
+```
 
-### `outlet_target`
+Weights are deterministic, finite, and nonnegative. If the table is absent, parcel selection is uniform. A row with `pid IS NULL` may supply a default.
 
-Optional outlet pollutant reduction targets.
+### Parcel-to-HUC12 relationship
 
-### `outlet_mean`
+When the top-level configuration supplies `plet_forcing`, `parcels.gpkg` must also contain:
 
-Optional outlet mean-load reference values.
+`parcel_huc12`
 
-## Statistical-mode load inputs
+```text
+pid | huc12 | area_fraction
+```
 
-### `pollutant_load_rate`
+Each modeled parcel has one dominant HUC12; climate inputs are not area-weighted across boundaries. `huc12` is 12-digit text. The preparation utilities write `area_fraction` as the fraction of parcel area within the assigned HUC12; the loader accepts a table without this optional QA field, but validates it when present and logs a warning below 0.75 to the model's `log.txt` rather than the console. The relationship is normally generated by `utils/download_wbd_huc12.py`; the lower-level `utils/create_parcel_huc12.py` can be used when HUC12 polygons are already available locally.
 
-Required in statistical mode. It may contain:
+### HUC12 PLET forcing GeoPackage
 
-- explicit parcel × pollutant × pathway values or distributions
-- one aggregate parcel × pollutant value or distribution that is subsequently split with configured pathway fractions
+Configure the optional forcing file with:
 
-`pid="*"` may define a default for all parcels, with exact parcel rows overriding the default for the same pollutant and pathway.
+```yaml
+plet_forcing: ../plet/huc12s_plet_deterministic.gpkg
+```
 
-See [Statistical load-generation mode](statistical_mode.md).
+The GeoPackage contains a spatial `huc12` layer keyed by 12-character `huc12` text. The layer stores WBD geometry and metadata (`name`, `states`, `areaacres`, `areasqkm`) but **not** PLET model values.
 
-## `plet_rusle` load inputs
+PLET values are stored in separate HUC12-keyed tables:
 
-### `load_generation.plet_inputs`
+- `input_avg_rain_in`
+- `input_annual_precip_in`
+- `input_rain_days`
+- `input_rain_correction_fraction`
+- `input_runoff_day_fraction`
+- `input_hsg` (fixed HSG classification)
+- `input_rusle_r`, `input_rusle_k`, `input_rusle_ls`, `input_rusle_c`, `input_rusle_p` (also keyed by PLET `land_cover`)
+- `input_sediment_n_pct`, `input_sediment_p_pct` (sediment nutrient percentages)
+- `input_surface_concentration`, `input_subsurface_concentration` (also keyed by PLET `land_cover` and `pollutant`)
 
-Required long-form PLET parcel parameter table. It supplies climate variables and fixed `land_cover` and `hsg` classifications. Numeric rows use the standardized fixed-value and distribution schema and may use `pid="*"` defaults with parcel-specific overrides.
+Numeric tables use the common distribution columns (`value`, `mean`, `sd`, bounds/percentiles, `sample_group`, `units`, `notes`); HSG uses fixed `value` only. HUC12 distributions are sampled once per HUC12 per scenario and shared by parcels mapped to that HUC12 (and to its PLET land-cover class for land-cover-indexed inputs) unless an explicit `sample_group` requests broader sharing. If any HUC12 parameter rows are supplied, every assigned HUC12 must have at least one; a missing variable can instead come from a parcel-specific row or parcel default. When all HUC12 tables are empty, climate inputs must come from parcel tables.
 
-`cn` and `infiltration_fraction` are **not** supplied in this table.
+Use `utils/download_wbd_huc12.py` to download/refresh the HUC12 geometry and regenerate `parcel_huc12`. The optional `--initial-plet-export path/to/PLET_export.xlsx` initializes fixed values for `AVG_RAIN`, `RAIN_DAYS`, and `ANNUAL_RAINFALL` in their corresponding tables from the `1. Watershed Land Use` sheet. This option is unavailable after any HUC12 input table contains values. Subsequent refreshes preserve input rows only for HUC12s retained in the refreshed spatial layer; back up edited inputs first.
 
-### `load_generation.hydrology_lookup`
+The utility applies `--area-fraction-threshold` (default `0.75`) when deciding which downloaded HUC12 polygons to retain. A HUC12 is kept only if at least one parcel has at least that fraction of its area within the HUC12. The same threshold is used to report low-confidence dominant parcel assignments.
 
-Required long-form land-cover/HSG hydrology input table. It contains exactly one `cn` and one `infiltration_fraction` row for every supported land-cover × HSG pairing.
+For these forcing variables, HSG, RUSLE factors, and concentrations, precedence is **parcel-specific `input_*` row > matching HUC12 `input_*` row > `pid IS NULL` parcel default**. RUSLE and concentration rows match the parcel's effective PLET land cover; concentration rows also match pollutant and pathway.
 
-Both parameters may be supplied as fixed values or distributions. This file replaces the old source-code data file `src/data/plet_hydrology_lookup.csv`.
+### PLET parcel variables
 
-### `load_generation.rusle_inputs`
+Each of these tables is keyed by `pid`:
 
-Optional long-form RUSLE parameter table. Numeric rows use the common distribution schema and may use `pid="*"` defaults. A parcel with RUSLE data must have a complete factor set and may supply `sdr` to override the default sediment delivery ratio of 1.0.
+- `input_avg_rain_in` (PLET `AVG_RAIN`, inches/event; optional direct event-rainfall forcing)
+- `input_annual_precip_in` (legacy/derived forcing)
+- `input_rain_days`
+- `input_rain_correction_fraction` (required only when `input_avg_rain_in` is not supplied)
+- `input_runoff_day_fraction`
+- `input_land_cover`
+- `input_hsg`
+- `input_ia_ratio`
 
-### `load_generation.pollutant_concentrations`
+`input_land_cover` and `input_hsg` are categorical and therefore require fixed `value` entries; distributions are not allowed.
 
-Runoff concentration values and distributions. Required when TN or TP is modeled. TSS concentration is also needed when RUSLE is not available for a parcel and TSS is modeled. `pid="*"` defaults and parcel-specific overrides are supported.
+PLET precipitation forcing may be supplied in either of two forms:
 
-### `load_generation.groundwater_concentrations`
+1. **Direct PLET form:** `input_avg_rain_in` + `input_rain_days` + `input_runoff_day_fraction`. `avg_rain_in` is the PLET Input Data Server `AVG_RAIN` value and is used directly as event rainfall `P`.
+2. **Derived form:** `input_annual_precip_in` + `input_rain_correction_fraction` + `input_rain_days` + `input_runoff_day_fraction`. The model derives `P = annual_precip_in * rain_correction_fraction / (rain_days * runoff_day_fraction)`.
 
-Required for each modeled non-TSS pollutant. Used with PLET infiltration volume to calculate the `subsurface` pathway. `pid="*"` defaults and parcel-specific overrides are supported.
+If `input_avg_rain_in` is present for a parcel, it is authoritative. Annual runoff is still multiplied by the corrected number of runoff-producing rain days, `rain_days * runoff_day_fraction`. For subsurface infiltration, corrected annual precipitation is reconstructed as `avg_rain_in * rain_days * runoff_day_fraction`, which is algebraically equivalent to `annual_precip_in * rain_correction_fraction` when `AVG_RAIN` comes from PLET Equation 3.
 
-## Recommended PLET input layout
 
-    inputs/
-      plet/
-        input_distributions.csv
-        plet_inputs.csv
-        plet_hydrology_lookup.csv
-        rusle_inputs.csv
-        pollutant_concentrations.csv
-        groundwater_concentrations.csv
-        bmp_efficiency.csv
-        bmp_cost.csv
-        ...spatial and routing inputs...
+### Curve number and infiltration fraction
 
-The model keeps conceptually different variable families in separate files while using the same distribution columns for all numeric quantities.
+PLET hydrology assumptions are user inputs stored in the same parcel GeoPackage:
 
-## Output directory
+- `input_curve_number`
+- `input_infiltration_fraction`
 
-Current canonical outputs are written below the configured `outputs` directory.
+These two tables are keyed by:
 
-### Per-BMP records
+```text
+land_cover | hsg
+```
 
-    bmps/s{scenario}.parquet
+and then use the standard numeric/distribution columns. Every land-cover × HSG pair actually used by modeled parcels must have both a curve-number definition and an infiltration-fraction definition. Reusable tables may contain additional valid pairings. Either variable may be fixed or stochastic.
 
-Contains individual BMP placement records and associated pollutant-treatment and removal information.
+There is no separate `hydrology_lookup` file or source-code fallback.
 
-### Per-parcel records
+### RUSLE and sediment variables
 
-    parcels/s{scenario}.parquet
+Each table is keyed by `pid`:
 
-Contains parcel baseline and final pollutant information for each scenario.
+- `input_rusle_r`
+- `input_rusle_k`
+- `input_rusle_ls`
+- `input_rusle_c`
+- `input_rusle_p`
+- `input_sediment_delivery_ratio`
+- `input_sediment_n_pct`
+- `input_sediment_p_pct`
+- `input_enrichment_ratio`
 
-### PLET/RUSLE load diagnostics
+The loader assembles these tables into the existing runtime RUSLE parameter representation before scenario execution.
 
-    load_parameters/s{scenario}.parquet
+### Statistical load rate
 
-Written when PLET/RUSLE load-generation diagnostics are available. The production PLET pathways are `surface` and `subsurface`; compatibility diagnostic fields may also be retained for older callers or tests and should not be confused with additional production pathways.
+`input_pollutant_load_rate` is required in statistical mode.
 
-### Scenario metrics
+Keys:
 
-    scenario_metrics/s{scenario}.parquet
+- `pid`
+- `pollutant`
+- optional `pathway`
 
-Canonical per-scenario metrics.
+The table uses the common numeric/distribution schema. `pid IS NULL` defaults and parcel-specific integer-PID overrides are supported.
 
-### Outlet trajectories
+### PLET pollutant concentrations
 
-    outlet_trajectories/all_scenarios.parquet
+PLET/RUSLE uses two separate input variables:
 
-Aggregated outlet trajectory data used for downstream plotting and scenario comparison.
+- `input_surface_concentration`
+- `input_subsurface_concentration`
 
-### Logs
+Both are keyed by:
 
-    log.txt
-    logs/s{scenario}.txt
+```text
+pid | pollutant
+```
 
-The driver writes the overall log, while scenario workers can write scenario-specific logs. PLET/RUSLE logs also report cases where subsurface BMP efficiency defaults to zero or unexpected pathway labels are ignored.
+and use the common numeric/distribution schema. The pathway is implied by the table name rather than stored in a `pathway` column.
 
-### Plots
+### Delivery-ratio variables
 
-Summary `plot_*` outputs visualize scenario trajectories such as implementation cost or BMP count versus outlet load or target metrics.
+The parcel-to-outlet relationship remains in `parcel_outlets`. Each optional delivery variable is stored separately:
 
-## Interpreting outputs
+- `input_sdr_f_to_s`
+- `input_sdr_s_to_o`
+- `input_ndr_f_to_s`
+- `input_ndr_s_to_o`
 
-Each scenario is one possible implementation realization. Scientific interpretation should focus on the **distribution** of outcomes across scenarios.
+Keys:
 
-Useful summaries include:
+```text
+pid | oid
+```
 
-- median and percentile pollutant reductions
-- probability of meeting a target
-- cost distributions
-- BMP portfolio composition
-- sensitivity to baseline-load assumptions
-- differences between configuration alternatives
+These are deterministic fractions in `[0, 1]`. An exact parcel/outlet row overrides an optional global row where both `pid` and `oid` are SQL `NULL`. Partial defaults (only one key NULL) are invalid. If a table is absent, the neutral value `1.0` is used.
+
+## `outlets.gpkg`
+
+Configured with:
+
+```yaml
+outlets: ../outlets/outlets.gpkg
+```
+
+`outlets` is the required spatial layer with unique `oid` and point geometry.
+
+`outlet_stats` is an optional attribute table keyed by `oid × pollutant` with optional nonnegative `target` and `mean` columns.
+
+## Other CSV inputs
+
+
+`bmp_efficiency` defines BMP efficiency values/distributions by CPS, pollutant, and pathway where applicable.
+
+`bmp_cost` is optional and defines BMP cost inputs. Each row represents one
+additive cost component for a CPS code. Multiple rows may therefore share the
+same `cps`; their independently sampled/scaled component costs are summed for
+each individual BMP placement. Use `cost_component` to give each component a
+unique descriptive name. Supported units include `USD/ha`, `USD/m`, and
+`USD/project`, so components with different scaling can be combined for one
+BMP. Legacy files without `cost_component` remain valid and are interpreted as
+a single component named `total`.
+
+The optional `citations` and `notes` columns are metadata only and do not
+affect sampling. For example:
+
+```csv
+cps,cps_name,cost_component,unit,value,mean,sd,min,p05,p50,p95,max,citations,notes
+340,Cover Crop,seed,USD/ha,,,,40,45,55,70,80,https://example.org/source,Example only
+340,Cover Crop,establishment,USD/ha,,,,20,30,50,80,100,https://example.org/source,Example only
+```
+
+## Canonical outputs
+
+Below the configured `outputs` directory, the model writes:
+
+- `bmps/s{scenario}.parquet`
+- `parcels/s{scenario}.parquet`
+- `load_parameters/s{scenario}.parquet` for PLET/RUSLE diagnostics
+- `scenario_metrics/s{scenario}.parquet`
+- `outlet_trajectories/all_scenarios.parquet`
+- logs and summary plots

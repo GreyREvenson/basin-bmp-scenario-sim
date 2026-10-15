@@ -15,8 +15,6 @@ from matplotlib.collections import LineCollection
 import numpy as np
 from .constants import (
     CFG_BMP_COST,
-    CFG_OUTLET_MEAN,
-    CFG_OUTLET_TARGET,
     COL_MEAN,
     COL_OID,
     COL_POLLUTANT,
@@ -180,11 +178,11 @@ def make_summary_plots(
         x_axes.append(XAXIS_COST)
 
     y_axes = [YAXIS_TOTAL]
-    if cfg.get(CFG_OUTLET_TARGET):
-        y_axes.append(YAXIS_TARGET)
-    if cfg.get(CFG_OUTLET_MEAN):
-        y_axes.append(YAXIS_MEAN)
     target_map, mean_map = _build_denominator_maps(data)
+    if target_map:
+        y_axes.append(YAXIS_TARGET)
+    if mean_map:
+        y_axes.append(YAXIS_MEAN)
     warned_missing_denominator = set()
 
     plots_dir = Path(outputs_dir) / "plots"
@@ -195,7 +193,7 @@ def make_summary_plots(
                 for xax in x_axes:
                     for yax in y_axes:
                         with log_scope(label=f"plot pol={pol} oid={oid} x={xax} y={yax}", logger=logger):
-                            if yax == YAXIS_TARGET and cfg.get(CFG_OUTLET_TARGET):
+                            if yax == YAXIS_TARGET:
                                 tgt = target_map.get((str(oid), str(pol)))
                                 if tgt is None or not np.isfinite(tgt) or tgt <= 0.0:
                                     key = (str(oid), str(pol), YAXIS_TARGET)
@@ -206,7 +204,7 @@ def make_summary_plots(
                                         )
                                         warned_missing_denominator.add(key)
                                     continue
-                            if yax == YAXIS_MEAN and cfg.get(CFG_OUTLET_MEAN):
+                            if yax == YAXIS_MEAN:
                                 mu = mean_map.get((str(oid), str(pol)))
                                 if mu is None or not np.isfinite(mu) or mu <= 0.0:
                                     key = (str(oid), str(pol), YAXIS_MEAN)

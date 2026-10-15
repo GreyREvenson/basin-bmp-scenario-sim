@@ -6,8 +6,6 @@ import pytest
 
 from src.constants import (
     CFG_BMP_COST,
-    CFG_OUTLET_MEAN,
-    CFG_OUTLET_TARGET,
     COL_MEAN,
     COL_OID,
     COL_POLLUTANT,
@@ -75,7 +73,6 @@ def test_make_summary_plots_warns_once_for_missing_target_denominator(tmp_path) 
     logger = DummyLogger()
     cfg = {
         CFG_BMP_COST: "bmp_cost.csv",
-        CFG_OUTLET_TARGET: "outlet_target.csv",
     }
     data = {
         DATA_POLLUTANTS: ["TN"],
@@ -100,7 +97,6 @@ def test_make_summary_plots_warns_once_for_missing_mean_denominator(tmp_path) ->
     logger = DummyLogger()
     cfg = {
         CFG_BMP_COST: "bmp_cost.csv",
-        CFG_OUTLET_MEAN: "outlet_mean.csv",
     }
     data = {
         DATA_POLLUTANTS: ["TN"],

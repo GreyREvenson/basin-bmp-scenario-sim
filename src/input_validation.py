@@ -21,6 +21,9 @@ from .constants import (
     CFG_BMP_LIMIT_N,
     CFG_BMP_LIMIT_USD,
     CFG_BUFFER_DEPTH_FT,
+    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
+    CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+    CFG_DETERMINISTIC_PARCEL_ORDER,
     CFG_N_SCENARIOS,
     CFG_PARALLEL,
     CFG_POLLUTANT_LOAD_RATE,
@@ -32,7 +35,7 @@ from .constants import (
     LOAD_CONCENTRATIONS,
     LOAD_GROUNDWATER_CONCENTRATIONS,
 )
-from .input_distributions import DISTRIBUTION_ID, stats_from_row
+from .input_distributions import stats_from_row
 from .utils import ci_get
 
 
@@ -111,6 +114,7 @@ _TABLE_PHYSICAL_DOMAINS: Dict[str, PhysicalDomain] = {
 
 _PARAMETER_PHYSICAL_DOMAINS: Dict[str, PhysicalDomain] = {
     "annual_precip_in": NONNEGATIVE_DOMAIN,
+    "avg_rain_in": NONNEGATIVE_DOMAIN,
     "rain_days": NONNEGATIVE_DOMAIN,
     "rain_correction_fraction": FRACTION_DOMAIN,
     "runoff_day_fraction": FRACTION_DOMAIN,
@@ -353,11 +357,9 @@ def validate_numeric_distribution_rows(df: pd.DataFrame, label: str) -> None:
     if df is None or df.empty:
         return
     for index, row in df.iterrows():
-        distribution_id = row.get(DISTRIBUTION_ID)
         stats = _row_stats_raw(row)
         if not stats:
-            suffix = f" (distribution_id={distribution_id!r})" if _nonblank(distribution_id) else ""
-            raise ValueError(f"{label} row {index} has no fixed value or distribution statistics{suffix}")
+            raise ValueError(f"{label} row {index} has no fixed value or distribution statistics")
         has_value = "value" in stats
         distribution_keys = set(stats) - {"value"}
         if has_value and distribution_keys:
@@ -479,34 +481,6 @@ def validate_stats_rows(df: pd.DataFrame, label: str) -> None:
     validate_physical_distribution_rows(df, label)
 
 
-def validate_distribution_catalog(catalog: pd.DataFrame) -> None:
-    """Validate reusable distribution identifiers and numeric definitions.
-
-        Parameters
-        ----------
-        catalog : pd.DataFrame
-            Reusable distribution catalog, if configured.
-
-        Raises
-        ------
-        ValueError
-            If ``distribution_id`` values are blank or duplicated.
-        
-    """
-    require_columns(catalog, [DISTRIBUTION_ID], "input_distributions")
-    raw_ids = catalog[DISTRIBUTION_ID]
-    blank_ids = raw_ids.isna() | raw_ids.astype(str).str.strip().eq("")
-    if blank_ids.any():
-        rows = catalog.index[blank_ids].tolist()
-        raise ValueError(f"input_distributions contains blank distribution_id values at rows {rows}")
-    normalized_ids = raw_ids.astype(str).str.strip()
-    duplicate = normalized_ids.duplicated(keep=False)
-    if duplicate.any():
-        ids = sorted(normalized_ids.loc[duplicate].unique().tolist())
-        raise ValueError(f"input_distributions contains duplicate distribution_id values: {ids}")
-    validate_numeric_distribution_rows(catalog, "input_distributions")
-
-
 def validate_bmp_selection_table(df: pd.DataFrame, cps: Sequence[int]) -> None:
     """Validate a normalized explicit BMP-selection weight table.
 
@@ -598,27 +572,21 @@ def validate_trajectory_table(df: pd.DataFrame) -> None:
             )
 
 
-def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
-    """Resolve wildcard parameter rows plus parcel-specific overrides.
-
-        Parameters
-        ----------
-        table : Optional[pd.DataFrame]
-            Input table containing model data.
-        pid : str
-            Parcel identifier.
-
-        Returns
-        -------
-        List[pd.Series]
-            Rows applicable to the specified parcel.
-        
-    """
+def _rows_for_pid(table: Optional[pd.DataFrame], pid: object) -> List[pd.Series]:
+    """Resolve NULL default parameter rows plus parcel-specific overrides."""
     if table is None or table.empty:
         return []
     from .plet_rusle import canonical_parameter_name
-    pids = table[COL_PID].astype(str)
-    combined = pd.concat([table[pids == "*"], table[pids == str(pid)]], ignore_index=True)
+    defaults = table[table[COL_PID].isna()]
+    try:
+        target_pid = int(pid)
+        pid_values = pd.to_numeric(table[COL_PID], errors="coerce")
+        exact = table[table[COL_PID].notna() & (pid_values == target_pid)]
+    except (TypeError, ValueError):
+        exact = table[
+            table[COL_PID].notna() & (table[COL_PID].astype(str) == str(pid))
+        ]
+    combined = pd.concat([defaults, exact], ignore_index=True)
     if combined.empty:
         return []
     combined = combined.assign(
@@ -626,7 +594,6 @@ def _rows_for_pid(table: Optional[pd.DataFrame], pid: str) -> List[pd.Series]:
     )
     combined = combined.drop_duplicates(subset=["_canonical_parameter"], keep="last")
     return [row for _, row in combined.iterrows()]
-
 
 def validate_plet_input_table(table: pd.DataFrame, parcel_ids: Sequence[str]) -> pd.DataFrame:
     """Validate and normalize required PLET classifications for every parcel.
@@ -669,9 +636,9 @@ def validate_plet_input_table(table: pd.DataFrame, parcel_ids: Sequence[str]) ->
     )
     if supplied_derived:
         raise ValueError(
-            "PLET parcel inputs may not specify "
-            f"{supplied_derived}; define cn and infiltration_fraction in the required "
-            "load_generation.hydrology_lookup table instead"
+            "PLET parcel parameter tables may not specify "
+            f"{supplied_derived}; use input_curve_number and "
+            "input_infiltration_fraction in parcels.gpkg instead"
         )
     classification_mask = normalized["parameter"].isin(PLET_CLASSIFICATION_PARAMETERS)
     if classification_mask.any() and "value" not in normalized.columns:
@@ -710,9 +677,11 @@ def validate_plet_runtime_inputs(
         rusle_inputs : Optional[pd.DataFrame]
             RUSLE parameter input table, if configured.
         pollutant_concentrations : Optional[pd.DataFrame]
-            Pollutant concentration input table, if configured.
+            Runtime surface-pathway concentration rows split from the unified
+            pollutant concentration input table.
         groundwater_concentrations : Optional[pd.DataFrame]
-            Groundwater pollutant concentrations or concentration table, if configured.
+            Runtime subsurface-pathway concentration rows split from the unified
+            pollutant concentration input table.
         parcel_ids : Sequence[str]
             Parcel identifiers in model order.
         pollutants : Sequence[str]
@@ -779,15 +748,31 @@ def validate_plet_runtime_inputs(
         """
         if table is None or table.empty:
             return False
-        pids = table[COL_PID].astype(str)
         pols = table[COL_POLLUTANT].astype(str)
-        return bool((((pids == "*") | (pids == pid)) & (pols == pollutant)).any())
+        try:
+            target_pid = int(pid)
+            pids = pd.to_numeric(table[COL_PID], errors="coerce")
+            pid_match = table[COL_PID].isna() | (pids == target_pid)
+        except (TypeError, ValueError):
+            pid_match = table[COL_PID].isna() | (table[COL_PID].astype(str) == str(pid))
+        return bool((pid_match & (pols == pollutant)).any())
 
     for pid in map(str, parcel_ids):
         plet_effective = effective_parameters(plet_inputs, pid)
         missing_plet = [name for name in _REQUIRED_PLET_INPUTS if name not in plet_effective]
         if missing_plet:
             raise ValueError(f"PLET inputs for pid={pid} are missing required parameters: {missing_plet}")
+        has_avg_rain = "avg_rain_in" in plet_effective
+        has_legacy_precip = all(
+            name in plet_effective
+            for name in ("annual_precip_in", "rain_correction_fraction")
+        )
+        if not (has_avg_rain or has_legacy_precip):
+            raise ValueError(
+                f"PLET inputs for pid={pid} must provide input_avg_rain_in "
+                "(PLET AVG_RAIN) or both input_annual_precip_in and "
+                "input_rain_correction_fraction"
+            )
         rusle_effective = effective_parameters(rusle_inputs, pid)
         if rusle_effective:
             missing_rusle = [name for name in _REQUIRED_RUSLE if name not in rusle_effective]
@@ -796,10 +781,10 @@ def validate_plet_runtime_inputs(
         for pollutant in pollutants:
             pol = str(pollutant).upper()
             if pol in {"TN", "TP"} and not has_concentration(pollutant_concentrations, pid, pol):
-                raise ValueError(f"Runoff concentration for pid={pid}, pollutant={pol} is required")
+                raise ValueError(f"Surface concentration for pid={pid}, pollutant={pol} is required")
             if pol != "TSS" and not has_concentration(groundwater_concentrations, pid, pol):
                 raise ValueError(
-                    f"Groundwater concentration for pid={pid}, pollutant={pol} is required in plet_rusle mode"
+                    f"Subsurface concentration for pid={pid}, pollutant={pol} is required in plet_rusle mode"
                 )
             if pol == "TSS" and not rusle_effective and not has_concentration(pollutant_concentrations, pid, pol):
                 raise ValueError(f"TSS for pid={pid} requires complete RUSLE inputs or a TSS concentration")
@@ -819,6 +804,68 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         If a configuration value is non-finite, non-integral where an integer
         is required, or outside its allowed physical range.
     """
+    legacy_top_level = {
+        "outlet_loc", "parcel_out", "parcel_up", "parcel_p",
+        "pollutant_load_rate", "delivery_ratios", "outlet_target", "outlet_mean",
+    }
+    supplied_legacy = sorted(key for key in legacy_top_level if ci_get(cfg, key) is not None)
+    if supplied_legacy:
+        raise ValueError(
+            "Legacy per-file parcel/outlet configuration keys are no longer supported: "
+            f"{supplied_legacy}. Use the consolidated 'parcels' and 'outlets' GeoPackages."
+        )
+    normalized_top_keys = {str(key).lower() for key in cfg}
+    if "input_distributions" in normalized_top_keys:
+        raise ValueError(
+            "input_distributions is no longer supported; define each fixed value or "
+            "distribution directly on its model input row"
+        )
+
+    load_generation = ci_get(cfg, "load_generation")
+    if isinstance(load_generation, dict):
+        if any(str(key).lower() == "input_distributions" for key in load_generation):
+            raise ValueError(
+                "load_generation.input_distributions is no longer supported; define each "
+                "distribution directly on its model input row"
+            )
+        legacy_load_keys = {"plet_inputs", "rusle_inputs", "pollutant_concentrations", "groundwater_concentrations", "hydrology_lookup"}
+        supplied_load_legacy = sorted(
+            key for key in legacy_load_keys if ci_get(load_generation, key) is not None
+        )
+        if supplied_load_legacy:
+            raise ValueError(
+                "Legacy load_generation file keys are no longer supported: "
+                f"{supplied_load_legacy}. Store each variable in its dedicated input_* table in parcels.gpkg."
+            )
+
+    allowed_top_level = {
+        "domain", "parcels", "plet_forcing", "outlets", "pollutants", "cps",
+        "bmp_efficiency", "bmp_cost", "bmp_sel", "n_scenarios",
+        "bmp_limit_n", "bmp_limit_usd", "parallel", "random_seed",
+        "outputs", "verbose", "buffer_depth_ft", "bmp_sel_prob_via_costs",
+        CFG_DETERMINISTIC_PARCEL_ORDER, CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+        CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
+        "load_generation", "bmp_fail_rate",
+        "bmp_fail_reduction", "pollutant_load_rate_pathway_fractions",
+        "pollutant_load_rate_frac_surface", "pollutant_load_rate_frac_shallow",
+    }
+    unknown_top = sorted(str(key) for key in cfg if str(key).lower() not in allowed_top_level and str(key).lower() not in legacy_top_level)
+    if unknown_top:
+        raise ValueError(f"Unknown configuration key(s): {unknown_top}")
+
+    if isinstance(load_generation, dict):
+        allowed_load_generation = {
+            "mode", "groundwater_loads", "treat_groundwater_with_bmps",
+            "pollutant_load_rate_pathway_fractions", "pathway_mode",
+        }
+        unknown_load = sorted(
+            str(key) for key in load_generation
+            if str(key).lower() not in allowed_load_generation
+            and str(key).lower() not in {"plet_inputs", "rusle_inputs", "pollutant_concentrations", "groundwater_concentrations", "hydrology_lookup"}
+        )
+        if unknown_load:
+            raise ValueError(f"Unknown load_generation key(s): {unknown_load}")
+
     n_scenarios_raw = ci_get(cfg, CFG_N_SCENARIOS)
     n_scenarios = validate_scalar_in_domain(
         n_scenarios_raw, POSITIVE_DOMAIN, CFG_N_SCENARIOS
@@ -835,6 +882,24 @@ def validate_config(cfg: Dict[str, Any]) -> None:
     validate_scalar_in_domain(
         ci_get(cfg, CFG_BMP_FAIL_REDUCTION), FRACTION_DOMAIN, CFG_BMP_FAIL_REDUCTION
     )
+    deterministic_parcel_order = ci_get(cfg, CFG_DETERMINISTIC_PARCEL_ORDER)
+    if (
+        deterministic_parcel_order is not None
+        and not isinstance(deterministic_parcel_order, bool)
+    ):
+        raise ValueError(f"{CFG_DETERMINISTIC_PARCEL_ORDER} must be a boolean")
+    deterministic_bmp_type_order = ci_get(cfg, CFG_DETERMINISTIC_BMP_TYPE_ORDER)
+    if (
+        deterministic_bmp_type_order is not None
+        and not isinstance(deterministic_bmp_type_order, bool)
+    ):
+        raise ValueError(f"{CFG_DETERMINISTIC_BMP_TYPE_ORDER} must be a boolean")
+    deterministic_bmp_design_parameters = ci_get(cfg, CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS)
+    if (
+        deterministic_bmp_design_parameters is not None
+        and not isinstance(deterministic_bmp_design_parameters, bool)
+    ):
+        raise ValueError(f"{CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS} must be a boolean")
 
     limit_n = ci_get(cfg, CFG_BMP_LIMIT_N)
     if limit_n is not None:
@@ -976,7 +1041,7 @@ def validate_statistical_load_rates(
             If statistical pollutant load rates do not provide complete parcel/pollutant/pathway coverage.
         
     """
-    parcel_ids = parcels[COL_PID].astype(str).tolist()
+    parcel_ids = parcels[COL_PID].tolist()
     explicit = COL_PATHWAY in df.columns
     pathways = list(dict.fromkeys(df[COL_PATHWAY].astype(str).tolist())) if explicit else []
     keys = [COL_PID, COL_POLLUTANT] + ([COL_PATHWAY] if explicit else [])

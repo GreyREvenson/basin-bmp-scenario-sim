@@ -4,13 +4,21 @@ import logging
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from src.constants import (
+    CFG_BUFFER_DEPTH_FT,
+    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
     DATA_AVG_AREA_HA,
     DATA_AVG_PERIM_M,
+    OUTPUT_BUFFER_AREA,
+    OUTPUT_CATCHMENT_RATIO,
     OUTPUT_IMPACTED_PIDS,
+    OUTPUT_LINEAR_LENGTH,
+    OUTPUT_PORTION_TREATED,
     OUTPUT_REMOVED,
     OUTPUT_TREATED,
+    OUTPUT_WETLAND_AREA,
 )
 from src.plet_rusle import initialize_plet_rusle_state
 from src.model import Model, _ScenarioContext
@@ -104,6 +112,74 @@ def test_wetland_treats_nonselectable_upstream_parcels() -> None:
     assert np.allclose(load_rates[:, 0], [5.0, 5.0, 5.0])
     assert bmp_outputs[OUTPUT_TREATED][0] == 30.0
     assert bmp_outputs[OUTPUT_REMOVED][0] == 15.0
+
+
+def test_deterministic_wetland_design_uses_only_selected_parcel() -> None:
+    model = _model_with_nonselectable_upstream_parcels()
+    model.cfg = {CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS: True}
+    model.parcel_area_ha[2] = 2.0
+    ctx = _ScenarioContext(model.cfg, model._shared_payload(), logging.getLogger("test_fixed_wetland"), seed=1)
+    ctx._sample_from_stats = lambda *args, **kwargs: pytest.fail("design must not be sampled")
+    ctx.current_pathway_load_rates = np.full((3, 1, 1), 10.0, dtype=float)
+    load_rates = np.full((3, 1), 10.0, dtype=float)
+    record = {}
+    outputs = {
+        OUTPUT_TREATED: np.zeros(1, dtype=float),
+        OUTPUT_REMOVED: np.zeros(1, dtype=float),
+    }
+
+    ctx._simulate_wetland(2, [{"surface": 0.5}], load_rates, record, outputs)
+
+    assert record[OUTPUT_WETLAND_AREA] == pytest.approx(0.4)
+    assert record[OUTPUT_CATCHMENT_RATIO] == pytest.approx(4.0)
+    assert record[OUTPUT_IMPACTED_PIDS] == ""
+    np.testing.assert_allclose(load_rates[:, 0], [10.0, 10.0, 5.0])
+    assert outputs[OUTPUT_TREATED][0] == pytest.approx(20.0)
+    assert outputs[OUTPUT_REMOVED][0] == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize(
+    ("deterministic", "draws", "length_fraction", "treated_fraction"),
+    [
+        (True, [], 0.25, 0.25),
+        (False, [0.1, 0.3], 0.1, 0.3),
+    ],
+)
+def test_grassed_design_respects_config(
+    deterministic, draws, length_fraction, treated_fraction
+) -> None:
+    model = _model_with_nonselectable_upstream_parcels()
+    model.cfg = {
+        CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS: deterministic,
+        CFG_BUFFER_DEPTH_FT: 35.0,
+    }
+    model.parcel_area_ha[2] = 2.0
+    model.parcel_perim_m[2] = 100.0
+    ctx = _ScenarioContext(model.cfg, model._shared_payload(), logging.getLogger("test_grassed_design"), seed=1)
+    draw_iter = iter(draws)
+    sampled = []
+
+    def sample(*args, **kwargs):
+        sampled.append(1)
+        return next(draw_iter)
+
+    ctx._sample_from_stats = sample
+    ctx.current_pathway_load_rates = np.full((3, 1, 1), 10.0, dtype=float)
+    load_rates = np.full((3, 1), 10.0, dtype=float)
+    record = {}
+    outputs = {
+        OUTPUT_TREATED: np.zeros(1, dtype=float),
+        OUTPUT_REMOVED: np.zeros(1, dtype=float),
+    }
+
+    ctx._simulate_grassed(2, [{"surface": 0.5}], load_rates, record, outputs)
+
+    assert len(sampled) == len(draws)
+    assert record[OUTPUT_LINEAR_LENGTH] == pytest.approx(100.0 * length_fraction)
+    assert record[OUTPUT_BUFFER_AREA] == pytest.approx(100.0 * length_fraction * 35.0 * 0.3048 / 10000.0)
+    assert record[OUTPUT_PORTION_TREATED] == pytest.approx(treated_fraction)
+    assert outputs[OUTPUT_TREATED][0] == pytest.approx(20.0 * treated_fraction)
+    assert outputs[OUTPUT_REMOVED][0] == pytest.approx(10.0 * treated_fraction)
 
 
 def test_plet_initialization_uses_full_hydrologic_parcel_universe(monkeypatch) -> None:

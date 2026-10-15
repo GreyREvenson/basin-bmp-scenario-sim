@@ -26,7 +26,7 @@ The model provides two alternative ways to establish baseline parcel pollutant l
 | Feature | Default statistical mode | `plet_rusle` mode |
 |---|---|---|
 | Baseline pollutant generation | User supplies parcel pollutant load-rate values/distributions | Model calculates loads from PLET-style hydrology, concentrations, and optional RUSLE |
-| Statistical parcel input | `pollutant_load_rate` | Not used |
+| Statistical parcel input | `input_pollutant_load_rate` table in `parcels.gpkg` | Not used |
 | Pollutant pathways | User-defined | Fixed to `surface` and `subsurface` |
 | Runoff and infiltration modeled | No | Yes |
 | Curve Number | Not used | Required user input by land-cover × HSG pairing |
@@ -72,9 +72,8 @@ Numeric inputs use a common value/distribution convention. Depending on the tabl
 - the legacy `min` + `mean` + `max` form
 - `min` + `max` for a uniform distribution
 - `min` + percentile columns such as `p05`, `p50`, `p95` + `max`
-- a reusable `distribution_id` defined once in an optional `input_distributions.csv` catalog
 
-Parcel-indexed inputs may use `pid: "*"` as a default and provide only parcel-specific overrides. This can greatly reduce duplication when many parcels share assumptions.
+Parcel-indexed inputs may use `pid IS NULL` as a default and provide parcel-specific integer-PID overrides. This can greatly reduce duplication when many parcels share assumptions.
 
 ## Quick start
 
@@ -84,30 +83,32 @@ Example command:
 
     python run_model.py config.yaml
 
-Statistical mode is the default:
+Both modes use consolidated parcel and outlet GeoPackages:
+
+    domain: ../domain/domain.gpkg
+    parcels: ../parcels/parcels.gpkg
+    outlets: ../outlets/outlets.gpkg
 
     pollutants: [TN, TP, TSS]
     cps: [340, 329, 590]
 
-    input_distributions: ./inputs/input_distributions.csv
-
-    pollutant_load_rate: ./inputs/pollutant_load_rate.csv
-    bmp_efficiency: ./inputs/bmp_efficiency.csv
+    bmp_efficiency: ../bmps/bmp_efficiency.csv
 
     n_scenarios: 1000
     bmp_limit_n: 200
 
-PLET/RUSLE mode is enabled explicitly and requires a hydrology table:
-
-    input_distributions: ./inputs/plet/input_distributions.csv
+In statistical mode, parcel loads come from `input_pollutant_load_rate` inside `parcels.gpkg`. PLET/RUSLE mode is enabled explicitly:
 
     load_generation:
       mode: plet_rusle
-      plet_inputs: ./inputs/plet/plet_inputs.csv
-      hydrology_lookup: ./inputs/plet/plet_hydrology_lookup.csv
-      rusle_inputs: ./inputs/plet/rusle_inputs.csv
-      pollutant_concentrations: ./inputs/plet/pollutant_concentrations.csv
-      groundwater_concentrations: ./inputs/plet/groundwater_concentrations.csv
+
+Parcel-side model variables then come from dedicated `input_*` tables in the parcel GeoPackage. Curve number and infiltration fraction are user-owned tables (`input_curve_number` and `input_infiltration_fraction`), and surface/subsurface concentrations are stored separately. Optionally, PLET climate variables may come from a HUC12 forcing GeoPackage:
+
+    plet_forcing: ../plet/huc12s_plet_deterministic.gpkg
+
+### HUC12-scale PLET climate forcing
+
+With `plet_forcing`, the forcing GeoPackage contains a spatial `huc12` layer with USGS WBD geometry/metadata and separate HUC12-keyed `input_*` tables for PLET precipitation variables. Those tables use the same fixed/distribution schema as parcel inputs; a HUC12 distribution is sampled once per HUC12 per scenario and shared by its parcels. `parcels.gpkg` stores the `parcel_huc12` relationship. Parcel-specific climate rows override HUC12 forcing, which overrides parcel defaults. See [PLET/RUSLE mode](docs/plet_rusle_mode.md).
 
 See the docs below for complete examples and mode-specific requirements.
 
@@ -115,7 +116,6 @@ See the docs below for complete examples and mode-specific requirements.
 
 - [Model concepts and scientific formulation](docs/model_overview.md) — loads, pathways, Monte Carlo structure, and outlet routing
 - [Configuration reference](docs/configuration.md) — common YAML settings and complete examples for both modes
-- [Standardized numeric inputs and distributions](docs/input_distributions.md) — fixed values, distributions, reusable distribution IDs, parcel defaults and overrides, and shared draws
 - [Statistical load-generation mode](docs/statistical_mode.md) — direct parcel load-rate inputs, arbitrary pathways, aggregate pathway splitting, and coverage rules
 - [PLET/RUSLE load-generation mode](docs/plet_rusle_mode.md) — required land-cover/HSG hydrology inputs, runoff, infiltration, groundwater loads, RUSLE, and two-pathway BMP treatment
 - [BMP simulation](docs/bmp_simulation.md) — BMP selection, efficiencies, treatment fractions, failure, signed effects, and serial stacking
@@ -127,9 +127,8 @@ See the docs below for complete examples and mode-specific requirements.
 Inputs shared by both modes generally include:
 
 - watershed/domain geometry
-- parcel polygons
-- outlet locations
-- parcel-to-outlet mapping
+- one consolidated parcel GeoPackage containing parcel geometry, parcel-to-outlet relationships, and mode-specific parcel tables
+- one consolidated outlet GeoPackage containing outlet geometry and optional outlet statistics
 - modeled pollutants
 - configured BMP or conservation-practice CPS codes
 - BMP-efficiency statistics
@@ -152,7 +151,7 @@ For reproducible scientific analyses, archive or record:
 
 - the repository commit or release
 - the configuration YAML
-- all input data files, including any distribution catalog and PLET hydrology lookup
+- all input data files, including the parcel GeoPackage
 - the random seed
 - the Python environment and dependency versions
 - the generated logs
@@ -162,7 +161,7 @@ For reproducible scientific analyses, archive or record:
 
 The model is a scenario and uncertainty framework, not a substitute for a calibrated process-based watershed model where detailed temporal hydrology, water-quality transformation, or in-stream processes are required. Results depend on the validity of the supplied probability distributions, pathway definitions, BMP efficiencies, routing assumptions, and, in `plet_rusle` mode, the PLET/RUSLE parameterization, including the user-supplied Curve Number and infiltration-fraction assumptions.
 
-BMP efficiencies are applied serially to the current remaining load. Parcel-to-outlet routing may use optional delivery ratios, but the simulator does not independently resolve all physical fate and transport processes between a parcel and an outlet.
+BMP efficiencies are applied serially to the current remaining load. Parcel-to-outlet routing may use optional dedicated delivery-ratio `input_*` tables keyed by parcel and outlet, but the simulator does not independently resolve all physical fate and transport processes between a parcel and an outlet.
 
 When both BMP-count and cost limits are configured, the scenario uses an OR stopping rule: no additional BMPs are added once either limit has been reached or exceeded.
 

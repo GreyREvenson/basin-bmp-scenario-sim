@@ -12,7 +12,7 @@ from src.sampling import _sample_from_stats
 def test_plet_precipitation_mm_per_year_converts_to_inches_per_year() -> None:
     stats = stats_from_row(
         {
-            "pid": "*",
+            "pid": None,
             "parameter": "annual_precip_in",
             "mean": 1016.0,
             "sd": 254.0,
@@ -24,10 +24,22 @@ def test_plet_precipitation_mm_per_year_converts_to_inches_per_year() -> None:
     assert stats == pytest.approx({"mean": 40.0, "sd": 10.0, "min": 20.0, "max": 60.0})
 
 
+def test_plet_avg_rain_mm_per_event_converts_to_inches_per_event() -> None:
+    stats = stats_from_row(
+        {
+            "pid": None,
+            "parameter": "avg_rain_in",
+            "value": 25.4,
+            "units": "mm/event",
+        }
+    )
+    assert stats["value"] == pytest.approx(1.0)
+
+
 def test_concentration_micrograms_per_liter_converts_to_mg_per_liter() -> None:
     stats = stats_from_row(
-        {"pid": "*", "pollutant": "TN", "value": 2500.0, "units": "ug/L"},
-        {"pid", "pollutant", "sample_group", "distribution_id", "units"},
+        {"pid": None, "pollutant": "TN", "value": 2500.0, "units": "ug/L"},
+        {"pid", "pollutant", "sample_group", "units"},
     )
     assert stats["value"] == pytest.approx(2.5)
 
@@ -35,14 +47,14 @@ def test_concentration_micrograms_per_liter_converts_to_mg_per_liter() -> None:
 def test_concentration_rejects_load_rate_units() -> None:
     with pytest.raises(ValueError, match="dimensionally incompatible"):
         stats_from_row(
-            {"pid": "*", "pollutant": "TN", "value": 2.0, "units": "lb/ac/yr"},
-            {"pid", "pollutant", "sample_group", "distribution_id", "units"},
+            {"pid": None, "pollutant": "TN", "value": 2.0, "units": "lb/ac/yr"},
+            {"pid", "pollutant", "sample_group", "units"},
         )
 
 
 def test_sediment_fraction_converts_to_percent() -> None:
     stats = stats_from_row(
-        {"pid": "*", "parameter": "sediment_n_pct", "value": 0.0012, "units": "fraction"}
+        {"pid": None, "parameter": "sediment_n_pct", "value": 0.0012, "units": "fraction"}
     )
     assert stats["value"] == pytest.approx(0.12)
 
@@ -76,20 +88,6 @@ def test_runtime_load_rate_rejects_concentration_units() -> None:
         _sample_from_stats(dummy, {"value": 2.0, "units": "mg/L"}, kind="load_rate")
 
 
-def test_distribution_reference_cannot_change_catalog_scale() -> None:
-    # Catalog validation/extraction registers the distribution's numeric scale.
-    stats_from_row(
-        {"distribution_id": "rain", "mean": 1000.0, "sd": 100.0, "units": "mm/year"}
-    )
-    with pytest.raises(ValueError, match="may not reinterpret"):
-        stats_from_row({"distribution_id": "rain", "units": "in/year"})
-
-
-def test_distribution_reference_allows_same_scale_alias() -> None:
-    stats_from_row(
-        {"distribution_id": "rain_alias", "mean": 1000.0, "sd": 100.0, "units": "mm/year"}
-    )
-    assert stats_from_row({"distribution_id": "rain_alias", "units": "mm/yr"}) == {}
 
 
 def test_cost_area_units_convert_to_usd_per_hectare() -> None:
@@ -114,7 +112,7 @@ def test_rusle_r_does_not_guess_convert_other_unit_systems() -> None:
     with pytest.raises(ValueError, match="dimensionally incompatible"):
         stats_from_row(
             {
-                "pid": "*",
+                "pid": None,
                 "parameter": "r",
                 "value": 180.0,
                 "units": "MJ mm ha-1 h-1 yr-1",
@@ -124,14 +122,14 @@ def test_rusle_r_does_not_guess_convert_other_unit_systems() -> None:
 
 def test_rusle_r_accepts_explicit_canonical_convention() -> None:
     stats = stats_from_row(
-        {"pid": "*", "parameter": "r", "value": 180.0, "units": "rusle-r-us-customary"}
+        {"pid": None, "parameter": "r", "value": 180.0, "units": "rusle-r-us-customary"}
     )
     assert stats["value"] == pytest.approx(180.0)
 
 
 def test_rusle_r_accepts_current_example_index_convention() -> None:
     stats = stats_from_row(
-        {"pid": "*", "parameter": "r", "value": 175.0, "units": "index"}
+        {"pid": None, "parameter": "r", "value": 175.0, "units": "index"}
     )
     assert stats["value"] == pytest.approx(175.0)
 
@@ -139,7 +137,7 @@ def test_rusle_r_accepts_current_example_index_convention() -> None:
 def test_rusle_k_accepts_current_plet_customary_label() -> None:
     stats = stats_from_row(
         {
-            "pid": "*",
+            "pid": None,
             "parameter": "k",
             "value": 0.32,
             "units": "ton acre hour/(acre foot ton inch)",

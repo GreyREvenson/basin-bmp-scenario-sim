@@ -2,147 +2,182 @@
 
 [← Back to main README](../readme.md)
 
-## Purpose
+`plet_rusle` mode derives annual surface and subsurface loads from user-supplied parcel parameters, hydrology assumptions, pollutant concentrations, and optional RUSLE sediment parameters.
 
-`plet_rusle` mode calculates baseline parcel pollutant loads internally using PLET-style runoff and infiltration calculations, pollutant concentrations, and optional RUSLE sediment generation.
+## Configuration
 
-This mode is appropriate when annual parcel loads should be derived from parcel hydrology and concentration assumptions rather than supplied directly as statistical parcel load-rate inputs.
+```yaml
+domain: ../domain/domain.gpkg
+parcels: ../parcels/parcels.gpkg
+# Optional HUC12-scale climate forcing:
+plet_forcing: ../plet/plet_inputs.gpkg
+outlets: ../outlets/outlets.gpkg
 
-## Required configuration
+pollutants: [TN, TP, TSS]
+cps: [340, 329, 590, 412, 656]
 
-A typical configuration is:
+bmp_efficiency: ../bmps/bmp_efficiency.csv
 
-    load_generation:
-      mode: plet_rusle
-      plet_inputs: ./inputs/plet/plet_inputs.csv
-      hydrology_lookup: ./inputs/plet/plet_hydrology_lookup.csv
-      rusle_inputs: ./inputs/plet/rusle_inputs.csv
-      pollutant_concentrations: ./inputs/plet/pollutant_concentrations.csv
-      groundwater_concentrations: ./inputs/plet/groundwater_concentrations.csv
+load_generation:
+  mode: plet_rusle
+```
 
-## Production pathways
+Parcel-specific PLET/RUSLE inputs and overrides live in dedicated `input_*` tables inside `parcels.gpkg`. HUC12-scale precipitation forcing may optionally be supplied through a separate `plet_forcing` GeoPackage. Curve-number and infiltration inputs remain in `parcels.gpkg`; there is no separate hydrology-lookup path.
 
-`plet_rusle` has exactly two production pathways:
+## HUC12 climate forcing
 
-- `surface`
-- `subsurface`
+When `plet_forcing` is configured, `parcels.gpkg` must contain a non-spatial `parcel_huc12` relationship table:
 
-The production calculation does not create separate shallow and deep subsurface pathways. Compatibility diagnostic fields may still appear in some outputs for older callers or tests, but they should not be interpreted as additional production pathways.
+```text
+pid | huc12 | area_fraction
+```
 
-## Required PLET hydrology input
+`huc12` is stored as 12-character text. The preparation utility writes `area_fraction`, the fraction of parcel area inside its assigned (dominant) HUC12; when present, the loader checks that it lies between 0 and 1 and records values below 0.75 in the model's `log.txt` without printing the warning to the console. Every modeled parcel must have exactly one assignment. Forcing uses the dominant HUC12 only; it does not blend values across HUC12 boundaries.
 
-`plet_rusle` mode requires:
+The forcing GeoPackage separates spatial structure from model variables. The spatial `huc12` layer contains only WBD geometry/metadata:
 
-    load_generation:
-      mode: plet_rusle
-      hydrology_lookup: ./path/to/plet_hydrology_lookup.csv
+```text
+huc12 | name | states | areaacres | areasqkm | geometry
+```
 
-The table is a user input, not a source-code lookup. It uses long form:
+HUC12-scale PLET variables are stored in dedicated attribute tables in the same GeoPackage:
 
-    land_cover,hsg,parameter,value,distribution_id,mean,sd,min,p05,p50,p95,max,sample_group,units
-    cropland,B,cn,78,,,,,,,,,,,dimensionless
-    cropland,B,infiltration_fraction,0.30,,,,,,,,,,,fraction
+- `input_avg_rain_in`
+- `input_annual_precip_in`
+- `input_rain_days`
+- `input_rain_correction_fraction`
+- `input_runoff_day_fraction`
+- `input_hsg` (fixed `A`, `B`, `C`, or `D`; optional alternative to parcel HSG)
+- `input_rusle_r`, `input_rusle_k`, `input_rusle_ls`, `input_rusle_c`, `input_rusle_p` (optional, keyed by `huc12 × land_cover`)
+- `input_sediment_n_pct`, `input_sediment_p_pct` (optional HUC12 sediment nutrient percentages)
+- `input_surface_concentration`, `input_subsurface_concentration` (optional, keyed by `huc12 × land_cover × pollutant`)
 
-For every supported land-cover/HSG pairing, the file must contain exactly one `cn` row and exactly one `infiltration_fraction` row.
+Each table is keyed by `huc12` and uses the same numeric uncertainty schema as parcel inputs:
 
-Supported land covers are:
+```text
+huc12 | value | mean | sd | min | p05 | p10 | p25 | p50 | p75 | p90 | p95 | max | sample_group | units | notes
+```
 
-- `urban`
-- `cropland`
-- `pastureland`
-- `forest`
-- `user_defined`
+A numeric row may therefore be a fixed value or a distribution; `input_hsg` must use a fixed classification. By default, a distribution is sampled **once per HUC12 per scenario** and that draw is shared by all parcels assigned to the HUC12 (and for land-cover-indexed inputs, by parcels with that land cover). An explicit `sample_group` can intentionally share a draw across multiple rows for the same parameter.
 
-Supported HSG values are:
+If any HUC12 parameter rows are populated, every assigned HUC12 must have at least one `input_*` parameter row. Individual HUC12 variables may be omitted when parcel-specific rows or `pid=NULL` parcel defaults supply them; if all HUC12 tables are empty, climate inputs must come from parcel tables. Parcel `input_land_cover`, `input_curve_number`, and `input_infiltration_fraction` remain required in PLET/RUSLE mode. `input_hsg` may instead come from the HUC12 package.
 
-- `A`
-- `B`
-- `C`
-- `D`
+For HUC12-supplied variables, precedence is:
 
-This produces 40 required parameter rows: 5 land covers × 4 HSGs × 2 parameters.
+```text
+parcel-specific input_* override > HUC12 input_* row > pid=NULL parcel default
+```
 
-CN must remain in `(0, 100]`. Infiltration fraction must remain in `[0, 1]`. A fixed value or a distribution can be supplied for either parameter.
+For HUC12 RUSLE and concentrations, only rows matching the parcel's effective PLET `land_cover` apply. Concentration rows also match pollutant and surface/subsurface pathway. Thus parcel tables remain useful for defaults and local overrides without duplicating HUC12 values across every parcel. If `runoff_day_fraction` is absent from the HUC12 tables, it must resolve from a parcel-specific or `pid=NULL` parcel row because PLET annualizes event runoff using corrected rain days.
 
-Example stochastic pair:
+### Build or refresh the HUC12 forcing input
 
-    land_cover,hsg,parameter,value,distribution_id,mean,sd,min,max,units
-    cropland,B,cn,,,78,2,70,86,dimensionless
-    cropland,B,infiltration_fraction,,,0.30,0.03,0.20,0.40,fraction
+Both PLET workbook utilities explicitly use pandas' `calamine` Excel reader
+(`pandas>=2.2` and `python-calamine` in the repository dependencies). This avoids
+the native openpyxl/lxml XML parsing path, which can cause Windows access
+violations when used alongside the GDAL-based geospatial libraries. No
+`OPENPYXL_LXML` environment setting is required. Update an existing environment
+with `python -m pip install -r requirements.txt` before using these utilities.
+Excel fixtures in the tests use the pure-Python `xlsxwriter` writer rather than
+loading openpyxl/lxml. An existing openpyxl installation need not be removed.
 
-Each parcel classified as cropland/HSG B samples those pair-specific distributions independently unless `sample_group` is supplied.
+`utils/download_wbd_huc12.py` reads the parcel extent, downloads candidate 12-digit hydrologic-unit polygons from the USGS WBD service, filters them using a parcel-overlap threshold, writes/refreshes the spatial `huc12` layer, preserves the HUC12 `input_*` tables, and populates `parcels.gpkg:parcel_huc12` using greatest parcel-area overlap.
 
-## `plet_inputs`
+For the East Fork example:
 
-`load_generation.plet_inputs` is a required long-form parcel parameter table. It supplies climate variables and fixed `land_cover` and `hsg` classifications.
+```bash
+python utils/download_wbd_huc12.py \
+  examples/east_fork/inputs/parcels/parcels.gpkg \
+  examples/east_fork/inputs/plet/huc12s_plet_deterministic.gpkg \
+  --initial-plet-export examples/east_fork/inputs/misc/EastFork_plet_inputs.xlsx
+```
 
-Numeric rows use the standardized fixed-value/distribution schema and may use `pid="*"` defaults with parcel-specific overrides.
+`--initial-plet-export` reads the `1. Watershed Land Use` sheet and can initialize `AVG_RAIN`, `RAIN_DAYS`, and `ANNUAL_RAINFALL` as fixed rows in `input_avg_rain_in`, `input_rain_days`, and `input_annual_precip_in`. It cannot be used again once any HUC12 input table contains values; edit those tables directly in the GeoPackage. Re-running the utility refreshes WBD geometry/metadata and preserves input rows for HUC12s still retained by the refreshed layer; rows for HUC12s no longer retained are dropped, so back up edited inputs before refreshing. The default `--area-fraction-threshold 0.75` keeps a HUC12 only if at least one parcel has 75% or more of its area inside that HUC12. A refresh fails if the retained HUC12s do not cover every parcel; lower the threshold or inspect the geometries. The utility reports dominant assignments below the chosen threshold, while the model loader warns below its fixed 0.75 QA threshold.
 
-`cn` and `infiltration_fraction` are **not** supplied in this table.
+`utils/create_parcel_huc12.py` remains available as a lower-level utility when HUC12 polygons are already available locally.
 
-## RUSLE inputs
+### Generate both PLET model inputs from a workbook
 
-`load_generation.rusle_inputs` is optional. Numeric rows use the common distribution schema and may use `pid="*"` defaults.
+To create **new** GeoPackages without modifying the source parcel GeoPackage:
 
-A parcel with RUSLE data must have a complete factor set and may supply `sdr` to override the default sediment delivery ratio of 1.0.
+```bash
+python utils/create_plet_model_inputs.py \
+  examples/east_fork/inputs/parcels/parcels.gpkg \
+  parcels \
+  examples/east_fork/inputs/misc/EastFork_plet_inputs.xlsx
+```
+
+This creates `parcels_plet.gpkg` (a copy preserving existing tables and parcel overrides) and `parcels_plet_huc12.gpkg` alongside the source. It refuses to overwrite either output. Set `parcels:` to the first output and `plet_forcing:` to the second in the model configuration. The parcel layer name is the second positional argument. If that layer is not named `parcels`, the utility uses GDAL (`ogrinfo`) to rename **only the output copy's** spatial layer to the model's canonical `parcels`, preserving feature IDs, GeoPackage metadata, spatial indexes and relationships. The selected layer must use schema-v3 `pid INTEGER PRIMARY KEY`; a different existing `parcels` table is a hard error. Add `--sssurgo_hsg_true` to download SSURGO polygons and assign each parcel its dominant HSG; the HUC12 package then retains an empty registered `input_hsg` table and does not import workbook SHG. Otherwise the workbook's `SHG` column provides HUC12 HSG and the copied parcel's old `input_hsg` table is removed. Existing `input_curve_number` and `input_infiltration_fraction` rows take precedence over workbook values for the same `land_cover × hsg`, including existing uncertainty distributions.
+
+The utility downloads USGS WBD HUC12 polygons and queries the public [annual NLCD ImageServer](https://di-nlcd.img.arcgis.com/arcgis/rest/services/USA_NLCD_Annual_LandCover/ImageServer) for its latest available `Year` (2024 at the time of writing), exporting that year's 30 m land-cover raster. It does **not** silently fall back to 2021. The source URL and year are logged and stored in each classification's notes. It classifies parcels by actual area intersected by each raster cell, not by pixel-center counts: parcels smaller than one NLCD cell are supported. No valid intersected raster area is an error; partial nodata coverage is warned and percentages use valid covered area. The CLI writes an audit log next to the input, `<parcel-stem>_plet.log`; `--log-path PATH` selects another location, and `--verbose` includes each parcel's area-weighted NLCD code/category percentages, intersected-pixel count, valid-coverage percentage, dominant code and resulting PLET class. Summary class percentages and the rainfall audit are always logged. NLCD developed, forest, grass/pasture and cultivated-crop classes map to PLET `urban`, `forest`, `pastureland`, and `cropland`. **By user-specified assumptions, dominant NLCD barren class 31 maps to PLET `pastureland` and woody wetlands class 90 maps to PLET `forest`; neither is an NLCD equivalence.** The CLI warns on the console and in the audit log with the affected parcel counts and example IDs, and marks each affected `input_land_cover.notes` row `ASSUMPTION` for review. Water, other wetlands, shrub and other unmapped dominant classes still cause an explicit error rather than an invented PLET classification. Review classifications before modeling. Exported watershed land-use acreage is *not* used to classify parcels.
+
+The workbook supplies HUC climate, HSG, land-cover-specific RUSLE values, TN/TP surface concentration (with explicit zero subsurface TN/TP), and parcel `land_cover × hsg` curve-number and infiltration lookups. Sheet `4. Nutrient and E.Coli Content` supplies `SOIL_N_CONC` and `SOIL_P_CONC` for HUC12 `input_sediment_n_pct` and `input_sediment_p_pct`, respectively. Values such as `0.08` and `0.0308` are stored **as percent** (not multiplied by 100); the model divides them by 100 when computing sediment-bound nutrient mass. The other workbook sheets for animals, BOD, E. coli, and BMPs are outside this TN/TP/TSS input utility's scope. **TSS needs review:** the workbook has neither TSS concentration nor urban RUSLE factors. The utility writes a *zero placeholder* surface TSS concentration for every retained HUC12 and each of the five PLET land covers, marks those rows `PLACEHOLDER`, and warns on the console and in the audit log. Replace these values or supply parcel-specific TSS concentration overrides before relying on TSS results. Where complete RUSLE inputs resolve (including existing parcel defaults), modeled TSS comes from RUSLE rather than this concentration; urban RUSLE values are **not** synthesized from the workbook. The existing East Fork `parcels_plet_deterministic.gpkg` has default RUSLE factors, nonzero user-defined curve numbers, and TN/TP surface/subsurface concentrations, so these particular missing workbook fields need not block that configuration; this does not validate its scientific TSS assumptions or guarantee the entire model run.
+
+Existing unrelated parcel inputs and overrides are preserved. Zero-valued PLET `User Defined` curve numbers are undefined and omitted with a warning: provide positive numbers before using that class. The workbook has no raw `Rcor`/`RDcor` columns. The utility searches 0.001-spaced `Rcor` values from 0.840 to 0.900 and `RDcor` values from 0.350 to 0.500 using `RDcor / Rcor = ANNUAL_RAINFALL / (AVG_RAIN * RAIN_DAYS)` and requires a near-exact match. Where multiple grid solutions exist, it weights up to four geographically nearest *uniquely reconstructed* HUC12 polygon centroids by inverse distance and selects the matching pair nearest those neighbors' factor estimate. East Fork's ambiguous `050902021005` and `050902021101` consequently select `.870/.435` and `.874/.437`, respectively. These are reconstructed estimates, **not independently verified factors**; neither existing HUC-package factor values nor its notes are used as source inputs. Logs audit exported versus predicted rain, relative error and ambiguity status, and all reconstructed HUC rows are marked in table notes.
+
+## Parcel PLET tables
+
+Each variable gets its own table keyed by `pid`:
+
+- `input_avg_rain_in` (PLET `AVG_RAIN`, inches/event; optional direct event-rainfall forcing)
+- `input_annual_precip_in` (legacy/derived forcing)
+- `input_rain_days`
+- `input_rain_correction_fraction` (required only when `input_avg_rain_in` is not supplied)
+- `input_runoff_day_fraction`
+- `input_land_cover`
+- `input_hsg`
+- `input_ia_ratio`
+
+Numeric tables use the standard fixed-value/distribution schema. `input_land_cover` and `input_hsg` require fixed categorical values. Where defaults are supported, `pid IS NULL` supplies the default and an exact integer `pid` row overrides it.
+
+PLET precipitation forcing may be supplied in either of two forms:
+
+1. **Direct PLET form:** `input_avg_rain_in` + `input_rain_days` + `input_runoff_day_fraction`. `avg_rain_in` is the PLET Input Data Server `AVG_RAIN` value and is used directly as event rainfall `P`.
+2. **Derived form:** `input_annual_precip_in` + `input_rain_correction_fraction` + `input_rain_days` + `input_runoff_day_fraction`. The model derives `P = annual_precip_in * rain_correction_fraction / (rain_days * runoff_day_fraction)`.
+
+If `input_avg_rain_in` is present for a parcel, it is authoritative. Annual runoff is still multiplied by the corrected number of runoff-producing rain days, `rain_days * runoff_day_fraction`. For subsurface infiltration, corrected annual precipitation is reconstructed as `avg_rain_in * rain_days * runoff_day_fraction`, which is algebraically equivalent to `annual_precip_in * rain_correction_fraction` when `AVG_RAIN` comes from PLET Equation 3.
+
+
+## User-controlled hydrology
+
+Curve number and infiltration fraction are also separate user-input tables inside `parcels.gpkg`:
+
+```text
+input_curve_number
+input_infiltration_fraction
+```
+
+Both are keyed by `land_cover × hsg` and use the same numeric/distribution schema as other numeric inputs. Every supported pair must be covered by both tables.
+
+These are the values actually used by PLET. They may be fixed or distributions. There is no source-code fallback and no external `hydrology_lookup` configuration key.
+
+## RUSLE/sediment tables
+
+- `input_rusle_r`
+- `input_rusle_k`
+- `input_rusle_ls`
+- `input_rusle_c`
+- `input_rusle_p`
+- `input_sediment_delivery_ratio`
+- `input_sediment_n_pct`
+- `input_sediment_p_pct`
+- `input_enrichment_ratio`
+
+The input layer assembles these dedicated tables into the existing runtime RUSLE parameter table, so the simulation equations and parallel scenario execution remain unchanged.
 
 ## Pollutant concentrations
 
-### Runoff concentrations
+Surface and subsurface concentrations are distinct variables:
 
-`load_generation.pollutant_concentrations` is required when TN or TP is modeled.
+```text
+input_surface_concentration
+input_subsurface_concentration
+```
 
-TSS concentration is also needed when RUSLE is not available for a parcel and TSS is modeled. `pid="*"` defaults and parcel-specific overrides are supported.
+Each table is keyed by `pid × pollutant` and uses the common numeric/distribution schema. A row with `pid IS NULL` supplies the pollutant default; an exact integer `pid` overrides it.
 
-### Groundwater concentrations
+Surface concentrations are required for TN and TP and for TSS when complete RUSLE inputs are unavailable. Subsurface concentrations are required for modeled non-TSS pollutants.
 
-`load_generation.groundwater_concentrations` is required for each modeled non-TSS pollutant. These values are used with PLET infiltration volume to calculate the `subsurface` pathway. `pid="*"` defaults and parcel-specific overrides are supported.
+## BMP pathways
 
-## BMP efficiency expectations
-
-A `surface` efficiency is required for every configured CPS × pollutant combination.
-
-A missing or unusable correctly labeled `subsurface` efficiency defaults to zero and is logged.
-
-Example:
-
-    cps,pollutant,pathway,value,distribution_id,mean,sd,min,max
-    340,TN,surface,,,0.35,,0.20,0.50
-    340,TN,subsurface,0,,,,,
-    340,TP,surface,,,0.25,,0.10,0.40
-
-Unexpected pathway labels such as `shallow subsurface` or `deep subsurface` are not remapped to the PLET `subsurface` pathway. They are ignored in this mode, a warning is logged, and the subsurface efficiency defaults to zero if no valid `subsurface` row remains.
-
-This prevents an incorrectly labeled row from silently changing infiltration-derived nutrient treatment.
-
-## Removed and legacy configuration concepts
-
-`load_generation.pathway_mode` has been removed. `plet_rusle` always derives its two production pathways from PLET and RUSLE inputs.
-
-`watershed_area_mi2` has been removed from `rusle_inputs` and is an error if supplied, along with its `watershed_area_sqmi` and `watershed_area_sq_mi` spellings. No delivery ratio was ever derived from it; parcels that relied on it were silently computed at a delivery ratio of 1.0. Supply `sdr` explicitly instead.
-
-Legacy `groundwater_loads` and `treat_groundwater_with_bmps` keys do not determine production pathway generation. The current production calculation always estimates subsurface load from groundwater concentration and sampled infiltration. Whether a BMP reduces that load is determined by the BMP's `subsurface` efficiency.
-
-Statistical pathway-fraction settings are not used to generate baseline PLET/RUSLE loads.
-
-## Main distinction from statistical mode
-
-In statistical mode, the user supplies the baseline parcel pollutant load-rate inputs and defines the pathways. In `plet_rusle`, the model calculates baseline parcel loads and the pathway meanings are fixed by the hydrologic formulation.
-
-## Recommended file organization
-
-For a PLET/RUSLE project:
-
-    inputs/
-      plet/
-        input_distributions.csv
-        plet_inputs.csv
-        plet_hydrology_lookup.csv
-        rusle_inputs.csv
-        pollutant_concentrations.csv
-        groundwater_concentrations.csv
-        bmp_efficiency.csv
-        bmp_cost.csv
-        ...spatial and routing inputs...
-
-The organization deliberately separates different scientific variable families while keeping the numeric specification syntax the same in every file.
+PLET/RUSLE production pathways are fixed to `surface` and `subsurface`. Surface BMP efficiencies are required. Missing correctly labeled subsurface efficiencies are completed with zero and logged.

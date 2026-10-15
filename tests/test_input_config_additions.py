@@ -6,12 +6,12 @@ import pytest
 import src.input_config as input_config
 from src.constants import (
     CFG_CPS,
-    CFG_INPUT_DISTRIBUTIONS,
+    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
+    CFG_DETERMINISTIC_BMP_TYPE_ORDER,
+    CFG_DETERMINISTIC_PARCEL_ORDER,
     CFG_LOAD_GENERATION,
-    CFG_OUTLET_LOC,
+    CFG_OUTLETS,
     CFG_OUTPUTS,
-    CFG_PARCEL_OUT,
-    CFG_PARCEL_UP,
     CFG_PARCELS,
     CFG_POLLUTANTS,
 )
@@ -41,61 +41,35 @@ class _NullScope:
         return False
 
 
-def test_build_parcel_up_map_trims_whitespace_and_ignores_empty_tokens() -> None:
+def test_apply_config_defaults_disables_deterministic_parcel_order() -> None:
+    cfg = {}
+
+    input_config.apply_config_defaults(cfg)
+
+    assert cfg[CFG_DETERMINISTIC_PARCEL_ORDER] is False
+    assert cfg[CFG_DETERMINISTIC_BMP_TYPE_ORDER] is False
+    assert cfg[CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS] is False
+
+
+def test_build_parcel_up_map_trims_normalized_edge_ids() -> None:
     upstream = pd.DataFrame(
         [
-            {"pid": "10", "pid_up": " 1, , 2 ,, 3 , "},
-            {"pid": "2", "pid_up": None},
+            {"pid": " 10 ", "pid_up": " 1 "},
+            {"pid": "10", "pid_up": "2"},
+            {"pid": "10", "pid_up": "3"},
         ]
     )
-
     result = input_config._build_parcel_up_map(upstream, ["1", "2", "3", "10"])
-
     assert result["10"] == ["1", "2", "3"]
-    assert result["1"] == []
-    assert result["2"] == []
-    assert result["3"] == []
 
 
 def test_build_parcel_up_map_unknown_upstream_pid_raises() -> None:
-    upstream = pd.DataFrame([{"pid": "10", "pid_up": "1,999"}])
-
-    with pytest.raises(ValueError, match="Unknown upstream parcel ID|unknown upstream|999"):
+    upstream = pd.DataFrame([{"pid": "10", "pid_up": "999"}])
+    with pytest.raises(ValueError, match="999"):
         input_config._build_parcel_up_map(upstream, ["1", "10"])
 
 
-def test_load_distribution_catalog_none_path_returns_none() -> None:
-    assert input_config.load_distribution_catalog(None) is None
 
-
-def test_resolve_distribution_references_none_catalog_returns_copy_of_input() -> None:
-    table = pd.DataFrame(
-        [
-            {"pid": "*", "parameter": "annual_precip_in", "value": 42.0},
-            {"pid": "P1", "parameter": "annual_precip_in", "value": 40.0},
-        ]
-    )
-
-    resolved = input_config.resolve_distribution_references(table, None, "plet_inputs")
-
-    assert resolved.equals(table)
-    assert resolved is not table
-
-
-def test_resolve_distribution_references_unknown_distribution_id_raises() -> None:
-    use = pd.DataFrame(
-        [
-            {"pid": "*", "parameter": "annual_precip_in", "distribution_id": "rain-missing"},
-        ]
-    )
-    catalog = pd.DataFrame(
-        [
-            {"distribution_id": "rain-ok", "mean": 42.0, "sd": 3.0, "min": 30.0, "max": 55.0},
-        ]
-    )
-
-    with pytest.raises(ValueError, match="rain-missing|Unknown distribution_id|distribution_id"):
-        input_config.resolve_distribution_references(use, catalog, "plet_inputs")
 
 
 def test_load_and_validate_all_rejects_non_mapping_load_generation(monkeypatch, tmp_path) -> None:
@@ -103,9 +77,7 @@ def test_load_and_validate_all_rejects_non_mapping_load_generation(monkeypatch, 
     cfg = {
         CFG_OUTPUTS: str(tmp_path / "outputs"),
         CFG_PARCELS: "parcels.gpkg",
-        CFG_PARCEL_UP: "up.csv",
-        CFG_PARCEL_OUT: "out.csv",
-        CFG_OUTLET_LOC: "outlets.gpkg",
+        CFG_OUTLETS: "outlets.gpkg",
         CFG_POLLUTANTS: ["TN"],
         CFG_CPS: [329],
         CFG_LOAD_GENERATION: "not-a-mapping",
@@ -115,11 +87,10 @@ def test_load_and_validate_all_rejects_non_mapping_load_generation(monkeypatch, 
     monkeypatch.setattr(input_config, "validate_config", lambda cfg: None)
     monkeypatch.setattr(input_config, "log_scope", lambda logger=None: _NullScope())
     monkeypatch.setattr(input_config, "_load_domain", lambda cfg, logger: object())
-    monkeypatch.setattr(input_config, "_load_parcels", lambda cfg, domain, logger: pd.DataFrame({"pid": ["P1"]}))
-    monkeypatch.setattr(input_config, "_load_parcel_graph", lambda cfg, logger: pd.DataFrame({"pid": ["P1"], "pid_up": [""]}))
-    monkeypatch.setattr(input_config, "_load_parcel_outlets", lambda cfg, logger: pd.DataFrame({"pid": ["P1"], "oids": ["O1"]}))
-    monkeypatch.setattr(input_config, "_expand_pid_defaults", lambda df, *args, **kwargs: df)
-    monkeypatch.setattr(input_config, "_load_parcel_selection", lambda cfg, parcels, logger: pd.DataFrame({"pid": ["P1"], "probability": [1.0]}))
+    monkeypatch.setattr(input_config, "_load_parcels", lambda cfg, domain, logger: pd.DataFrame({"pid": [1]}))
+    monkeypatch.setattr(input_config, "_load_parcel_graph", lambda cfg, logger: pd.DataFrame(columns=["pid", "pid_up"]))
+    monkeypatch.setattr(input_config, "_load_parcel_outlets", lambda cfg, logger: pd.DataFrame({"pid": [1], "oid": ["O1"]}))
+    monkeypatch.setattr(input_config, "_load_parcel_selection", lambda cfg, parcels, logger: pd.DataFrame({"pid": [1], "probability": [1.0]}))
     monkeypatch.setattr(input_config, "_load_pollutants", lambda cfg: ["TN"])
     monkeypatch.setattr(input_config, "_load_cps", lambda cfg: [329])
 
@@ -132,9 +103,7 @@ def test_load_and_validate_all_rejects_unsupported_load_generation_mode(monkeypa
     cfg = {
         CFG_OUTPUTS: str(tmp_path / "outputs"),
         CFG_PARCELS: "parcels.gpkg",
-        CFG_PARCEL_UP: "up.csv",
-        CFG_PARCEL_OUT: "out.csv",
-        CFG_OUTLET_LOC: "outlets.gpkg",
+        CFG_OUTLETS: "outlets.gpkg",
         CFG_POLLUTANTS: ["TN"],
         CFG_CPS: [329],
         CFG_LOAD_GENERATION: {"mode": "unsupported_mode"},
@@ -144,11 +113,10 @@ def test_load_and_validate_all_rejects_unsupported_load_generation_mode(monkeypa
     monkeypatch.setattr(input_config, "validate_config", lambda cfg: None)
     monkeypatch.setattr(input_config, "log_scope", lambda logger=None: _NullScope())
     monkeypatch.setattr(input_config, "_load_domain", lambda cfg, logger: object())
-    monkeypatch.setattr(input_config, "_load_parcels", lambda cfg, domain, logger: pd.DataFrame({"pid": ["P1"]}))
-    monkeypatch.setattr(input_config, "_load_parcel_graph", lambda cfg, logger: pd.DataFrame({"pid": ["P1"], "pid_up": [""]}))
-    monkeypatch.setattr(input_config, "_load_parcel_outlets", lambda cfg, logger: pd.DataFrame({"pid": ["P1"], "oids": ["O1"]}))
-    monkeypatch.setattr(input_config, "_expand_pid_defaults", lambda df, *args, **kwargs: df)
-    monkeypatch.setattr(input_config, "_load_parcel_selection", lambda cfg, parcels, logger: pd.DataFrame({"pid": ["P1"], "probability": [1.0]}))
+    monkeypatch.setattr(input_config, "_load_parcels", lambda cfg, domain, logger: pd.DataFrame({"pid": [1]}))
+    monkeypatch.setattr(input_config, "_load_parcel_graph", lambda cfg, logger: pd.DataFrame(columns=["pid", "pid_up"]))
+    monkeypatch.setattr(input_config, "_load_parcel_outlets", lambda cfg, logger: pd.DataFrame({"pid": [1], "oid": ["O1"]}))
+    monkeypatch.setattr(input_config, "_load_parcel_selection", lambda cfg, parcels, logger: pd.DataFrame({"pid": [1], "probability": [1.0]}))
     monkeypatch.setattr(input_config, "_load_pollutants", lambda cfg: ["TN"])
     monkeypatch.setattr(input_config, "_load_cps", lambda cfg: [329])
 
@@ -162,13 +130,10 @@ def test_load_and_validate_all_accepts_mixed_case_plet_mode_and_builds_maps(monk
     cfg = {
         CFG_OUTPUTS: str(tmp_path / "outputs"),
         CFG_PARCELS: "parcels.gpkg",
-        CFG_PARCEL_UP: "up.csv",
-        CFG_PARCEL_OUT: "out.csv",
-        CFG_OUTLET_LOC: "outlets.gpkg",
+        CFG_OUTLETS: "outlets.gpkg",
         CFG_POLLUTANTS: ["TN"],
         CFG_CPS: [329],
         CFG_LOAD_GENERATION: {"mode": "PLeT_RuSlE"},
-        CFG_INPUT_DISTRIBUTIONS: None,
     }
 
     monkeypatch.setattr(input_config, "normalize_config", lambda cfg: cfg)
@@ -178,32 +143,30 @@ def test_load_and_validate_all_accepts_mixed_case_plet_mode_and_builds_maps(monk
     monkeypatch.setattr(
         input_config,
         "_load_parcels",
-        lambda cfg, domain, logger: pd.DataFrame({"pid": ["P1", "P2"]}),
+        lambda cfg, domain, logger: pd.DataFrame({"pid": [1, 2]}),
     )
     monkeypatch.setattr(
         input_config,
         "_load_parcel_graph",
-        lambda cfg, logger: pd.DataFrame({"pid": ["P1", "P2"], "pid_up": ["", "P1"]}),
+        lambda cfg, logger: pd.DataFrame({"pid": [2], "pid_up": [1]}),
     )
     monkeypatch.setattr(
         input_config,
         "_load_parcel_outlets",
         lambda cfg, logger: pd.DataFrame(
             {
-                "pid": ["P1", "P2"],
-                "oids": ["O1, O2, O1", " O2 , O3 "],
+                "pid": [1, 1, 2, 2],
+                "oid": ["O1", "O2", "O2", "O3"],
             }
         ),
     )
-    monkeypatch.setattr(input_config, "_expand_pid_defaults", lambda df, *args, **kwargs: df)
     monkeypatch.setattr(
         input_config,
         "_load_parcel_selection",
-        lambda cfg, parcels, logger: pd.DataFrame({"pid": ["P1", "P2"], "probability": [0.5, 0.5]}),
+        lambda cfg, parcels, logger: pd.DataFrame({"pid": [1, 2], "probability": [0.5, 0.5]}),
     )
     monkeypatch.setattr(input_config, "_load_pollutants", lambda cfg: ["TN"])
     monkeypatch.setattr(input_config, "_load_cps", lambda cfg: [329])
-    monkeypatch.setattr(input_config, "load_distribution_catalog", lambda path, logger=None: None)
     monkeypatch.setattr(
         input_config,
         "_load_outlet_loc",
@@ -218,25 +181,81 @@ def test_load_and_validate_all_accepts_mixed_case_plet_mode_and_builds_maps(monk
     assert cfg[CFG_LOAD_GENERATION]["mode"] == "PLeT_RuSlE"
     assert any("Loading and validating input datasets" in msg for msg in logger.infos)
 
-    upstream = pd.DataFrame({"pid": ["P1", "P2"], "pid_up": ["", "P1"]})
-    parcel_up_map = input_config._build_parcel_up_map(upstream, ["P1", "P2"])
-    assert parcel_up_map["P1"] == []
-    assert parcel_up_map["P2"] == ["P1"]
+    upstream = pd.DataFrame({"pid": [2], "pid_up": [1]})
+    parcel_up_map = input_config._build_parcel_up_map(upstream, [1, 2])
+    assert parcel_up_map["1"] == []
+    assert parcel_up_map["2"] == ["1"]
 
     outlet_rows = pd.DataFrame(
         {
-            "pid": ["P1", "P2"],
-            "oids": ["O1, O2, O1", " O2 , O3 "],
+            "pid": [1, 1, 2, 2],
+            "oid": ["O1", "O2", "O2", "O3"],
         }
     )
-    parcel_out_map = {}
-    for pid in ["P1", "P2"]:
-        oids = []
-        rows = outlet_rows[outlet_rows["pid"].astype(str) == pid]
-        if not rows.empty:
-            for value in rows["oids"].tolist():
-                oids.extend([str(x).strip() for x in str(value).split(",") if str(x).strip()])
-        parcel_out_map[pid] = list(dict.fromkeys(oids))
+    parcel_out_map = {
+        pid: outlet_rows.loc[outlet_rows["pid"] == pid, "oid"].tolist()
+        for pid in [1, 2]
+    }
+    assert parcel_out_map[1] == ["O1", "O2"]
+    assert parcel_out_map[2] == ["O2", "O3"]
 
-    assert parcel_out_map["P1"] == ["O1", "O2"]
-    assert parcel_out_map["P2"] == ["O2", "O3"]
+def test_load_pollutant_concentrations_requires_and_preserves_plet_pathway(tmp_path) -> None:
+    logger = DummyLogger()
+    path = tmp_path / "pollutant_concentrations.csv"
+    pd.DataFrame(
+        [
+            {"pid": None, "pollutant": "tn", "pathway": "Surface", "value": 2.0, "units": "mg/L"},
+            {"pid": None, "pollutant": "TN", "pathway": "subsurface", "value": 3.0, "units": "mg/L"},
+            {"pid": None, "pollutant": "TP", "pathway": "surface", "value": 0.2, "units": "mg/L"},
+            {"pid": None, "pollutant": "TP", "pathway": "subsurface", "value": 0.3, "units": "mg/L"},
+        ]
+    ).to_csv(path, index=False)
+
+    loaded = input_config._load_pollutant_concentrations(
+        path, ["TN", "TP"], logger
+    )
+
+    assert loaded is not None
+    assert loaded[["pollutant", "pathway"]].to_dict("records") == [
+        {"pollutant": "TN", "pathway": "surface"},
+        {"pollutant": "TN", "pathway": "subsurface"},
+        {"pollutant": "TP", "pathway": "surface"},
+        {"pollutant": "TP", "pathway": "subsurface"},
+    ]
+
+    surface, subsurface = input_config._split_plet_concentrations(loaded)
+    assert surface is not None and subsurface is not None
+    assert set(surface["pathway"]) == {"surface"}
+    assert set(subsurface["pathway"]) == {"subsurface"}
+    assert surface.set_index("pollutant").loc["TN", "value"] == pytest.approx(2.0)
+    assert subsurface.set_index("pollutant").loc["TN", "value"] == pytest.approx(3.0)
+
+
+def test_load_pollutant_concentrations_rejects_missing_pathway_column(tmp_path) -> None:
+    logger = DummyLogger()
+    path = tmp_path / "pollutant_concentrations.csv"
+    pd.DataFrame(
+        [{"pid": None, "pollutant": "TN", "value": 2.0, "units": "mg/L"}]
+    ).to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="pathway"):
+        input_config._load_pollutant_concentrations(path, ["TN"], logger)
+
+
+def test_load_pollutant_concentrations_rejects_non_plet_pathway(tmp_path) -> None:
+    logger = DummyLogger()
+    path = tmp_path / "pollutant_concentrations.csv"
+    pd.DataFrame(
+        [
+            {
+                "pid": None,
+                "pollutant": "TN",
+                "pathway": "groundwater",
+                "value": 3.0,
+                "units": "mg/L",
+            }
+        ]
+    ).to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="surface.*subsurface|unexpected"):
+        input_config._load_pollutant_concentrations(path, ["TN"], logger)

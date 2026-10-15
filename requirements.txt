@@ -1,8 +1,15 @@
 numpy
-pandas
+pandas>=2.2
+python-calamine
+xlsxwriter
 geopandas
 shapely
 pyproj
 matplotlib
 pyyaml
+pyarrow
 pytest
+requests
+rasterio
+pyogrio
+fiona

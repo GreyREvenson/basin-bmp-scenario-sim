@@ -1,0 +1,39 @@
+# Example East Fork (OH) watershed configuration (synthetic data)
+verbose: True
+outputs: ../../outputs/run_lit_stochastic
+random_seed: 42
+
+# Consolidated geospatial/input packages
+domain: ../domain/domain.gpkg
+parcels: ../parcels/parcels_plet_stochastic.gpkg
+outlets: ../outlets/outlets.gpkg
+
+pollutants: ["TN", "TP", "TSS"]
+cps: [340, 329, 590, 412, 656]
+
+
+bmp_efficiency: ../bmps/bmp_efficiency_lit_stochastic.csv
+bmp_cost: ../bmps/bmp_cost_stochastic.csv
+
+# Statistical parcel load rates are read from input_pollutant_load_rate
+# inside parcels.gpkg.
+load_generation:
+  mode: statistical
+
+# One aggregate areal load rate is sampled per parcel and pollutant, then
+# partitioned across the pathways defined by bmp_efficiency.
+pollutant_load_rate_pathway_fractions:
+  surface: 0.30
+  shallow subsurface: 0.40
+  deep subsurface: 0.30
+
+n_scenarios: 10
+bmp_limit_n: 500
+buffer_depth_ft: 35
+
+parallel:
+  n_jobs: 10
+
+bmp_sel_prob_via_costs: False
+bmp_fail_rate: 0.25
+bmp_fail_reduction: 0.25
