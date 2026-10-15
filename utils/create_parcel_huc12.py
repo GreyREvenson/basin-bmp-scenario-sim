@@ -39,7 +39,7 @@ def _normalize_huc12(value: object) -> str:
 
 
 def _read_parcels(path: Path, layer: str) -> gpd.GeoDataFrame:
-    parcels = gpd.read_file(path, layer=layer, fid_as_index=True)
+    parcels = gpd.read_file(path, layer=layer, fid_as_index=True, engine="pyogrio")
     if parcels.empty:
         raise ValueError(f"Parcel layer {layer!r} is empty")
     if parcels.crs is None:
