@@ -10,6 +10,7 @@ from src.constants import (
     CFG_OUTPUTS,
     CFG_PARCELS,
     CFG_OUTLETS,
+    CFG_PLET_FORCING,
 )
 from src.input_config import normalize_config, resolve_config_paths
 from src.io_utils import read_config
@@ -27,6 +28,7 @@ def test_resolve_config_paths_uses_yaml_directory_not_cwd(tmp_path, monkeypatch)
             {
                 "domain": "../inputs/domain.gpkg",
                 "parcels": "../inputs/parcels.gpkg",
+                "plet_forcing": "../inputs/plet_forcing.gpkg",
                 "outlets": "../inputs/outlets.gpkg",
                 "bmp_efficiency": "../inputs/bmp.csv",
                 "outputs": "../outputs/run_1",
@@ -46,6 +48,7 @@ def test_resolve_config_paths_uses_yaml_directory_not_cwd(tmp_path, monkeypatch)
 
     assert Path(cfg[CFG_DOMAIN]) == (input_dir / "domain.gpkg").resolve()
     assert Path(cfg[CFG_PARCELS]) == (input_dir / "parcels.gpkg").resolve()
+    assert Path(cfg[CFG_PLET_FORCING]) == (input_dir / "plet_forcing.gpkg").resolve()
     assert Path(cfg[CFG_OUTLETS]) == (input_dir / "outlets.gpkg").resolve()
     assert Path(cfg[CFG_BMP_EFFICIENCY]) == (input_dir / "bmp.csv").resolve()
     assert Path(cfg[CFG_OUTPUTS]) == (tmp_path / "project" / "outputs" / "run_1").resolve()
