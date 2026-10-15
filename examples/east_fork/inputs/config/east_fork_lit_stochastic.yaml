@@ -5,7 +5,7 @@ random_seed: 42
 
 # Consolidated geospatial/input packages
 domain: ../domain/domain.gpkg
-parcels: ../parcels/parcels.gpkg
+parcels: ../parcels/parcels_plet_stochastic.gpkg
 outlets: ../outlets/outlets.gpkg
 
 pollutants: ["TN", "TP", "TSS"]

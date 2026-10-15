@@ -174,7 +174,7 @@ def test_schema_v3_rejects_legacy_star_pid_and_accepts_null_default() -> None:
 
 
 def test_example_parcels_geopackage_uses_integer_pid_primary_key_and_editable_attribute_ids() -> None:
-    package = Path(__file__).resolve().parents[1] / "examples" / "east_fork" / "inputs" / "parcels" / "parcels.gpkg"
+    package = Path(__file__).resolve().parents[1] / "examples" / "east_fork" / "inputs" / "parcels" / "parcels_lit_deterministic.gpkg"
 
     parcels = {row["name"].lower(): row for row in read_geopackage_table_info(package, "parcels")}
     assert "fid" not in parcels
@@ -199,7 +199,7 @@ def test_example_parcels_geopackage_uses_integer_pid_primary_key_and_editable_at
 def test_load_parcels_recovers_pid_when_reader_hides_feature_id(monkeypatch) -> None:
     """Schema-v3 pid must survive GeoPandas/Fiona versions that hide the FID."""
     repo = Path(__file__).resolve().parents[1]
-    package = repo / "examples" / "east_fork" / "inputs" / "parcels" / "parcels.gpkg"
+    package = repo / "examples" / "east_fork" / "inputs" / "parcels" / "parcels_lit_deterministic.gpkg"
     domain_path = repo / "examples" / "east_fork" / "inputs" / "domain" / "domain.gpkg"
 
     domain = gpd.read_file(domain_path)
