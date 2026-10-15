@@ -12,3 +12,4 @@ pytest
 requests
 rasterio
 pyogrio
+fiona

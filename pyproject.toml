@@ -27,6 +27,7 @@ dependencies = [
   "requests",
   "rasterio",
   "pyogrio",
+  "fiona",
 ]
 
 [tool.pytest.ini_options]
