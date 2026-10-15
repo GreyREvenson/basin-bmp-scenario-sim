@@ -6,7 +6,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import Point
+from shapely.geometry import Point, box
 
 from src import input_config
 from src.input_config import (
@@ -35,6 +35,29 @@ class Logger:
 def _write_table(path: Path, name: str, frame: pd.DataFrame) -> None:
     with sqlite3.connect(path) as con:
         frame.to_sql(name, con, if_exists="replace", index=False)
+
+
+def _write_synthetic_schema_v3_package(path: Path, parcel_count: int = 5) -> None:
+    parcels = gpd.GeoDataFrame(
+        geometry=[
+            box(index * 2, 0, index * 2 + 1, 1)
+            for index in range(parcel_count)
+        ],
+        crs="EPSG:5070",
+    )
+    parcels.to_file(path, layer="parcels", driver="GPKG")
+    with sqlite3.connect(path) as con:
+        con.execute("ALTER TABLE parcels RENAME COLUMN fid TO pid")
+        con.execute(
+            "CREATE TABLE model_input_schema (schema_version INTEGER NOT NULL)"
+        )
+        con.execute("INSERT INTO model_input_schema(schema_version) VALUES (3)")
+        for table in ("input_annual_precip_in", "input_avg_rain_in"):
+            con.execute(
+                f"CREATE TABLE {table} "
+                "(id INTEGER PRIMARY KEY, pid INTEGER, value REAL)"
+            )
+            con.execute(f"INSERT INTO {table}(pid,value) VALUES (NULL,42)")
 
 
 def test_required_plet_parameters_are_not_synthesized_by_defaults() -> None:
@@ -173,8 +196,11 @@ def test_schema_v3_rejects_legacy_star_pid_and_accepts_null_default() -> None:
     assert _normalize_integer_identifier_value("42", "pid") == 42
 
 
-def test_example_parcels_geopackage_uses_integer_pid_primary_key_and_editable_attribute_ids() -> None:
-    package = Path(__file__).resolve().parents[1] / "examples" / "east_fork" / "inputs" / "parcels" / "parcels_lit_deterministic.gpkg"
+def test_synthetic_geopackage_uses_integer_pid_primary_key_and_editable_attribute_ids(
+    tmp_path: Path,
+) -> None:
+    package = tmp_path / "synthetic_parcels.gpkg"
+    _write_synthetic_schema_v3_package(package)
 
     parcels = {row["name"].lower(): row for row in read_geopackage_table_info(package, "parcels")}
     assert "fid" not in parcels
@@ -196,13 +222,15 @@ def test_example_parcels_geopackage_uses_integer_pid_primary_key_and_editable_at
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
-def test_load_parcels_recovers_pid_when_reader_hides_feature_id(monkeypatch) -> None:
+def test_load_parcels_recovers_pid_when_reader_hides_feature_id(
+    monkeypatch, tmp_path: Path,
+) -> None:
     """Schema-v3 pid must survive GeoPandas/Fiona versions that hide the FID."""
-    repo = Path(__file__).resolve().parents[1]
-    package = repo / "examples" / "east_fork" / "inputs" / "parcels" / "parcels_lit_deterministic.gpkg"
-    domain_path = repo / "examples" / "east_fork" / "inputs" / "domain" / "domain.gpkg"
-
-    domain = gpd.read_file(domain_path)
+    package = tmp_path / "synthetic_parcels.gpkg"
+    _write_synthetic_schema_v3_package(package)
+    domain = gpd.GeoDataFrame(
+        geometry=[box(-1, -1, 20, 2)], crs="EPSG:5070"
+    )
     domain = input_config._ensure_projected(domain, Logger())
 
     def read_without_feature_id(path, *, layer=None, fid_as_index=False):
@@ -274,4 +302,3 @@ def test_plet_concentration_sampling_applies_null_defaults_to_integer_pids() -> 
     sampled = _sample_concentrations(FixedContext(), table, [1, 2])
     assert sampled[0] == {"TN": pytest.approx(4.4), "TP": pytest.approx(0.35)}
     assert sampled[1] == {"TN": pytest.approx(5.0), "TP": pytest.approx(0.35)}
-

@@ -1,28 +1,28 @@
-"""Guard against re-coupling ordinary tests to the shipped East Fork example."""
+"""Guard ordinary tests against dependencies on repository example data."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 
-def test_ordinary_tests_do_not_reference_east_fork_example_files() -> None:
+def test_tests_do_not_reference_repository_examples() -> None:
     tests_dir = Path(__file__).resolve().parent
-    forbidden = (
-        "examples" + "/east_fork",
-        "examples" + "\\east_fork",
-        "east_fork" + ".yaml",
-        "east_fork_plet" + ".yaml",
-    )
-
     offenders: list[str] = []
-    for path in sorted(tests_dir.glob("*.py")):
+    roots = (tests_dir, tests_dir.parent / "tests_cfg")
+    paths = sorted(
+        path
+        for root in roots
+        if root.exists()
+        for path in root.rglob("*.py")
+        if path.resolve() != Path(__file__).resolve()
+    )
+    for path in paths:
         text = path.read_text(encoding="utf-8")
-        for token in forbidden:
-            if token in text:
-                offenders.append(f"{path.name}: {token}")
+        if "examples" in text.lower():
+            offenders.append(str(path.relative_to(tests_dir.parent)))
 
     assert not offenders, (
-        "Ordinary tests must not depend on shipped East Fork paths or config names; "
-        "use synthetic inputs or tmp_path-generated config files instead. Offenders: "
+        "Tests must not read repository examples; use synthetic inputs or "
+        "tmp_path-generated config files instead. Offenders: "
         + ", ".join(offenders)
     )

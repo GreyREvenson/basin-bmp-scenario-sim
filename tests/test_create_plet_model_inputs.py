@@ -22,20 +22,100 @@ from src import input_config
 from utils import create_plet_model_inputs as utility
 
 
-WORKBOOK = (Path(__file__).resolve().parents[1] / "examples" / "east_fork"
-            / "inputs" / "misc" / "EastFork_plet_inputs.xlsx")
-HUC_GEOMETRY = (Path(__file__).resolve().parents[1] / "examples" / "east_fork"
-                / "inputs" / "plet" / "huc12s_plet_deterministic.gpkg")
-EAST_FORK_PARCELS = (Path(__file__).resolve().parents[1] / "examples" / "east_fork"
-                     / "inputs" / "parcels" / "parcels_plet_deterministic.gpkg")
-HUC_A = "050902021001"
-HUC_B = "050902021005"
+HUC_A = "123456789001"
+HUC_B = "123456789002"
+
+
+def _write_synthetic_workbook(path: Path) -> None:
+    watershed = pd.DataFrame(
+        {
+            "WATERSHED": [HUC_A, HUC_B],
+            "AVG_RAIN": [0.84 / 0.351, 4.0],
+            "RAIN_DAYS": [100, 100],
+            "ANNUAL_RAINFALL": [100, 200],
+            "SHG": ["C", "B"],
+        }
+    )
+    rusle = {"WATERSHED": [HUC_A, HUC_B]}
+    for cover, prefix in utility.RUSLE_COLUMNS.items():
+        for parameter in ("r", "k", "ls", "c", "p"):
+            rusle[f"{prefix}_{parameter.upper()}"] = [
+                150 if cover == "cropland" and parameter == "r" else 1,
+                160 if cover == "cropland" and parameter == "r" else 1,
+            ]
+    sediment = pd.DataFrame(
+        {
+            "WATERSHED": [HUC_A, HUC_B],
+            "SOIL_N_CONC": [0.08, 0.09],
+            "SOIL_P_CONC": [0.0308, 0.04],
+        }
+    )
+    nutrients = pd.DataFrame(
+        {
+            "LANDUSE": utility.LAND_COVERS,
+            "N": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "P": [0.1, 0.2, 0.3, 0.4, 0.5],
+        }
+    )
+    curve_numbers = pd.DataFrame(
+        {
+            "SHG": utility.LAND_COVERS,
+            **{
+                hsg: [
+                    83 if cover == "urban" and hsg == "A" else
+                    0 if cover == "user_defined" else 70
+                    for cover in utility.LAND_COVERS
+                ]
+                for hsg in utility.HSG_VALUES
+            },
+        }
+    )
+    infiltration = pd.DataFrame(
+        {
+            "SHG": utility.LAND_COVERS,
+            **{
+                hsg: [
+                    0.30 if cover == "forest" and hsg == "B" else 0.25
+                    for cover in utility.LAND_COVERS
+                ]
+                for hsg in utility.HSG_VALUES
+            },
+        }
+    )
+    with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
+        watershed.to_excel(writer, sheet_name="1. Watershed Land Use", index=False)
+        sediment.to_excel(
+            writer, sheet_name="4. Nutrient and E.Coli Content", index=False
+        )
+        pd.DataFrame(rusle).to_excel(
+            writer, sheet_name="5. Universal Soil Loss Equation", index=False
+        )
+        curve_numbers.to_excel(
+            writer, sheet_name="6. Reference Runoff Curve", index=False
+        )
+        nutrients.to_excel(writer, sheet_name="7a. Nutrient Concentration", index=False)
+        infiltration.to_excel(writer, sheet_name="Soil Infiltration", index=False)
+
+
+@pytest.fixture
+def synthetic_inputs(tmp_path: Path) -> tuple[Path, Path]:
+    workbook = tmp_path / "synthetic_plet.xlsx"
+    geometry = tmp_path / "synthetic_huc12.gpkg"
+    _write_synthetic_workbook(workbook)
+    _hucs().to_file(geometry, layer="huc12", driver="GPKG")
+    return workbook, geometry
 
 
 @pytest.mark.parametrize("module_name", [
     "utils.create_plet_model_inputs", "create_plet_model_inputs",
 ])
-def test_workbook_reads_after_geospatial_io_exit_cleanly(module_name):
+def test_workbook_reads_after_geospatial_io_exit_cleanly(
+    module_name: str, tmp_path: Path,
+) -> None:
+    workbook = tmp_path / "synthetic_plet.xlsx"
+    geometry = tmp_path / "synthetic_huc12.gpkg"
+    _write_synthetic_workbook(workbook)
+    _hucs().to_file(geometry, layer="huc12", driver="GPKG")
     script = textwrap.dedent("""
         import importlib
         import sys
@@ -54,8 +134,8 @@ def test_workbook_reads_after_geospatial_io_exit_cleanly(module_name):
             hucs = gpd.read_file(geometry, layer="huc12")
             export = utility.read_initial_plet_export(workbook)
             tables, hydrology = utility.workbook_tables(
-                workbook, {"050902021001", "050902021005"}, export=export)
-            assert len(export) == len(hucs) == 18
+                workbook, {"123456789001", "123456789002"}, export=export)
+            assert len(export) == len(hucs) == 2
             assert len(tables["surface_concentration"]) == 30
             assert len(hydrology["cn"]) == 16
         assert "openpyxl" not in sys.modules
@@ -63,8 +143,8 @@ def test_workbook_reads_after_geospatial_io_exit_cleanly(module_name):
     """)
     result = subprocess.run(
         [sys.executable, "-X", "faulthandler", "-c", script,
-         module_name, str(WORKBOOK), str(HUC_GEOMETRY)],
-        cwd=WORKBOOK.parents[4],
+         module_name, str(workbook), str(geometry)],
+        cwd=Path(utility.__file__).resolve().parents[1],
         env={**os.environ, "OPENPYXL_LXML": "True"},
         capture_output=True, text=True, timeout=120,
     )
@@ -109,9 +189,10 @@ def _hucs():
     ).to_crs("EPSG:4326")
 
 
-def test_workbook_numeric_tables_and_reconstruction(caplog):
+def test_workbook_numeric_tables_and_reconstruction(caplog, synthetic_inputs):
+    workbook, _ = synthetic_inputs
     with caplog.at_level(logging.WARNING, logger=utility.LOGGER.name):
-        tables, hydrology = utility.workbook_tables(WORKBOOK, {HUC_A, HUC_B})
+        tables, hydrology = utility.workbook_tables(workbook, {HUC_A, HUC_B})
     assert tables["hsg"].set_index("huc12").loc[HUC_A, "value"] == "C"
     for parameter in ("avg_rain_in", "annual_precip_in", "rain_days"):
         assert set(tables[parameter]["huc12"]) == {HUC_A, HUC_B}
@@ -145,7 +226,7 @@ def test_workbook_numeric_tables_and_reconstruction(caplog):
     assert hydrology["infiltration_fraction"].query(
         "land_cover == 'forest' and hsg == 'B'").iloc[0]["value"] == .30
 
-    export = utility.read_initial_plet_export(WORKBOOK)
+    export = utility.read_initial_plet_export(workbook)
     rcor, rdcor, audit = utility.reconstruct_rain_factors(
         export[export["huc12"].isin((HUC_A, HUC_B))], _hucs())
     assert audit["relative_error"].max() < 1e-7
@@ -157,8 +238,37 @@ def test_workbook_numeric_tables_and_reconstruction(caplog):
     assert "not independently verified" in rcor.set_index("huc12").loc[HUC_A, "notes"]
 
 
-def test_east_fork_existing_inputs_cover_missing_workbook_fields():
-    with sqlite3.connect(f"{EAST_FORK_PARCELS.resolve().as_uri()}?mode=ro", uri=True) as con:
+def test_synthetic_existing_inputs_cover_missing_workbook_fields(tmp_path: Path):
+    package = tmp_path / "synthetic_parcels.gpkg"
+    with sqlite3.connect(package) as con:
+        for parameter in ("r", "k", "ls", "c", "p"):
+            con.execute(
+                f"CREATE TABLE input_rusle_{parameter} "
+                "(id INTEGER PRIMARY KEY, pid INTEGER, value REAL)"
+            )
+            con.execute(
+                f"INSERT INTO input_rusle_{parameter}(pid,value) VALUES (NULL,1)"
+            )
+        for pathway in ("surface", "subsurface"):
+            con.execute(
+                f"CREATE TABLE input_{pathway}_concentration "
+                "(id INTEGER PRIMARY KEY, pid INTEGER, pollutant TEXT, value REAL)"
+            )
+            con.executemany(
+                f"INSERT INTO input_{pathway}_concentration(pid,pollutant,value) "
+                "VALUES (NULL,?,1)",
+                (("TN",), ("TP",)),
+            )
+        con.execute(
+            "CREATE TABLE input_curve_number "
+            "(id INTEGER PRIMARY KEY, land_cover TEXT, hsg TEXT, value REAL)"
+        )
+        con.executemany(
+            "INSERT INTO input_curve_number(land_cover,hsg,value) "
+            "VALUES ('user_defined',?,70)",
+            ((hsg,) for hsg in utility.HSG_VALUES),
+        )
+    with sqlite3.connect(package) as con:
         for parameter in ("r", "k", "ls", "c", "p"):
             assert con.execute(
                 f"SELECT COUNT(*) FROM input_rusle_{parameter} "
@@ -177,7 +287,8 @@ def test_east_fork_existing_inputs_cover_missing_workbook_fields():
         ).fetchone() == (4,)
 
 
-def test_sheet_4_missing_and_invalid_huc_values_fail(monkeypatch):
+def test_sheet_4_missing_and_invalid_huc_values_fail(monkeypatch, synthetic_inputs):
+    workbook, _ = synthetic_inputs
     real_huc_sheet = utility._huc_sheet
 
     def sheet_with_missing_huc(workbook, name, fields):
@@ -186,7 +297,7 @@ def test_sheet_4_missing_and_invalid_huc_values_fail(monkeypatch):
 
     monkeypatch.setattr(utility, "_huc_sheet", sheet_with_missing_huc)
     with pytest.raises(ValueError, match="PLET sheet 4 missing HUC12s"):
-        utility.workbook_tables(WORKBOOK, {HUC_A, HUC_B})
+        utility.workbook_tables(workbook, {HUC_A, HUC_B})
 
     def sheet_with_invalid_pct(workbook, name, fields):
         frame = real_huc_sheet(workbook, name, fields)
@@ -196,24 +307,23 @@ def test_sheet_4_missing_and_invalid_huc_values_fail(monkeypatch):
 
     monkeypatch.setattr(utility, "_huc_sheet", sheet_with_invalid_pct)
     with pytest.raises(ValueError, match="SOIL_N_CONC must be a percent"):
-        utility.workbook_tables(WORKBOOK, {HUC_A})
+        utility.workbook_tables(workbook, {HUC_A})
 
 
-def test_east_fork_ambiguous_pairs_use_neighboring_unique_huc_geometry(caplog):
-    export = utility.read_initial_plet_export(WORKBOOK)
-    # Read only polygons; previously exported factors must not influence estimates.
-    hucs = gpd.read_file(HUC_GEOMETRY, layer="huc12")[["huc12", "geometry"]]
+def test_ambiguous_pairs_use_neighboring_unique_huc_geometry(caplog, synthetic_inputs):
+    workbook, geometry = synthetic_inputs
+    export = utility.read_initial_plet_export(workbook)
+    hucs = gpd.read_file(geometry, layer="huc12")[["huc12", "geometry"]]
     with caplog.at_level(logging.INFO, logger=utility.LOGGER.name):
         rcor, rdcor, audit = utility.reconstruct_rain_factors(export, hucs)
     rcor = rcor.set_index("huc12")
     rdcor = rdcor.set_index("huc12")
     audit = audit.set_index("huc12")
-    assert (rcor.loc[HUC_B, "value"], rdcor.loc[HUC_B, "value"]) == (.870, .435)
-    assert (rcor.loc["050902021101", "value"],
-            rdcor.loc["050902021101", "value"]) == (.874, .437)
-    assert len(audit) == len(export) == 18
+    assert (rcor.loc[HUC_A, "value"], rdcor.loc[HUC_A, "value"]) == (.840, .351)
+    assert (rcor.loc[HUC_B, "value"], rdcor.loc[HUC_B, "value"]) == (.840, .420)
+    assert len(audit) == len(export) == 2
     assert audit["relative_error"].max() < 1e-7
-    for huc in (HUC_B, "050902021101"):
+    for huc in (HUC_B,):
         assert "nearest unique HUC12s" in rcor.loc[huc, "notes"]
         assert "not independently verified" in rdcor.loc[huc, "notes"]
         row = export.set_index("huc12").loc[huc]
@@ -222,7 +332,7 @@ def test_east_fork_ambiguous_pairs_use_neighboring_unique_huc_geometry(caplog):
             rel=1e-7,
         )
     rain_audit = [record.message for record in caplog.records if "Rain audit HUC12" in record.message]
-    assert len(rain_audit) == 18
+    assert len(rain_audit) == 2
     assert all("annual_rainfall=" in line and "rain_days=" in line and
                "exported_avg_rain=" in line and "reconstructed_avg_rain=" in line and
                "absolute_error=" in line and "relative_error=" in line and
@@ -452,7 +562,10 @@ def test_cli_verbose_writes_audit_log_and_console_warning(tmp_path, monkeypatch,
     assert "TSS PLACEHOLDER: review zero surface concentrations" in capsys.readouterr().err
 
 
-def test_offline_end_to_end_preserves_existing_overrides(tmp_path, monkeypatch):
+def test_offline_end_to_end_preserves_existing_overrides(
+    tmp_path, monkeypatch, synthetic_inputs,
+):
+    workbook, _ = synthetic_inputs
     parcel_path = tmp_path / "site.gpkg"
     _parcel_fixture(parcel_path)
     with sqlite3.connect(parcel_path) as con:
@@ -474,7 +587,7 @@ def test_offline_end_to_end_preserves_existing_overrides(tmp_path, monkeypatch):
                         lambda polygons, parcels, threshold: polygons)
 
     parcel_out, forcing = utility.prepare_plet_inputs(
-        parcel_path, "parcels", WORKBOOK, nlcd_source=_raster)
+        parcel_path, "parcels", workbook, nlcd_source=_raster)
     assert parcel_out.name == "site_plet.gpkg"
     assert forcing.name == "site_plet_huc12.gpkg"
     with sqlite3.connect(parcel_out) as con:
@@ -499,14 +612,16 @@ def test_offline_end_to_end_preserves_existing_overrides(tmp_path, monkeypatch):
     with sqlite3.connect(forcing) as con:
         assert con.execute("SELECT count(*) FROM input_surface_concentration").fetchone() == (30,)
         assert con.execute("SELECT COUNT(*) FROM input_hsg").fetchone() == (2,)
-        for table_name, expected in (("input_sediment_n_pct", .08),
-                                     ("input_sediment_p_pct", .0308)):
+        for table_name, field, expected_values in (
+            ("input_sediment_n_pct", "SOIL_N_CONC", (0.08, 0.09)),
+            ("input_sediment_p_pct", "SOIL_P_CONC", (0.0308, 0.04)),
+        ):
             assert con.execute(
                 f"SELECT huc12,value,units,notes FROM {table_name} ORDER BY huc12"
             ).fetchall() == [
-                (huc, expected, "%", f"PLET sheet 4, {'SOIL_N_CONC' if expected == .08 else 'SOIL_P_CONC'}; "
+                (huc, value, "%", f"PLET sheet 4, {field}; "
                  "soil nutrient concentration in percent")
-                for huc in (HUC_A, HUC_B)
+                for huc, value in zip((HUC_A, HUC_B), expected_values)
             ]
         assert con.execute(
             "SELECT COUNT(*) FROM input_surface_concentration "
@@ -557,10 +672,11 @@ def test_offline_end_to_end_preserves_existing_overrides(tmp_path, monkeypatch):
         & (concentrations.pathway == "surface"), "value",
     ].tolist() == [12.5]
     with pytest.raises(FileExistsError, match="Refusing to overwrite"):
-        utility.prepare_plet_inputs(parcel_path, "parcels", WORKBOOK, nlcd_source=_raster)
+        utility.prepare_plet_inputs(parcel_path, "parcels", workbook, nlcd_source=_raster)
 
 
-def test_ssurgo_mode_writes_dominant_hsg(tmp_path, monkeypatch):
+def test_ssurgo_mode_writes_dominant_hsg(tmp_path, monkeypatch, synthetic_inputs):
+    workbook, _ = synthetic_inputs
     parcel_path = tmp_path / "site.gpkg"
     _parcel_fixture(parcel_path)
     hucs = _hucs()
@@ -571,7 +687,7 @@ def test_ssurgo_mode_writes_dominant_hsg(tmp_path, monkeypatch):
                         gpd.GeoDataFrame({"hydgrpdcd": ["A", "B"]}, geometry=hucs.geometry,
                                          crs=hucs.crs))
     out, forcing = utility.prepare_plet_inputs(
-        parcel_path, "parcels", WORKBOOK, sssurgo_hsg_true=True, nlcd_source=_raster)
+        parcel_path, "parcels", workbook, sssurgo_hsg_true=True, nlcd_source=_raster)
     with sqlite3.connect(out) as con:
         assert con.execute("SELECT value FROM input_hsg ORDER BY pid").fetchall() == [
             ("A",), ("B",)]
@@ -579,7 +695,10 @@ def test_ssurgo_mode_writes_dominant_hsg(tmp_path, monkeypatch):
         assert con.execute("SELECT COUNT(*) FROM input_hsg").fetchone() == (0,)
 
 
-def test_custom_parcel_layer_becomes_canonical_with_ids_and_metadata(tmp_path, monkeypatch):
+def test_custom_parcel_layer_becomes_canonical_with_ids_and_metadata(
+    tmp_path, monkeypatch, synthetic_inputs,
+):
+    workbook, _ = synthetic_inputs
     package = tmp_path / "alternate.gpkg"
     source = gpd.GeoDataFrame(
         {"geometry": [box(-290, 10, -30, 290), box(30, 10, 290, 290)]},
@@ -598,7 +717,7 @@ def test_custom_parcel_layer_becomes_canonical_with_ids_and_metadata(tmp_path, m
     monkeypatch.setattr(utility, "retain_hucs_by_parcel_overlap_threshold",
                         lambda polygons, parcels, threshold: polygons)
     out, _ = utility.prepare_plet_inputs(
-        package, "alternate", WORKBOOK, nlcd_source=_raster)
+        package, "alternate", workbook, nlcd_source=_raster)
     assert list(gpd.read_file(out, layer="parcels", fid_as_index=True).index) == [1, 2]
     assert list(gpd.read_file(package, layer="alternate", fid_as_index=True).index) == [1, 2]
     with sqlite3.connect(out) as con:
@@ -621,7 +740,10 @@ def test_custom_parcel_layer_becomes_canonical_with_ids_and_metadata(tmp_path, m
                            "WHERE data_type='features'").fetchone() == ("alternate",)
 
 
-def test_noncanonical_layer_rejects_existing_canonical_table_before_download(tmp_path, monkeypatch):
+def test_noncanonical_layer_rejects_existing_canonical_table_before_download(
+    tmp_path, monkeypatch, synthetic_inputs,
+):
+    workbook, _ = synthetic_inputs
     package = tmp_path / "conflict.gpkg"
     gpd.GeoDataFrame({"pid": [1], "geometry": [box(0, 0, 1, 1)]},
                      crs="EPSG:5070").to_file(package, layer="alternate", driver="GPKG")
@@ -630,15 +752,16 @@ def test_noncanonical_layer_rejects_existing_canonical_table_before_download(tmp
     monkeypatch.setattr(utility, "download_wbd_huc12",
                         lambda bounds: pytest.fail("WBD must not be downloaded"))
     with pytest.raises(ValueError, match="already contains a parcels table"):
-        utility.prepare_plet_inputs(package, "alternate", WORKBOOK, nlcd_source=_raster)
+        utility.prepare_plet_inputs(package, "alternate", workbook, nlcd_source=_raster)
     assert not package.with_name("conflict_plet.gpkg").exists()
 
 
-def test_noncanonical_layer_requires_pid_feature_key(tmp_path, monkeypatch):
+def test_noncanonical_layer_requires_pid_feature_key(tmp_path, monkeypatch, synthetic_inputs):
+    workbook, _ = synthetic_inputs
     package = tmp_path / "wrong_key.gpkg"
     gpd.GeoDataFrame({"pid": [1], "geometry": [box(0, 0, 1, 1)]},
                      crs="EPSG:5070").to_file(package, layer="alternate", driver="GPKG")
     monkeypatch.setattr(utility, "download_wbd_huc12",
                         lambda bounds: pytest.fail("WBD must not be downloaded"))
     with pytest.raises(ValueError, match="pid INTEGER PRIMARY KEY"):
-        utility.prepare_plet_inputs(package, "alternate", WORKBOOK, nlcd_source=_raster)
+        utility.prepare_plet_inputs(package, "alternate", workbook, nlcd_source=_raster)
