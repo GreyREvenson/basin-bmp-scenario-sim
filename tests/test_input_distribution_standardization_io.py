@@ -125,7 +125,7 @@ def test_pollutant_load_rate_defaults_accept_integer_pids_in_arrow_string_rows()
     table = pd.DataFrame([
         {"pid": None, "pollutant": "TN", "pathway": "surface", "value": "10"},
         {"pid": "2", "pollutant": "TN", "pathway": "surface", "value": "20"},
-    ]).astype("str")
+    ]).astype("string[pyarrow]")
 
     out = _expand_pollutant_load_rate_defaults(table, [1, 2], ["TN"])
 
