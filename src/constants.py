@@ -30,6 +30,7 @@ CURRENT_TIMESTEP_YEARS = 1.0
 CFG_DOMAIN = "domain"
 CFG_PARCELS = "parcels"
 CFG_PLET_FORCING = "plet_forcing"
+CFG_HUC_PARAMETERS = "huc_parameters"
 CFG_OUTLETS = "outlets"
 CFG_POLLUTANTS = "pollutants"
 CFG_CPS = "cps"

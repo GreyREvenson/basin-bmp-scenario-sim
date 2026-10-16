@@ -1,7 +1,11 @@
 """Declarative schema for consolidated model input GeoPackages.
 
 The registry in this module is the single source of truth for user-facing
-``input_*`` tables stored in ``parcels.gpkg``. Parcel IDs are positive integers; where a variable supports a package-wide default, ``pid IS NULL`` represents that default and exact integer ``pid`` rows override it.  Loaders may still perform
+``input_*`` tables. Its keys describe parcel inputs; HUC tables substitute
+``huc_id`` for ``pid`` and domain tables omit the spatial key. Hydrology lookups
+retain their classification keys and may optionally include a parcel ``pid``.
+Where a variable supports a package-wide default, ``pid IS NULL`` represents
+that default and exact integer ``pid`` rows override it. Loaders may still perform
 variable-specific semantic validation, but table discovery, key columns,
 required modes, and basic input kinds are defined here so the contract is not
 spread across several modules.
@@ -41,9 +45,8 @@ class InputVariableSpec:
 
 
 _PLET_REQUIRED_PARAMETERS = {
-    # Climate forcing may come from HUC12-scale plet_forcing input_* tables,
-    # parcel defaults, or parcel-specific overrides and is therefore checked
-    # semantically at runtime. Classifications remain parcel-side required tables.
+    # Required tables may reside in any scope; climate alternatives and
+    # effective parcel coverage are checked semantically after inheritance.
     "land_cover",
 }
 
@@ -124,7 +127,7 @@ KNOWN_INPUT_TABLES = frozenset(INPUT_VARIABLE_SPECS)
 
 
 def required_input_tables(mode: str) -> frozenset[str]:
-    """Return tables that must physically exist for a load-generation mode."""
+    """Return tables that must exist across the selected input scopes for a mode."""
     normalized = str(mode).strip().lower()
     return frozenset(
         spec.table

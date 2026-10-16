@@ -15,8 +15,8 @@ cps: [340, 329, 590, 412, 656]
 bmp_efficiency: ../bmps/bmp_efficiency_lit_deterministic.csv
 bmp_cost: ../bmps/bmp_cost_deterministic.csv
 
-# Statistical parcel load rates are read from input_pollutant_load_rate
-# inside parcels.gpkg.
+# Statistical load rates use input_pollutant_load_rate. This example supplies
+# parcel rows; the same table may be supplied in domain.gpkg or huc_parameters.
 load_generation:
   mode: statistical
 

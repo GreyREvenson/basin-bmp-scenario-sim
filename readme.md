@@ -97,18 +97,18 @@ Both modes use consolidated parcel and outlet GeoPackages:
     n_scenarios: 1000
     bmp_limit_n: 200
 
-In statistical mode, parcel loads come from `input_pollutant_load_rate` inside `parcels.gpkg`. PLET/RUSLE mode is enabled explicitly:
+In statistical mode, parcel loads come from `input_pollutant_load_rate` in the parcel package or inherited HUC/domain inputs. PLET/RUSLE mode is enabled explicitly:
 
     load_generation:
       mode: plet_rusle
 
-Parcel-side model variables then come from dedicated `input_*` tables in the parcel GeoPackage. Curve number and infiltration fraction are user-owned tables (`input_curve_number` and `input_infiltration_fraction`), and surface/subsurface concentrations are stored separately. Optionally, PLET climate variables may come from a HUC12 forcing GeoPackage:
+Model variables come from dedicated `input_*` tables. Curve number and infiltration fraction are user-owned tables (`input_curve_number` and `input_infiltration_fraction`), and surface/subsurface concentrations are stored separately. In either load mode, parameters can also come from the domain GeoPackage or an optional HUC GeoPackage:
 
-    plet_forcing: ../plet/huc12s_plet_deterministic.gpkg
+    huc_parameters: ../hucs/huc12s_plet_deterministic.gpkg
 
-### HUC12-scale PLET climate forcing
+### Parcel, HUC, and domain parameters
 
-With `plet_forcing`, the forcing GeoPackage contains a spatial `huc12` layer with USGS WBD geometry/metadata and separate HUC12-keyed `input_*` tables for PLET precipitation variables. Those tables use the same fixed/distribution schema as parcel inputs; a HUC12 distribution is sampled once per HUC12 per scenario and shared by its parcels. `parcels.gpkg` stores the `parcel_huc12` relationship. Parcel-specific climate rows override HUC12 forcing, which overrides parcel defaults. See [PLET/RUSLE mode](docs/plet_rusle_mode.md).
+Parameters resolve independently with precedence **parcel-specific row > assigned-HUC row > domain row > NULL-pid parcel default**. All scopes use the same table names and fixed/distribution columns. The domain package represents one run-wide domain. A selected HUC package contains one HUC level (2 through 16 digits, even lengths), with a spatial `hucs` layer keyed by text `huc_id`. Existing `huc12` packages remain supported; `plet_forcing` is a deprecated alias for `huc_parameters`. Inherited distributions share one draw per source row per scenario. See the [input reference](docs/input_output_reference.md#huc-and-domain-parameter-geopackages) for schemas and assignment rules.
 
 See the docs below for complete examples and mode-specific requirements.
 

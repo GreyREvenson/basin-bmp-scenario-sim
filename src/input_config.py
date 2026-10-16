@@ -40,6 +40,7 @@ from .constants import (
     CFG_PARALLEL,
     CFG_PARCELS,
     CFG_PLET_FORCING,
+    CFG_HUC_PARAMETERS,
     CFG_POLLUTANT_LOAD_RATE,
     CFG_POLLUTANTS,
     CFG_POLLUTANT_LOAD_RATE_FRAC_SURFACE,
@@ -287,7 +288,10 @@ def _sort_input_table(df: pd.DataFrame, keys: Sequence[str]) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
-def _validate_input_package_schema(cfg: Dict[str, Any], load_mode: str, logger: Any) -> None:
+def _validate_input_package_schema(
+    cfg: Dict[str, Any], load_mode: str, logger: Any,
+    *, input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
+) -> None:
     """Reject unknown input tables and require mode-specific tables."""
     raw_package = ci_get(cfg, CFG_PARCELS)
     # The spatial parcel loader owns path existence/requiredness. Keeping this
@@ -309,10 +313,11 @@ def _validate_input_package_schema(cfg: Dict[str, Any], load_mode: str, logger: 
             details.append(f"{name!r}" + (f" (did you mean {match[0]!r}?)" if match else ""))
         raise ValueError("Unknown input_* table(s) in parcels GeoPackage: " + ", ".join(details))
 
-    missing = sorted(set(required_input_tables(load_mode)) - table_names)
+    available = table_names | set(input_tables or {})
+    missing = sorted(set(required_input_tables(load_mode)) - available)
     if missing:
         raise ValueError(
-            f"load_generation.mode={load_mode!r} requires input table(s) missing from parcels GeoPackage: {missing}"
+            f"load_generation.mode={load_mode!r} requires input table(s) missing from parcels/HUC/domain GeoPackages: {missing}"
         )
 
     if INPUT_SCHEMA_TABLE in table_names:
@@ -339,7 +344,7 @@ def _validate_input_package_schema(cfg: Dict[str, Any], load_mode: str, logger: 
                 "and does not use a separate fid column"
             )
 
-        editable_tables = (set(KNOWN_INPUT_TABLES) | {GPKG_PARCEL_UP_TABLE, GPKG_PARCEL_OUTLETS_TABLE, GPKG_PARCEL_HUC12_TABLE}) & table_names
+        editable_tables = (set(KNOWN_INPUT_TABLES) | {GPKG_PARCEL_UP_TABLE, GPKG_PARCEL_OUTLETS_TABLE, GPKG_PARCEL_HUC12_TABLE, "parcel_huc"}) & table_names
         for table_name in sorted(editable_tables):
             info = read_geopackage_table_info(package, table_name)
             metadata = {row["name"].lower(): row for row in info}
@@ -464,7 +469,9 @@ def _read_gpkg_input_table(
             frame,
             identifier_cols,
             label,
-            allow_null_pid=allow_default,
+            allow_null_pid=allow_default or table_name in {
+                GPKG_INPUT_CURVE_NUMBER, GPKG_INPUT_INFILTRATION_FRACTION,
+            },
             allow_null_oid=allow_default and COL_OID in getattr(spec, "key_columns", ()),
         )
     sort_cols = list(required_cols)
@@ -497,11 +504,12 @@ def _load_fixed_numeric_variable_table(
     *,
     required: bool = False,
     domain: Any = None,
+    input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
 ) -> Optional[pd.DataFrame]:
     """Load a deterministic per-variable table using the standard input schema."""
-    package = ci_get(cfg, CFG_PARCELS)
-    reader = _read_gpkg_input_table if required else _try_read_gpkg_input_table
-    table = reader(package, table_name, list(key_cols), table_name, logger)
+    table = _read_model_input_table(
+        cfg, table_name, key_cols, logger, required=required, input_tables=input_tables,
+    )
     if table is None:
         return None
     if "value" not in table.columns:
@@ -517,16 +525,27 @@ def _load_fixed_numeric_variable_table(
     return table.reset_index(drop=True)
 
 
+def _read_model_input_table(
+    cfg: Mapping[str, Any], table_name: str, keys: Sequence[str], logger: Any,
+    *, required: bool = False,
+    input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
+) -> Optional[pd.DataFrame]:
+    if input_tables is not None and table_name in input_tables:
+        return input_tables[table_name].copy()
+    reader = _read_gpkg_input_table if required else _try_read_gpkg_input_table
+    return reader(ci_get(cfg, CFG_PARCELS), table_name, keys, table_name, logger)
+
+
 def _assemble_parcel_parameter_source(
     cfg: Dict[str, Any],
     logger: Any,
+    *, input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
 ) -> Optional[pd.DataFrame]:
     """Assemble dedicated ``input_*`` parameter tables into the runtime long form."""
-    package = ci_get(cfg, CFG_PARCELS)
     frames: List[pd.DataFrame] = []
     for parameter, table_name in PARCEL_PARAMETER_INPUT_TABLES.items():
-        table = _try_read_gpkg_input_table(
-            package, table_name, [COL_PID], table_name, logger
+        table = _read_model_input_table(
+            cfg, table_name, [COL_PID], logger, input_tables=input_tables,
         )
         if table is None:
             continue
@@ -541,18 +560,19 @@ def _assemble_parcel_parameter_source(
 def _assemble_plet_hydrology_source(
     cfg: Dict[str, Any],
     logger: Any,
+    *, input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
 ) -> pd.DataFrame:
     """Assemble CN and infiltration tables into the existing hydrology long form."""
-    package = ci_get(cfg, CFG_PARCELS)
     specs = (
         ("cn", GPKG_INPUT_CURVE_NUMBER),
         ("infiltration_fraction", GPKG_INPUT_INFILTRATION_FRACTION),
     )
     frames: List[pd.DataFrame] = []
     for parameter, table_name in specs:
-        table = _read_gpkg_input_table(
-            package, table_name, ["land_cover", "hsg"], table_name, logger
-        ).copy()
+        table = _read_model_input_table(
+            cfg, table_name, ["land_cover", "hsg"], logger,
+            required=True, input_tables=input_tables,
+        )
         table.insert(2, "parameter", parameter)
         frames.append(table)
     return pd.concat(frames, ignore_index=True, sort=False)
@@ -561,16 +581,16 @@ def _assemble_plet_hydrology_source(
 def _assemble_plet_concentration_source(
     cfg: Dict[str, Any],
     logger: Any,
+    *, input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
 ) -> pd.DataFrame:
     """Assemble dedicated surface/subsurface concentration variable tables."""
-    package = ci_get(cfg, CFG_PARCELS)
     frames: List[pd.DataFrame] = []
     for pathway, table_name in (
         ("surface", GPKG_INPUT_SURFACE_CONCENTRATION),
         ("subsurface", GPKG_INPUT_SUBSURFACE_CONCENTRATION),
     ):
-        table = _try_read_gpkg_input_table(
-            package, table_name, [COL_PID, COL_POLLUTANT], table_name, logger
+        table = _read_model_input_table(
+            cfg, table_name, [COL_PID, COL_POLLUTANT], logger, input_tables=input_tables,
         )
         if table is None:
             continue
@@ -1082,6 +1102,7 @@ _CONFIG_PATH_KEYS = (
     CFG_DOMAIN,
     CFG_PARCELS,
     CFG_PLET_FORCING,
+    CFG_HUC_PARAMETERS,
     CFG_OUTLETS,
     CFG_BMP_EFFICIENCY,
     CFG_BMP_COST,
@@ -1247,6 +1268,7 @@ def _load_plet_hydrology_lookup(
     path: Any,
     logger: Any,
     required_pairs: Optional[Sequence[Tuple[str, str]]] = None,
+    required_parcel_pairs: Optional[Mapping[int, Tuple[str, str]]] = None,
 ) -> pd.DataFrame:
     """Load required land-cover/HSG hydrology distributions for PLET mode.
 
@@ -1318,9 +1340,26 @@ def _load_plet_hydrology_lookup(
         )
 
     validate_stats_rows(table, _PLET_HYDROLOGY_LABEL)
-    validate_unique_rows(
-        table, ["land_cover", "hsg", "parameter"], _PLET_HYDROLOGY_LABEL
-    )
+    keys = ["land_cover", "hsg", "parameter"]
+    per_parcel = COL_PID in table.columns
+    if per_parcel:
+        keys.insert(0, COL_PID)
+        if required_parcel_pairs is None:
+            raise ValueError("Parcel-keyed hydrology inputs require modeled parcel classifications")
+        table = _normalize_identifier_columns(
+            table, [COL_PID], _PLET_HYDROLOGY_LABEL, allow_null_pid=True
+        )
+        validate_unique_rows(table, keys, _PLET_HYDROLOGY_LABEL)
+        _validate_explicit_references(
+            table[COL_PID], list(required_parcel_pairs), label=_PLET_HYDROLOGY_LABEL,
+            allow_default=True,
+        )
+        defaults = table[table[COL_PID].isna()].drop(columns=COL_PID)
+        table = pd.concat([
+            pd.DataFrame({COL_PID: list(required_parcel_pairs)}).merge(defaults, how="cross"),
+            table[table[COL_PID].notna()],
+        ], ignore_index=True).drop_duplicates(keys, keep="last")
+    validate_unique_rows(table, keys, _PLET_HYDROLOGY_LABEL)
 
     if required_pairs is None:
         pairs = {(land_cover, hsg) for land_cover in PLET_LAND_COVERS for hsg in PLET_HSG_VALUES}
@@ -1337,6 +1376,13 @@ def _load_plet_hydrology_lookup(
     supplied = set(
         zip(table["land_cover"], table["hsg"], table["parameter"])
     )
+    if per_parcel:
+        expected = {
+            (pid, land_cover, hsg, parameter)
+            for pid, (land_cover, hsg) in required_parcel_pairs.items()
+            for parameter in ("cn", "infiltration_fraction")
+        }
+        supplied = set(table[keys].itertuples(index=False, name=None))
     missing = sorted(expected - supplied)
     # Extra valid rows are harmless and make a reusable hydrology table possible;
     # only the land-cover/HSG combinations used by this run must be complete.
@@ -1480,7 +1526,10 @@ def _load_domain(cfg: Dict[str, Any], logger: Any) -> gpd.GeoDataFrame:
     domain_path = Path(raw_domain)
     if not domain_path.exists():
         raise FileNotFoundError(f"Domain not found: {domain_path}")
-    domain = read_geodataframe(domain_path)
+    layer = None
+    if domain_path.suffix.lower() == ".gpkg" and "domain" in list_geopackage_tables(domain_path):
+        layer = "domain"
+    domain = read_geodataframe(domain_path, layer=layer) if layer else read_geodataframe(domain_path)
     domain = _ensure_projected(domain, logger)
     return domain.rename(columns={c: c.lower() for c in domain.columns})
 
@@ -1990,7 +2039,10 @@ def _load_parcel_outlets(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
         logger,
     )
 
-def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: Any) -> pd.DataFrame:
+def _load_parcel_selection(
+    cfg: Dict[str, Any], parcels: pd.DataFrame, logger: Any,
+    *, input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
+) -> pd.DataFrame:
     """Load optional parcel selection weights from ``input_selection_weight``.
 
     A row with ``pid IS NULL`` supplies the default weight; exact integer PID
@@ -2001,6 +2053,7 @@ def _load_parcel_selection(cfg: Dict[str, Any], parcels: pd.DataFrame, logger: A
     table = _load_fixed_numeric_variable_table(
         cfg, GPKG_INPUT_SELECTION_WEIGHT, [COL_PID], logger,
         required=False, domain=NONNEGATIVE_DOMAIN,
+        input_tables=input_tables,
     )
     parcel_ids = [int(pid) for pid in parcels[COL_PID].tolist()]
     if table is None or table.empty:
@@ -2106,7 +2159,10 @@ def _load_optional_outlet_stats(
     validate_unique_rows(df, [COL_OID, COL_POLLUTANT], label)
     return df[list(required_cols)].reset_index(drop=True)
 
-def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataFrame]:
+def _load_delivery_ratios(
+    cfg: Dict[str, Any], logger: Any,
+    *, input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
+) -> Optional[pd.DataFrame]:
     """Load the four parcel-to-outlet delivery variables from dedicated tables.
 
     A global default row is represented by ``pid IS NULL AND oid IS NULL``.
@@ -2123,6 +2179,7 @@ def _load_delivery_ratios(cfg: Dict[str, Any], logger: Any) -> Optional[pd.DataF
         table = _load_fixed_numeric_variable_table(
             cfg, table_name, [COL_PID, COL_OID], logger,
             required=False, domain=FRACTION_DOMAIN,
+            input_tables=input_tables,
         )
         if table is None or table.empty:
             result[column] = 1.0
@@ -2638,14 +2695,12 @@ def _load_pollutant_load_rate(
     parcels: pd.DataFrame,
     pollutants: List[str],
     logger: Any,
+    *, input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
 ) -> pd.DataFrame:
     """Load statistical parcel pollutant load rates from ``parcels.gpkg``."""
-    df = _read_gpkg_input_table(
-        ci_get(cfg, CFG_PARCELS),
-        GPKG_INPUT_POLLUTANT_LOAD_RATE,
-        [COL_PID, COL_POLLUTANT],
-        CFG_POLLUTANT_LOAD_RATE,
-        logger,
+    df = _read_model_input_table(
+        cfg, GPKG_INPUT_POLLUTANT_LOAD_RATE, [COL_PID, COL_POLLUTANT], logger,
+        required=True, input_tables=input_tables,
     )
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_POLLUTANT_LOAD_RATE, logger)
     df = _normalize_pathway_column(df, CFG_POLLUTANT_LOAD_RATE, logger)
@@ -2816,27 +2871,18 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
     with log_scope(logger=logger):
         domain = _load_domain(cfg, logger)
         parcels = _load_parcels(cfg, domain, logger)
+        from .input_scopes import load_scoped_input_tables
+        input_tables = load_scoped_input_tables(cfg, parcels, logger, _read_gpkg_input_table)
+        input_kwargs = {"input_tables": input_tables} if input_tables is not None else {}
 
         up = _load_parcel_graph(cfg, logger)
         out = _load_parcel_outlets(cfg, logger)
-        sel = _load_parcel_selection(cfg, parcels, logger)
+        sel = _load_parcel_selection(cfg, parcels, logger, **input_kwargs)
 
         parcel_ids = [int(pid) for pid in parcels[COL_PID].tolist()]
         source_parcel_ids = [
             int(pid) for pid in parcels.attrs.get("source_pid_universe", parcel_ids)
         ]
-        plet_forcing_path = ci_get(cfg, CFG_PLET_FORCING)
-        parcel_huc12 = None
-        plet_huc12_source = None
-        if plet_forcing_path is not None:
-            parcel_huc12 = _load_parcel_huc12(
-                cfg, parcel_ids, source_parcel_ids, logger
-            )
-            plet_huc12_layer = _load_plet_huc12_layer(cfg, logger)
-            plet_huc12_source = _assemble_huc12_plet_parameter_source(
-                cfg, plet_huc12_layer, logger
-            )
-
         parcel_up_map = _build_parcel_up_map(
             up, parcel_ids, source_parcel_ids=source_parcel_ids, logger=logger
         )
@@ -2881,7 +2927,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 "load_generation.pathway_mode has been removed; "
                 "plet_rusle mode always derives pathway loads from PLET/RUSLE inputs"
             )
-        _validate_input_package_schema(cfg, load_mode, logger)
+        _validate_input_package_schema(cfg, load_mode, logger, **input_kwargs)
 
 
         outlet_loc = _load_outlet_loc(cfg, domain, logger)
@@ -2932,16 +2978,12 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         pollutant_concentrations = None
         groundwater_concentrations = None
         if load_mode == LOAD_MODE_PLET_RUSLE:
-            package_parameters = _assemble_parcel_parameter_source(cfg, logger)
+            package_parameters = _assemble_parcel_parameter_source(cfg, logger, **input_kwargs)
             if package_parameters is None:
                 raise ValueError(
                     "plet_rusle mode requires dedicated input_* parameter tables in parcels.gpkg"
                 )
             from .plet_rusle import canonical_parameter_name
-            if plet_huc12_source is not None:
-                package_parameters = _merge_huc12_plet_parameters(
-                    package_parameters, parcel_huc12, plet_huc12_source, parcel_ids
-                )
             canonical_names = package_parameters["parameter"].map(canonical_parameter_name)
             rusle_mask = canonical_names.isin(set(RUSLE_PARAMETER_NAMES))
             plet_source = package_parameters.loc[~rusle_mask].copy()
@@ -2960,21 +3002,24 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             required_hydrology_pairs = _effective_plet_classification_pairs(
                 plet_inputs, parcel_ids
             )
+            hydrology_source = _assemble_plet_hydrology_source(cfg, logger, **input_kwargs)
+            parcel_pairs = {}
+            if COL_PID in hydrology_source:
+                for pid in parcel_ids:
+                    effective = {row["parameter"]: row["value"] for row in _rows_for_pid(plet_inputs, pid)}
+                    parcel_pairs[pid] = (effective["land_cover"], effective["hsg"])
             plet_hydrology_lookup = _load_plet_hydrology_lookup(
-                _assemble_plet_hydrology_source(cfg, logger),
+                hydrology_source,
                 logger,
                 required_pairs=required_hydrology_pairs,
+                **({"required_parcel_pairs": parcel_pairs} if parcel_pairs else {}),
             )
             load_generation["_hydrology_lookup_table"] = plet_hydrology_lookup
             rusle_inputs = _load_parameter_stats_table(
                 rusle_source, LOAD_RUSLE_INPUTS, logger,
                 parcel_ids=parcel_ids,
             )
-            concentration_source = _assemble_plet_concentration_source(cfg, logger)
-            if plet_forcing_path is not None:
-                concentration_source = _merge_huc12_plet_concentrations(
-                    cfg, concentration_source, parcel_huc12, plet_inputs, parcel_ids, logger
-                )
+            concentration_source = _assemble_plet_concentration_source(cfg, logger, **input_kwargs)
             unified_concentrations = _load_pollutant_concentrations(
                 concentration_source,
                 pollutants,
@@ -3003,7 +3048,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
             bmp_eff = _complete_plet_bmp_efficiency_coverage(bmp_eff, cps, pollutants, logger)
         else:
             pollutant_load_rate = _load_pollutant_load_rate(
-                cfg, parcels, pollutants, logger
+                cfg, parcels, pollutants, logger, **input_kwargs,
             )
             load_rate_pathways, pollutant_load_rate_is_aggregate = validate_statistical_load_rates(
                 pollutant_load_rate, parcels, pollutants
@@ -3023,7 +3068,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 bmp_eff, cps, pollutants, pathways
             )
 
-        delivery_ratios = _load_delivery_ratios(cfg, logger)
+        delivery_ratios = _load_delivery_ratios(cfg, logger, **input_kwargs)
         delivery_ratios = _complete_delivery_ratio_defaults(delivery_ratios, parcel_out_map)
 
         avg_area_ha = float(parcels["area_ha"].mean())

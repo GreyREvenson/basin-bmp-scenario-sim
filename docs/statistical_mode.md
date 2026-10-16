@@ -22,7 +22,16 @@ load_generation:
 
 ## `input_pollutant_load_rate`
 
-The statistical load-rate variable is stored in the `input_pollutant_load_rate` table inside `parcels.gpkg`.
+The statistical load-rate variable is stored in `input_pollutant_load_rate` in the parcel, HUC, or domain GeoPackage. Parcel-specific values override assigned-HUC values, then domain values, then NULL-pid parcel defaults.
+
+To select HUC inputs, add `huc_parameters: ../hucs/hucs_statistical.gpkg` to the configuration. A HUC table replaces `pid` with text `huc_id`; a domain table omits `pid`. Both retain `pollutant`, optional `pathway`, and the same value/distribution columns. For example, a domain-wide fixed rate is:
+
+```text
+pollutant | value | units
+TN        | 8.0   | kg/ha/year
+```
+
+Required rates may come entirely from the domain, so the parcel load-rate table is optional when inherited inputs provide complete coverage. Do not mix aggregate and pathway-specific rates across scopes in one run. Inherited distributions share a draw across the parcels inheriting each source row, separately by pollutant/pathway and scenario. Parcel-default distributions remain independent unless `sample_group` is supplied. See the [scope schemas](input_output_reference.md#huc-and-domain-parameter-geopackages).
 
 The natural key is parcel × pollutant, optionally extended by pathway.
 

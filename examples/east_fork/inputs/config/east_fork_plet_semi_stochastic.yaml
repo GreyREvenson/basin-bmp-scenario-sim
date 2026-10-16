@@ -8,7 +8,7 @@ parcels: ../parcels/parcels_plet_deterministic.gpkg
 # Optional HUC12-scale PLET climate forcing. The GeoPackage contains a spatial
 # huc12 layer plus HUC12-keyed input_* tables with fixed/distribution values.
 # See docs/plet_rusle_mode.md.
-plet_forcing: ../plet/huc12s_plet_deterministic.gpkg
+huc_parameters: ../hucs/huc12s_plet_deterministic.gpkg
 outlets: ../outlets/outlets.gpkg
 
 pollutants: ["TN", "TP", "TSS"]

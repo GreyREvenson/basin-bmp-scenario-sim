@@ -705,10 +705,11 @@ def _sample_plet_hydrology(
     """Sample CN and infiltration fraction for one parcel's PLET class pair.
 
         Production ``plet_rusle`` runs assemble a validated hydrology table from
-        ``input_curve_number`` and ``input_infiltration_fraction`` in parcels.gpkg.
+        ``input_curve_number`` and ``input_infiltration_fraction`` across input scopes.
         Each land-cover/HSG pairing has one row for each variable, and each row may
         be a fixed value or a distribution. Rows are sampled independently
-        for each parcel unless an explicit ``sample_group`` requests a shared draw.
+        for each parcel unless a ``sample_group`` requests a shared draw.
+        HUC/domain rows receive automatic source-row groups during inheritance.
 
         Parameters
         ----------
@@ -747,6 +748,8 @@ def _sample_plet_hydrology(
         (table["land_cover"].astype(str) == canonical_land_cover)
         & (table["hsg"].astype(str) == canonical_hsg)
     ]
+    if "pid" in subset:
+        subset = subset[subset["pid"].map(str) == str(pid)]
     values: Dict[str, Any] = {
         "land_cover": canonical_land_cover,
         "hsg": canonical_hsg,
