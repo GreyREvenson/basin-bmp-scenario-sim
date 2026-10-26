@@ -393,3 +393,126 @@ def test_low_overlap_warning_is_file_only(inputs):
     assert len(warnings) == 1
     assert "less than 75%" in warnings[0][0]
     assert warnings[0][1] == {"extra": {"file_only": True}}
+
+
+def test_scoped_inputs_ignore_rows_from_source_parcels_outside_domain(inputs):
+    """Clipped source parcels must not reappear through inherited tables."""
+    cfg, paths, parcels, _ = inputs
+    parcels.attrs["source_pid_universe"] = set(parcels.pid) | {6}
+    write_tables(paths["parcels"], input_selection_weight=[
+        {"pid": 1, "value": 4.0},
+        {"pid": 6, "value": 10.0},
+    ])
+    write_tables(paths["domain"], input_selection_weight=[{"value": 1.0}])
+    scoped = resolve(cfg, parcels)["input_selection_weight"]
+    assert set(scoped.pid) == set(parcels.pid)
+    assert scoped.set_index("pid").loc[1, "value"] == 4.0
+    assert scoped.set_index("pid").loc[2, "value"] == 1.0
+
+
+def test_huc_assignment_rejects_duplicate_or_invalid_parcel_geometry(inputs):
+    """Assignment requires one valid, areal polygon for every parcel ID."""
+    _, _, parcels, hucs = inputs
+    duplicate = parcels.copy()
+    duplicate.loc[1, "pid"] = duplicate.loc[0, "pid"]
+    with pytest.raises(ValueError, match="duplicate|one row|unique"):
+        assign_parcels_to_hucs(duplicate, hucs)
+    invalid = parcels.copy()
+    invalid.loc[0, "geometry"] = Point(500000, 4300000)
+    with pytest.raises(ValueError, match="polygon geometries"):
+        assign_parcels_to_hucs(invalid, hucs)
+
+
+def write_registered_domain_inputs(path):
+    """Create representative scope tables in a temporary GeoPackage.
+
+    Registering the tables as GeoPackage attributes verifies their physical
+    format without depending on shipped project data.
+    """
+    from src.input_schema import INPUT_VARIABLE_SPECS
+
+    rows_by_table = {
+        "input_hsg": [{"value": "B", "units": "classification"}],
+        "input_selection_weight": [{"value": 1.0, "units": "relative_weight"}],
+        "input_avg_rain_in": [{"mean": 0.6, "sd": 0.05, "units": "in/event"}],
+        "input_curve_number": [
+            {"land_cover": "cropland", "hsg": "B", "value": 78.0, "units": "dimensionless"},
+            {"land_cover": "cropland", "hsg": "C", "value": 85.0, "units": "dimensionless"},
+        ],
+        "input_pollutant_load_rate": [
+            {"pollutant": "TN", "mean": 25.0, "sd": 2.0, "units": "kg/ha/year"},
+            {"pollutant": "TP", "mean": 1.3, "sd": 0.13, "units": "kg/ha/year"},
+            {"pollutant": "TSS", "mean": 250.0, "sd": 25.0, "units": "kg/ha/year"},
+        ],
+    }
+    with sqlite3.connect(path) as con:
+        for table_name, rows in rows_by_table.items():
+            spec = INPUT_VARIABLE_SPECS[table_name]
+            keys = [key for key in spec.key_columns if key not in ("pid", "huc_id")]
+            columns = keys + ["value", "mean", "sd", "sample_group", "units"]
+            text_columns = {"pollutant", "land_cover", "hsg", "sample_group", "units"}
+            definitions = ", ".join(
+                f'"{column}" {"TEXT" if column in text_columns else "REAL"}'
+                for column in columns
+            )
+            con.execute(
+                f'CREATE TABLE "{table_name}" '
+                f'(id INTEGER PRIMARY KEY AUTOINCREMENT, {definitions})'
+            )
+            names = ", ".join(f'"{column}"' for column in columns)
+            placeholders = ", ".join("?" for _ in columns)
+            con.executemany(
+                f'INSERT INTO "{table_name}" ({names}) VALUES ({placeholders})',
+                [[row.get(column) for column in columns] for row in rows],
+            )
+            con.execute(
+                "INSERT INTO gpkg_contents (table_name, data_type, identifier) "
+                "VALUES (?, 'attributes', ?)",
+                (table_name, table_name),
+            )
+    return set(rows_by_table)
+
+
+def test_synthetic_domain_tables_follow_registry_and_geopackage_format(inputs):
+    """Generated domain tables use the registered model schema and GPKG format."""
+    from src.input_schema import INPUT_VARIABLE_SPECS
+
+    _, paths, _, _ = inputs
+    expected_tables = write_registered_domain_inputs(paths["domain"])
+    with sqlite3.connect(paths["domain"]) as con:
+        tables = {name for (name,) in con.execute(
+            "SELECT table_name FROM gpkg_contents WHERE data_type='attributes'"
+        )}
+        assert expected_tables.issubset(tables)
+        for name in expected_tables:
+            spec = INPUT_VARIABLE_SPECS[name]
+            columns = {col[1]: col for col in con.execute(f'PRAGMA table_info("{name}")')}
+            assert columns["id"][5] == 1
+            assert "pid" not in columns and "huc_id" not in columns
+            assert {key for key in spec.key_columns if key != "pid"}.issubset(columns)
+            assert {"value", "mean", "sd", "sample_group", "units"}.issubset(columns)
+            assert con.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0] > 0
+        assert con.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+
+
+def test_synthetic_domain_tables_resolve_at_expected_precedence(inputs):
+    """Resolve generated defaults with the production reader and parcel overrides."""
+    cfg, paths, parcels, _ = inputs
+    write_registered_domain_inputs(paths["domain"])
+    write_tables(paths["parcels"],
+        input_land_cover=[{"pid": None, "value": "cropland"}],
+        input_selection_weight=[{"pid": 1, "value": 3.0}],
+        input_pollutant_load_rate=[{"pid": 1, "pollutant": "TN", "value": 30.0}],
+    )
+    tables = resolve(cfg, parcels)
+    selection = tables["input_selection_weight"].set_index("pid")
+    assert selection.loc[1, "value"] == 3.0
+    assert selection.loc[2, "value"] == 1.0
+    assert set(tables["input_hsg"].value) == {"B"}
+    assert set(tables["input_curve_number"].value) == {78.0, 85.0}
+    rainfall = tables["input_avg_rain_in"]
+    assert rainfall["sample_group"].nunique() == 1
+    assert rainfall["mean"].eq(0.6).all()
+    rate = tables["input_pollutant_load_rate"].set_index(["pid", "pollutant"])
+    assert rate.loc[(1, "TN"), "value"] == 30.0
+    assert rate.loc[(2, "TN"), "mean"] == 25.0

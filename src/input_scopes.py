@@ -23,7 +23,26 @@ from .utils import ci_get, normalize_columns, normalize_pollutant_label
 
 
 def normalize_huc_id(value: Any) -> str:
-    """Keep leading zeroes and infer the HUC level from its code length."""
+    """Normalize a hydrologic unit code without discarding leading zeroes.
+
+    Parameters
+    ----------
+    value : Any
+        HUC identifier stored as text. Leading and trailing whitespace is
+        removed; numerical identifiers are not accepted because they can lose
+        significant leading zeroes.
+
+    Returns
+    -------
+    str
+        ASCII numeric HUC identifier containing 2, 4, ..., or 16 digits.
+        Its length indicates the HUC level.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is not a text HUC code of a supported length.
+    """
     if not isinstance(value, str):
         raise ValueError(f"HUC identifiers must be stored as text, got {value!r}")
     code = value.strip()
@@ -33,6 +52,27 @@ def normalize_huc_id(value: Any) -> str:
 
 
 def validate_huc_polygons(hucs: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Validate and standardize a single-level set of HUC polygons.
+
+    Parameters
+    ----------
+    hucs : geopandas.GeoDataFrame
+        Nonempty polygon or multipolygon features with a declared CRS and a
+        text ``huc_id`` column. An optional ``huc_level`` must equal the number
+        of digits in each identifier.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        Copy with normalized ``huc_id`` and integer ``huc_level`` columns.
+
+    Raises
+    ------
+    ValueError
+        If identifiers are missing, malformed, duplicated, or mixed in HUC
+        level; if the CRS or geometry is invalid; or if polygons overlap by
+        a positive area. Boundary sharing without area overlap is allowed.
+    """
     hucs = hucs.copy()
     if hucs.empty or hucs.crs is None:
         raise ValueError("HUC polygons must be nonempty and declare a CRS")
@@ -65,10 +105,47 @@ def validate_huc_polygons(hucs: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 def assign_parcels_to_hucs(
     parcels: gpd.GeoDataFrame, hucs: gpd.GeoDataFrame
 ) -> pd.DataFrame:
-    """Assign greatest-area overlap, breaking ties by HUC ID, without blending."""
+    """Assign each parcel to its greatest-area-overlap HUC polygon.
+
+    Parcel/HUC intersections are measured after projecting both datasets to
+    the estimated UTM CRS of the parcels. Multiple intersection pieces for a
+    parcel-HUC pair are summed, and an equal-area tie uses the lowest HUC ID.
+    This is a categorical assignment: HUC parameter values are not blended.
+
+    Parameters
+    ----------
+    parcels : geopandas.GeoDataFrame
+        Modeled parcel polygons with unique, non-null ``pid`` values and a
+        declared CRS.
+    hucs : geopandas.GeoDataFrame
+        HUC polygons accepted by :func:`validate_huc_polygons`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per parcel, with columns ``pid``, ``huc_id``, and
+        ``area_fraction`` (intersection area divided by parcel area, clipped
+        to [0, 1] against numerical roundoff).
+
+    Raises
+    ------
+    ValueError
+        If the geometries, CRS, or parcel identifiers are invalid, a parcel
+        has zero area, or a parcel has no positive-area HUC intersection.
+    """
     hucs = validate_huc_polygons(hucs)
     if parcels.empty or parcels.crs is None:
         raise ValueError("Parcels must be nonempty and declare a CRS for HUC assignment")
+    if "pid" not in parcels or parcels.pid.isna().any():
+        raise ValueError("Parcels require non-null pid identifiers for HUC assignment")
+    validate_unique_rows(parcels, ["pid"], "Parcels for HUC assignment")
+    if (
+        parcels.geometry.isna().any()
+        or parcels.geometry.is_empty.any()
+        or (~parcels.geometry.is_valid).any()
+        or (~parcels.geometry.geom_type.isin(["Polygon", "MultiPolygon"])).any()
+    ):
+        raise ValueError("Parcels require valid, nonempty polygon geometries for HUC assignment")
     crs = parcels.estimate_utm_crs()
     if crs is None:
         raise ValueError("Could not determine a projected CRS for HUC assignment")
@@ -95,6 +172,25 @@ def assign_parcels_to_hucs(
 
 
 def _input_tables(package: Any) -> set[str]:
+    """Discover parameter tables in one input GeoPackage.
+
+    Parameters
+    ----------
+    package : Any
+        Path-like package identifier accepted by
+        :func:`src.io_utils.list_geopackage_tables`.
+
+    Returns
+    -------
+    set[str]
+        SQLite table names beginning with ``input_``. These are discovered
+        by name, whether or not they are registered in ``gpkg_contents``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the input GeoPackage does not exist.
+    """
     return {name for name in list_geopackage_tables(package) if name.startswith("input_")}
 
 
@@ -104,10 +200,51 @@ def load_scoped_input_tables(
     logger: Any,
     reader: Callable[..., pd.DataFrame],
 ) -> dict[str, pd.DataFrame] | None:
-    """Materialize inherited rows without modifying any user GeoPackage.
+    """Resolve model input rows across parcel, domain, and HUC scopes.
 
-    Domain tables omit the spatial key; HUC tables replace pid with huc_id.
-    All other natural keys and value/distribution columns retain their meaning.
+    Domain tables omit ``pid``; HUC tables replace it with ``huc_id`` (or
+    legacy ``huc12``). Other schema keys and fixed/distribution columns are
+    unchanged. For each parcel and natural key, precedence is exact parcel
+    row, HUC row, domain row, then parcel-default (NULL ``pid``) row.
+    A HUC may be assigned via ``parcel_huc``/``parcel_huc12`` or greatest-area
+    overlap. Numeric HUC/domain distributions receive a scope-stable
+    ``sample_group`` unless one is explicitly provided.
+
+    Parameters
+    ----------
+    cfg : Mapping[str, Any]
+        Model configuration containing ``parcels`` and ``domain`` paths, and
+        optionally ``huc_parameters`` (legacy ``plet_forcing``).
+    parcels : geopandas.GeoDataFrame
+        Modeled parcels with ``pid`` and geometry, optionally bearing
+        ``attrs['source_pid_universe']`` for IDs outside the clipped domain.
+    logger : Any
+        Logger with ``info`` and ``warning`` methods.
+    reader : Callable[..., pandas.DataFrame]
+        Input-table reader accepting ``(package, table, required_columns,
+        label, logger)``.
+
+    Returns
+    -------
+    dict[str, pandas.DataFrame] or None
+        Tables keyed by their ``input_*`` name, with scoped rows expanded to
+        modeled parcel IDs. Returns ``None`` if no HUC package or domain
+        parameter tables are configured. Input files are not modified.
+
+    Raises
+    ------
+    ValueError
+        If packages contain unknown/invalid input tables, HUC geometry or
+        assignments are invalid, scoped rows conflict, or values violate
+        model input constraints.
+    FileNotFoundError
+        If an explicitly configured input GeoPackage is missing.
+
+    Notes
+    -----
+    HUC inheritance uses exactly one HUC per parcel; ``area_fraction`` is
+    diagnostic, not a blending weight. Classifications such as land cover and
+    HSG are resolved first so conditional parameter rows can be filtered.
     """
     huc_path = ci_get(cfg, "huc_parameters")
     legacy_path = ci_get(cfg, "plet_forcing")
@@ -209,6 +346,9 @@ def load_scoped_input_tables(
                 unknown_pids = set(table.pid.dropna()) - source_ids
                 if unknown_pids:
                     raise ValueError(f"{name} references unknown parcel IDs: {sorted(unknown_pids)[:10]}")
+                # Rows for parcels clipped out of the modeled domain must not
+                # survive scope inheritance, even when valid in the source.
+                table = table[table.pid.isna() | table.pid.isin(parcels.pid)].copy()
                 if "oid" in spec.key_columns and (table.pid.isna() ^ table.oid.isna()).any():
                     raise ValueError(f"{name} supports exact pid/oid rows or one row with both pid and oid NULL")
             if scope == "huc":
