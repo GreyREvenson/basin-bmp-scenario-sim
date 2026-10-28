@@ -1,0 +1,28 @@
+# East Fork comparison run using PLET/RUSLE load generation
+verbose: True
+random_seed: 42
+
+outputs: ../../outputs/run_plet_stochastic
+domain: ../domain/east_fork_domain.gpkg
+parcels: ../parcels/parcels_ex2dot2_plet_based_load_gen_stochastic.gpkg
+huc_parameters: ../hucs/huc12s_ex1dot2_plet_based_load_gen_stochastic.gpkg
+outlets: ../outlets/outlets.gpkg
+bmp_efficiency: ../bmps/efficiency/bmp_efficiency_ex2dot2_plet_based_stochastic.csv
+bmp_cost: ../bmps/costs/bmp_cost_ex2_stochastic.csv
+
+pollutants: ["TN", "TP", "TSS"]
+cps: [340, 329, 590, 412, 656]
+
+load_generation:
+  mode: plet_rusle
+
+n_scenarios: 10
+bmp_limit_n: 500
+buffer_depth_ft: 35
+
+parallel:
+  n_jobs: 10
+
+bmp_sel_prob_via_costs: False
+bmp_fail_rate: 0.1
+bmp_fail_reduction: 0.5
