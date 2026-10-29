@@ -63,7 +63,7 @@ load_generation:
   mode: statistical
 ```
 
-`parcels.gpkg` must contain `input_pollutant_load_rate`.
+`input_pollutant_load_rate` must be supplied by the parcel, HUC, or domain GeoPackage, with effective coverage for every modeled parcel and pollutant.
 
 ## PLET/RUSLE mode
 
@@ -72,13 +72,23 @@ load_generation:
   mode: plet_rusle
 ```
 
-PLET/RUSLE parcel inputs—including curve number and infiltration fraction—are read from dedicated `input_*` tables in `parcels.gpkg`. HUC12-scale precipitation forcing may optionally be supplied with a top-level path:
+PLET/RUSLE inputs, including curve number and infiltration fraction, use dedicated `input_*` tables. They can be supplied at parcel, HUC, or domain scale.
+
+## HUC and domain parameter inheritance
+
+In **either** load mode, select one optional HUC parameter GeoPackage:
 
 ```yaml
-plet_forcing: ../plet/huc12s_plet_deterministic.gpkg
+huc_parameters: ../hucs/huc12s_plet_deterministic.gpkg
 ```
 
-In that case `parcels.gpkg` also contains `parcel_huc12`, while the forcing GeoPackage contains a spatial `huc12` WBD layer plus separate HUC12-keyed `input_*` tables for `avg_rain_in`, `annual_precip_in`, `rain_days`, `rain_correction_fraction`, and `runoff_day_fraction`. It can also hold HUC12 `input_hsg` and HUC12 × land-cover RUSLE factors and pollutant concentrations. Numeric tables use the same fixed/distribution schema as parcel inputs, while HSG is a fixed classification. Parcel-specific values override HUC12 rows, which override `pid=NULL` parcel defaults. If any HUC12 parameter rows are supplied, every assigned HUC12 must have at least one; other variables may fall back to parcel defaults. Empty forcing tables leave climate variables to parcel inputs. There is no separate `hydrology_lookup` path. See [PLET/RUSLE mode](plet_rusle_mode.md) for preparation and coverage rules.
+The directory is not scanned: the YAML path selects one package at one HUC level. Canonical packages use a `hucs` polygon layer and text `huc_id`; existing `huc12` layers and keys are also supported. The old `plet_forcing` key is accepted with a deprecation warning; supplying both keys is an error.
+
+The existing `domain:` GeoPackage may contain the same `input_*` tables, with the spatial key omitted. Its boundary (which may be multipart) represents one run-wide domain; no additional YAML setting or per-parcel domain mapping is needed.
+
+Precedence is **parcel-specific row > assigned-HUC row > domain row > NULL-pid parcel default**, resolved separately for each variable and its natural keys (for example pollutant and pathway). An override replaces the entire fixed value/distribution, not individual statistic cells. Missing rows fall through; malformed rows fail validation even if overridden. Empty HUC tables, or HUCs without parameter rows, may fall back to domain inputs or parcel defaults. Required coverage is checked after inheritance.
+
+Use a `parcel_huc` relationship table in the parcel package, or let the loader calculate greatest-area-overlap assignments in memory. Every modeled parcel must have one assigned HUC when a HUC package is selected. See the [input reference](input_output_reference.md#huc-and-domain-parameter-geopackages) for schemas, boundary handling, and the assignment utility.
 
 ## Standard numeric input schema
 

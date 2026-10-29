@@ -9,8 +9,8 @@
 ```yaml
 domain: ../domain/domain.gpkg
 parcels: ../parcels/parcels.gpkg
-# Optional HUC12-scale climate forcing:
-plet_forcing: ../plet/plet_inputs.gpkg
+# Optional HUC-scale parameters:
+huc_parameters: ../hucs/plet_inputs.gpkg
 outlets: ../outlets/outlets.gpkg
 
 pollutants: [TN, TP, TSS]
@@ -22,11 +22,11 @@ load_generation:
   mode: plet_rusle
 ```
 
-Parcel-specific PLET/RUSLE inputs and overrides live in dedicated `input_*` tables inside `parcels.gpkg`. HUC12-scale precipitation forcing may optionally be supplied through a separate `plet_forcing` GeoPackage. Curve-number and infiltration inputs remain in `parcels.gpkg`; there is no separate hydrology-lookup path.
+PLET/RUSLE inputs and overrides live in dedicated `input_*` tables in the parcel, HUC, or domain GeoPackage, including curve number and infiltration fraction. There is no separate hydrology-lookup path. See the [general scope schemas](input_output_reference.md#huc-and-domain-parameter-geopackages) for variable-level HUC inputs and domain defaults. The following section describes the legacy HUC12 layout retained by the PLET workbook/download utilities.
 
 ## HUC12 climate forcing
 
-When `plet_forcing` is configured, `parcels.gpkg` must contain a non-spatial `parcel_huc12` relationship table:
+Existing HUC12 packages may use a non-spatial `parcel_huc12` relationship table in `parcels.gpkg`:
 
 ```text
 pid | huc12 | area_fraction
@@ -60,15 +60,15 @@ huc12 | value | mean | sd | min | p05 | p10 | p25 | p50 | p75 | p90 | p95 | max 
 
 A numeric row may therefore be a fixed value or a distribution; `input_hsg` must use a fixed classification. By default, a distribution is sampled **once per HUC12 per scenario** and that draw is shared by all parcels assigned to the HUC12 (and for land-cover-indexed inputs, by parcels with that land cover). An explicit `sample_group` can intentionally share a draw across multiple rows for the same parameter.
 
-If any HUC12 parameter rows are populated, every assigned HUC12 must have at least one `input_*` parameter row. Individual HUC12 variables may be omitted when parcel-specific rows or `pid=NULL` parcel defaults supply them; if all HUC12 tables are empty, climate inputs must come from parcel tables. Parcel `input_land_cover`, `input_curve_number`, and `input_infiltration_fraction` remain required in PLET/RUSLE mode. `input_hsg` may instead come from the HUC12 package.
+Individual HUC12 variables, or all rows for a HUC, may be omitted when parcel-specific, domain, or `pid=NULL` parcel defaults supply them. Required land-cover, HSG, hydrology, climate, and load coverage is checked after inheritance; those tables no longer have to reside in the parcel package.
 
 For HUC12-supplied variables, precedence is:
 
 ```text
-parcel-specific input_* override > HUC12 input_* row > pid=NULL parcel default
+parcel-specific input_* override > HUC12 input_* row > domain input_* row > pid=NULL parcel default
 ```
 
-For HUC12 RUSLE and concentrations, only rows matching the parcel's effective PLET `land_cover` apply. Concentration rows also match pollutant and surface/subsurface pathway. Thus parcel tables remain useful for defaults and local overrides without duplicating HUC12 values across every parcel. If `runoff_day_fraction` is absent from the HUC12 tables, it must resolve from a parcel-specific or `pid=NULL` parcel row because PLET annualizes event runoff using corrected rain days.
+For land-cover-indexed HUC12 RUSLE and concentrations, only rows matching the parcel's effective PLET `land_cover` apply. Concentration rows also match pollutant and surface/subsurface pathway. Thus parcel tables remain useful for defaults and local overrides without duplicating HUC12 values across every parcel. If `runoff_day_fraction` is absent from the HUC12 tables, it must resolve from parcel or domain inputs because PLET annualizes event runoff using corrected rain days.
 
 ### Build or refresh the HUC12 forcing input
 
@@ -88,13 +88,13 @@ For the East Fork example:
 ```bash
 python utils/download_wbd_huc12.py \
   examples/east_fork/inputs/parcels/parcels.gpkg \
-  examples/east_fork/inputs/plet/huc12s_plet_deterministic.gpkg \
+  examples/east_fork/inputs/hucs/huc12s_plet_deterministic.gpkg \
   --initial-plet-export examples/east_fork/inputs/misc/EastFork_plet_inputs.xlsx
 ```
 
 `--initial-plet-export` reads the `1. Watershed Land Use` sheet and can initialize `AVG_RAIN`, `RAIN_DAYS`, and `ANNUAL_RAINFALL` as fixed rows in `input_avg_rain_in`, `input_rain_days`, and `input_annual_precip_in`. It cannot be used again once any HUC12 input table contains values; edit those tables directly in the GeoPackage. Re-running the utility refreshes WBD geometry/metadata and preserves input rows for HUC12s still retained by the refreshed layer; rows for HUC12s no longer retained are dropped, so back up edited inputs before refreshing. The default `--area-fraction-threshold 0.75` keeps a HUC12 only if at least one parcel has 75% or more of its area inside that HUC12. A refresh fails if the retained HUC12s do not cover every parcel; lower the threshold or inspect the geometries. The utility reports dominant assignments below the chosen threshold, while the model loader warns below its fixed 0.75 QA threshold.
 
-`utils/create_parcel_huc12.py` remains available as a lower-level utility when HUC12 polygons are already available locally.
+`utils/create_parcel_huc12.py` remains available for legacy HUC12 assignments. Use `utils/create_parcel_huc.py` for generic local HUC polygons at other levels; if no mapping is stored, the model computes assignments in memory.
 
 ### Generate both PLET model inputs from a workbook
 
@@ -107,7 +107,7 @@ python utils/create_plet_model_inputs.py \
   examples/east_fork/inputs/misc/EastFork_plet_inputs.xlsx
 ```
 
-This creates `parcels_plet.gpkg` (a copy preserving existing tables and parcel overrides) and `parcels_plet_huc12.gpkg` alongside the source. It refuses to overwrite either output. Set `parcels:` to the first output and `plet_forcing:` to the second in the model configuration. The parcel layer name is the second positional argument. If that layer is not named `parcels`, the utility uses GDAL (`ogrinfo`) to rename **only the output copy's** spatial layer to the model's canonical `parcels`, preserving feature IDs, GeoPackage metadata, spatial indexes and relationships. The selected layer must use schema-v3 `pid INTEGER PRIMARY KEY`; a different existing `parcels` table is a hard error. Add `--sssurgo_hsg_true` to download SSURGO polygons and assign each parcel its dominant HSG; the HUC12 package then retains an empty registered `input_hsg` table and does not import workbook SHG. Otherwise the workbook's `SHG` column provides HUC12 HSG and the copied parcel's old `input_hsg` table is removed. Existing `input_curve_number` and `input_infiltration_fraction` rows take precedence over workbook values for the same `land_cover × hsg`, including existing uncertainty distributions.
+This creates `parcels_plet.gpkg` (a copy preserving existing tables and parcel overrides) and `parcels_plet_huc12.gpkg` alongside the source. It refuses to overwrite either output. Set `parcels:` to the first output and `huc_parameters:` to the second in the model configuration. The parcel layer name is the second positional argument. If that layer is not named `parcels`, the utility uses GDAL (`ogrinfo`) to rename **only the output copy's** spatial layer to the model's canonical `parcels`, preserving feature IDs, GeoPackage metadata, spatial indexes and relationships. The selected layer must use schema-v3 `pid INTEGER PRIMARY KEY`; a different existing `parcels` table is a hard error. Add `--sssurgo_hsg_true` to download SSURGO polygons and assign each parcel its dominant HSG; the HUC12 package then retains an empty registered `input_hsg` table and does not import workbook SHG. Otherwise the workbook's `SHG` column provides HUC12 HSG and the copied parcel's old `input_hsg` table is removed. Existing `input_curve_number` and `input_infiltration_fraction` rows take precedence over workbook values for the same `land_cover × hsg`, including existing uncertainty distributions.
 
 The utility downloads USGS WBD HUC12 polygons and queries the public [annual NLCD ImageServer](https://di-nlcd.img.arcgis.com/arcgis/rest/services/USA_NLCD_Annual_LandCover/ImageServer) for its latest available `Year` (2024 at the time of writing), exporting that year's 30 m land-cover raster. It does **not** silently fall back to 2021. The source URL and year are logged and stored in each classification's notes. It classifies parcels by actual area intersected by each raster cell, not by pixel-center counts: parcels smaller than one NLCD cell are supported. No valid intersected raster area is an error; partial nodata coverage is warned and percentages use valid covered area. The CLI writes an audit log next to the input, `<parcel-stem>_plet.log`; `--log-path PATH` selects another location, and `--verbose` includes each parcel's area-weighted NLCD code/category percentages, intersected-pixel count, valid-coverage percentage, dominant code and resulting PLET class. Summary class percentages and the rainfall audit are always logged. NLCD developed, forest, grass/pasture and cultivated-crop classes map to PLET `urban`, `forest`, `pastureland`, and `cropland`. **By user-specified assumptions, dominant NLCD barren class 31 maps to PLET `pastureland` and woody wetlands class 90 maps to PLET `forest`; neither is an NLCD equivalence.** The CLI warns on the console and in the audit log with the affected parcel counts and example IDs, and marks each affected `input_land_cover.notes` row `ASSUMPTION` for review. Water, other wetlands, shrub and other unmapped dominant classes still cause an explicit error rather than an invented PLET classification. Review classifications before modeling. Exported watershed land-use acreage is *not* used to classify parcels.
 
@@ -140,7 +140,7 @@ If `input_avg_rain_in` is present for a parcel, it is authoritative. Annual runo
 
 ## User-controlled hydrology
 
-Curve number and infiltration fraction are also separate user-input tables inside `parcels.gpkg`:
+Curve number and infiltration fraction are also separate user-input tables in any supported scope:
 
 ```text
 input_curve_number

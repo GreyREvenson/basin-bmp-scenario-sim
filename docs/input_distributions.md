@@ -53,3 +53,9 @@ For example, this defines a watershed-wide precipitation distribution and a diff
     127    46      2     40     52     in/year
 
 Without an explicit `sample_group`, the default distribution is sampled independently for each parcel. Use `sample_group` only when multiple rows are intentionally meant to share the same sampled value within a scenario.
+
+## HUC and domain inheritance
+
+The same distribution columns apply in HUC and domain `input_*` tables. Resolution is **parcel-specific row > assigned-HUC row > domain row > NULL-pid parcel default**, for each variable and natural key. The selected row supplies the entire distribution; statistics are never combined across scopes. Omit a row to fall back rather than supplying a row with no value/statistics.
+
+An inherited HUC or domain row automatically receives a stable sample group. All parcels inheriting it share its draw in that scenario, but draws are resampled in each scenario. Different source rows remain independent unless an explicit `sample_group` requests sharing for the same variable. This applies to both statistical load rates and PLET/RUSLE inputs, including hydrology lookups. Classification and selection/delivery-weight tables remain fixed-value-only. Serial and parallel runs use the same scenario-level grouping.

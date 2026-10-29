@@ -7,6 +7,8 @@ assembly live in :mod:`src.input_config`.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -839,7 +841,7 @@ def validate_config(cfg: Dict[str, Any]) -> None:
             )
 
     allowed_top_level = {
-        "domain", "parcels", "plet_forcing", "outlets", "pollutants", "cps",
+        "domain", "parcels", "plet_forcing", "huc_parameters", "outlets", "pollutants", "cps",
         "bmp_efficiency", "bmp_cost", "bmp_sel", "n_scenarios",
         "bmp_limit_n", "bmp_limit_usd", "parallel", "random_seed",
         "outputs", "verbose", "buffer_depth_ft", "bmp_sel_prob_via_costs",
@@ -852,6 +854,12 @@ def validate_config(cfg: Dict[str, Any]) -> None:
     unknown_top = sorted(str(key) for key in cfg if str(key).lower() not in allowed_top_level and str(key).lower() not in legacy_top_level)
     if unknown_top:
         raise ValueError(f"Unknown configuration key(s): {unknown_top}")
+    if ci_get(cfg, "plet_forcing") is not None and ci_get(cfg, "huc_parameters") is not None:
+        raise ValueError("Specify huc_parameters or the deprecated plet_forcing alias, not both")
+    for key in ("huc_parameters", "plet_forcing"):
+        value = ci_get(cfg, key)
+        if value is not None and (not isinstance(value, (str, Path)) or not str(value).strip()):
+            raise ValueError(f"{key} must be one GeoPackage path")
 
     if isinstance(load_generation, dict):
         allowed_load_generation = {

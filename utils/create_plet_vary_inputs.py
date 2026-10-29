@@ -59,7 +59,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PARCELS = REPO_ROOT / "examples/east_fork/inputs/parcels/parcels_plet_deterministic.gpkg"
-DEFAULT_HUCS = REPO_ROOT / "examples/east_fork/inputs/plet/huc12s_plet_deterministic.gpkg"
+DEFAULT_HUCS = REPO_ROOT / "examples/east_fork/inputs/hucs/huc12s_plet_deterministic.gpkg"
 STATISTICS = ("mean", "sd", "min", "p05", "p10", "p25", "p50", "p75", "p90", "p95", "max")
 
 
