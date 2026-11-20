@@ -290,3 +290,16 @@ the selected, preflight-approved formulation, rather than selection of BMP
 response families inside the annual scientific model. No new numerical model
 is authorized. See `docs/phase4_formulation_method_contracts.md` for the method
 contracts, scientific safeguards, and tests. This remains pre-BMI work.
+
+---
+
+# Phase 5: BMI 2.0 facade and exchange-variable catalog
+
+This phase adds BMI 2.0 *method-compatible adapters* for the driver, annual
+scientific model, live placement generator, and recorded scenario definitions, plus a versioned catalog
+of numeric exchange variables and tests. **No scientific calculation or
+existing driver execution code changes.** The 3 interfaces do not yet form
+a purely BMI-coupled live workflow; the Phase 2 generator's interleaved
+sampling and the scientific model's rich placement objects remain native.
+See `docs/phase5_bmi_exchange_contracts.md` for full contracts, limitations,
+validation commands, and the exact before/after numerical evidence.
