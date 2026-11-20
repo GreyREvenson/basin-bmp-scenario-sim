@@ -811,13 +811,16 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         "outputs", "verbose", "buffer_depth_ft", "bmp_sel_prob_via_costs",
         CFG_DETERMINISTIC_PARCEL_ORDER, CFG_DETERMINISTIC_BMP_TYPE_ORDER,
         CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
-        "load_generation", "bmp_fail_rate",
+        "load_generation", "simulation", "bmp_fail_rate",
         "bmp_fail_reduction", "pollutant_load_rate_pathway_fractions",
         "pollutant_load_rate_frac_surface", "pollutant_load_rate_frac_shallow",
     }
     unknown_top = sorted(str(key) for key in cfg if str(key).lower() not in allowed_top_level and str(key).lower() not in legacy_top_level)
     if unknown_top:
         raise ValueError(f"Unknown configuration key(s): {unknown_top}")
+    from src.formulations.formulation_registry import validate_formulation_selection
+    validate_formulation_selection(cfg)
+
     if ci_get(cfg, "plet_forcing") is not None and ci_get(cfg, "huc_parameters") is not None:
         raise ValueError("Specify huc_parameters or the deprecated plet_forcing alias, not both")
     for key in ("huc_parameters", "plet_forcing"):
