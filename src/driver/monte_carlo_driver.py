@@ -8,7 +8,6 @@ the rest of the application.
 from __future__ import annotations
 
 import logging
-import types
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -33,19 +32,12 @@ from src.bmp import (
 from src.scenarios.stochastic_scenario_generator import (
     BMPScenario, StochasticScenarioGenerator,
 )
-from src.bmp.bmp_response_registry import response_family
 from src.formulations.formulation_registry import validate_formulation_selection
 from src.cost import _estimate_costs_for_probabilities, _get_bmp_cost, _select_cost_rate_median
 from src.afo import feedlot_bmp_cost_quantities
 from src.io_utils import _write_parquet_atomic, _flatten_plot_records
 from src.input_distributions import sample_group_key
 from src.logging_utils import make_worker_logger, log_scope
-from src.afo import apply_afo_baseline, mass_afo_realization, apply_afo_feedlot_manure_effect
-from src.plet_rusle import (
-    plet_annual_surface_runoff_in,
-    calculate_load_diagnostics,
-    initialize_plet_rusle_state,
-)
 from src.parcel import (
     _get_delivery_coeffs,
     _get_parcel_metadata,
@@ -56,9 +48,13 @@ from src.parcel import (
 )
 from src.sampling import _piecewise_quantile_sample, _sample_from_stats, _trunc_normal
 from src.driver.results.bmp_summary import BMPSummaryCollector
-from src.models.assemblies.plet_rusle_annual import initialize_plet_rusle_baseline
-from src.models.assemblies.statistical_annual import initialize_statistical_baseline
 from src.driver.results.trajectory_output_manager import collect_and_write_trajectories
+from src.models.model_context import ModelContextServices, ScenarioModelContext
+from src.models.assemblies.annual_model_realization import AnnualModelRealization
+from src.models.accounting.afo_accounting import (
+    build_operation_budget_rows, build_load_component_rows,
+)
+from src.models.diagnostics.load_parameter_records import model_parameter_records
 from src.constants import (
     CURRENT_TIMESTEP_YEARS as _CURRENT_TIMESTEP_YEARS,
     CFG_BMP_COST,
@@ -130,229 +126,18 @@ from src.constants import (
 )
 
 
-def _safe_mass_ratio(numerator: float, denominator: float) -> Optional[float]:
-    """Return a dimensionless mass ratio, or ``None`` when undefined.
-
-        Parameters
-        ----------
-        numerator : float
-            Numerator of the dimensionless ratio.
-        denominator : float
-            Denominator of the dimensionless ratio.
-
-        Returns
-        -------
-        Optional[float]
-            Dimensionless ratio, or ``None`` when the denominator is not positive or finite.
-
-    """
-    numerator = float(numerator)
-    denominator = float(denominator)
-    if not np.isfinite(numerator) or not np.isfinite(denominator) or denominator <= 0.0:
-        return None
-    return numerator / denominator
-
-
-def _next_deterministic_bmp_type(
-    bmp_types: List[int], already_applied: set[int], cursor: int
-) -> Tuple[Optional[int], int]:
-    """Select the next BMP type in sequence that remains available."""
-    for offset in range(len(bmp_types)):
-        type_index = (cursor + offset) % len(bmp_types)
-        cps = bmp_types[type_index]
-        if cps not in already_applied:
-            return cps, type_index + 1
-    return None, cursor
-
-
-def _bmp_impacted_parcel_indices(ctx: Any, parcel_idx: int, bmp_rec: Dict[str, Any]) -> List[int]:
-    """Return full-hydrologic-universe parcel indices represented by one BMP.
-
-        For wetlands, ``impacted_pids`` may include upstream parcels in addition to
-        the placement parcel. Other BMP types operate on the placement parcel only.
-        The placement parcel is always included defensively even when the wetland
-        output contains an empty or partial impacted-PID string.
-
-        Parameters
-        ----------
-        ctx : Any
-            Active scenario or model context.
-        parcel_idx : int
-            Zero-based index of the parcel.
-        bmp_rec : Dict[str, Any]
-            Mutable record for the current BMP placement.
-
-        Returns
-        -------
-        List[int]
-            Indices of parcels represented by the BMP placement.
-
-    """
-    pids: List[str] = [str(ctx.parcel_ids[parcel_idx])]
-    raw = str(bmp_rec.get(OUTPUT_IMPACTED_PIDS) or "")
-    for token in raw.split(","):
-        pid = token.strip()
-        if pid and pid not in pids:
-            pids.append(pid)
-    pid_to_index = getattr(ctx, "pid_to_index", None) or {
-        str(pid): idx for idx, pid in enumerate(ctx.parcel_ids)
-    }
-    return [int(pid_to_index[pid]) for pid in pids if pid in pid_to_index]
-
-
-def _removed_mass_by_parcel_kg(
-    ctx: Any,
-    pre_bmp_load_rates: np.ndarray,
-    post_bmp_load_rates: np.ndarray,
-    parcel_idx: int,
-    bmp_rec: Dict[str, Any],
-    recorded_removed_mass_kg: np.ndarray,
-    *,
-    extra_parcel_indices: Tuple[int, ...] = (),
-) -> List[Tuple[int, np.ndarray]]:
-    """Compute signed BMP mass changes on each affected parcel (kg/timestep).
-
-    Optional extra indices capture manure-receiving parcels affected by AFO
-    feedlot BMPs, even when they are not physically treated by the BMP.
-    These deltas are the canonical source for outlet trajectories: a wetland
-    can affect its host AND multiple upstream parcels, each of which has its
-    own parcel-to-outlet membership and delivery coefficients. The recorded
-    BMP removal must reconcile with these changes rather than being assigned
-    wholesale to the host's outlet and delivery factors.
-    """
-    changes: List[Tuple[int, np.ndarray]] = []
-    total = np.zeros(pre_bmp_load_rates.shape[1], dtype=float)
-    accounted_indices = set(_bmp_impacted_parcel_indices(ctx, parcel_idx, bmp_rec))
-    accounted_indices.update(int(idx) for idx in extra_parcel_indices)
-    for idx in sorted(accounted_indices):
-        change = (
-            np.asarray(pre_bmp_load_rates[idx, :] - post_bmp_load_rates[idx, :], dtype=float)
-            * float(ctx.parcel_area_ha[idx])
-            * _CURRENT_TIMESTEP_YEARS
-        )
-        changes.append((idx, change))
-        total += change
-    if not np.allclose(total, recorded_removed_mass_kg, rtol=1e-7, atol=1e-8):
-        raise RuntimeError(
-            'BMP removal mass does not reconcile with the affected parcel load changes: '
-            f'pid={ctx.parcel_ids[parcel_idx]}, cps={bmp_rec.get("cps")}, '
-            f'parcel_delta_kg={total.tolist()}, '
-            f'recorded_removed_kg={np.asarray(recorded_removed_mass_kg).tolist()}'
-        )
-    return changes
-
-
-def _accumulate_delivered_bmp_reductions(
-    ctx: Any,
-    changes: List[Tuple[int, np.ndarray]],
-    cumul: Dict[str, Dict[str, float]],
-) -> None:
-    """Credit each changed parcel's signed mass only to its linked outlets.
-
-    The parcel-level delivery convention applies the two sediment factors for
-    TSS and the two nutrient factors for other pollutants. A different wetland
-    transport model would require an explicitly different accounting contract.
-    """
-    for idx, removed_mass_kg in changes:
-        pid = str(ctx.parcel_ids[idx])
-        for oid in ctx._get_parcel_out_oids(idx):
-            dr = ctx._delivery_coeffs(pid, oid)
-            for pol_idx, pol in enumerate(ctx.pollutants):
-                if pol == 'TSS':
-                    factor = dr[COL_SDR_F_TO_S] * dr[COL_SDR_S_TO_O]
-                else:
-                    factor = dr[COL_NDR_F_TO_S] * dr[COL_NDR_S_TO_O]
-                cumul[pol][oid] += float(removed_mass_kg[pol_idx]) * factor
-
-
-def _baseline_mass_before_bmp_kg(
-    ctx: Any,
-    pre_bmp_load_rates: np.ndarray,
-    parcel_idx: int,
-    bmp_rec: Dict[str, Any],
-    *,
-    extra_parcel_indices: Tuple[int, ...] = (),
-) -> np.ndarray:
-    """Calculate pre-BMP pollutant mass for the parcels represented by a BMP.
-
-        ``pre_bmp_load_rates`` contains the current load rate immediately before this
-        BMP is applied. For the present annual model, rate × area × 1 year gives kg.
-        Wetland denominators include all hydrologically impacted parcels identified
-        by the wetland routine, including parcels that are not BMP-selectable.
-        For manure-capturing AFO BMPs, also include receiving parcels where
-        the BMP induces additional nutrient loading. Each parcel is counted once.
-
-        Parameters
-        ----------
-        ctx : Any
-            Active scenario or model context.
-        pre_bmp_load_rates : np.ndarray
-            Parcel pollutant load rates immediately before BMP application.
-        parcel_idx : int
-            Zero-based index of the parcel.
-        bmp_rec : Dict[str, Any]
-            Mutable record for the current BMP placement.
-
-        Returns
-        -------
-        np.ndarray
-            Pre-BMP pollutant masses for the represented parcels, in kilograms.
-
-    """
-    n_pol = int(pre_bmp_load_rates.shape[1])
-    mass = np.zeros(n_pol, dtype=float)
-    accounted_indices = set(_bmp_impacted_parcel_indices(ctx, parcel_idx, bmp_rec))
-    accounted_indices.update(int(idx) for idx in extra_parcel_indices)
-    for idx in sorted(accounted_indices):
-        area_ha = float(ctx.parcel_area_ha[idx])
-        mass += np.asarray(pre_bmp_load_rates[idx, :], dtype=float) * area_ha * _CURRENT_TIMESTEP_YEARS
-    return mass
-
-
-def _add_mass_metrics_to_bmp_record(
-    bmp_rec: Dict[str, Any],
-    pollutants: List[str],
-    baseline_mass_kg: np.ndarray,
-    treated_mass_kg: np.ndarray,
-    removed_mass_kg: np.ndarray,
-) -> None:
-    """Write explicit mass accounting and dimensionless BMP metrics to a record.
-
-        Parameters
-        ----------
-        bmp_rec : Dict[str, Any]
-            Mutable record for the current BMP placement.
-        pollutants : List[str]
-            Pollutant names in model order.
-        baseline_mass_kg : np.ndarray
-            Baseline pollutant masses, in kilograms.
-        treated_mass_kg : np.ndarray
-            Pollutant masses subjected to BMP treatment, in kilograms.
-        removed_mass_kg : np.ndarray
-            Pollutant masses removed by the BMP, in kilograms.
-
-    """
-    bmp_rec["mass_timestep_years"] = float(_CURRENT_TIMESTEP_YEARS)
-    for pol_idx, pol in enumerate(pollutants):
-        baseline_mass = float(baseline_mass_kg[pol_idx])
-        treated_mass = float(treated_mass_kg[pol_idx])
-        removed_mass = float(removed_mass_kg[pol_idx])
-
-        bmp_rec[f"baseline_mass_{pol}_kg"] = baseline_mass
-        bmp_rec[f"treated_baseline_mass_{pol}_kg"] = treated_mass
-        bmp_rec[f"removed_mass_{pol}_kg"] = removed_mass
-
-        exposure = _safe_mass_ratio(treated_mass, baseline_mass)
-        realized = _safe_mass_ratio(removed_mass, treated_mass)
-        overall = _safe_mass_ratio(removed_mass, baseline_mass)
-        bmp_rec[f"treatment_exposure_fraction_{pol}"] = exposure
-        bmp_rec[f"realized_efficiency_{pol}"] = realized
-        bmp_rec[f"overall_reduction_fraction_{pol}"] = overall
+# Compatibility aliases for older direct imports through ``src.model``.
+from src.models.accounting.bmp_mass import (
+    _safe_mass_ratio, _bmp_impacted_parcel_indices,
+    _removed_mass_by_parcel_kg, _baseline_mass_before_bmp_kg,
+    _add_mass_metrics_to_bmp_record,
+)
+from src.models.routing.outlet_delivery import _accumulate_delivered_bmp_reductions
+from src.scenarios.deterministic_selection import _next_deterministic_bmp_type
 
 
 
-
-class Model:
+class Model(ModelContextServices):
     """Main controller for the simulation.
 
     The model prepares data, binds helper methods, runs one or more scenarios,
@@ -394,33 +179,6 @@ class Model:
         seed = data[DATA_RANDOM_SEED]
         self.rng = np.random.default_rng(seed)
         self.outputs_dir: Optional[Path] = None
-
-        # Bind helper functions
-        self._sample_from_stats = types.MethodType(_sample_from_stats, self)
-        self._piecewise_quantile_sample = types.MethodType(_piecewise_quantile_sample, self)
-        self._trunc_normal = types.MethodType(_trunc_normal, self)
-
-        self._select_bmp_type = types.MethodType(_select_bmp_type, self)
-        self._get_bmp_name = types.MethodType(_get_bmp_name, self)
-        self._get_pathway_load_rates = types.MethodType(_get_pathway_load_rates, self)
-        self._get_current_total_load_rate = types.MethodType(_get_current_total_load_rate, self)
-        self._apply_pathway_reduction = types.MethodType(_apply_pathway_reduction, self)
-        self._sample_efficiency_map = types.MethodType(_sample_efficiency_map, self)  # pathway-aware
-        self._simulate_wetland = types.MethodType(_simulate_wetland, self)
-        self._simulate_grassed = types.MethodType(_simulate_grassed, self)
-        self._simulate_infield = types.MethodType(_simulate_infield, self)
-        self._get_bmp_selection_probs = types.MethodType(_get_bmp_selection_probs, self)
-        self._get_bmp_cost = types.MethodType(_get_bmp_cost, self)
-
-        self._sample_parcel_index = types.MethodType(_sample_parcel_index, self)
-        self._sample_load_rate = types.MethodType(_sample_load_rate, self)
-        self._get_parcel_metadata = types.MethodType(_get_parcel_metadata, self)
-        self._get_parcel_up_list = types.MethodType(_get_parcel_up_list, self)
-        self._get_parcel_out_oids = types.MethodType(_get_parcel_out_oids, self)
-        self._delivery_coeffs = types.MethodType(_get_delivery_coeffs, self)
-
-        self._estimate_costs_for_probabilities = types.MethodType(_estimate_costs_for_probabilities, self)
-        self._select_cost_rate_median = types.MethodType(_select_cost_rate_median, self)
 
         # Pathway definitions and aggregate-load-rate fractions are validated in
         # input_config because statistical mode may use arbitrary pathway names.
@@ -695,70 +453,8 @@ class Model:
         )
 
 
-class _ScenarioContext:
-    """Lightweight container for one worker's scenario state.
-
-    The context mirrors the methods and attributes expected by the helper
-    functions so each worker can run a scenario without needing the full
-    ``Model`` instance.
-    """
-
-    def __init__(self, cfg: Dict[str, Any], shared: Dict[str, Any], logger, seed: int) -> None:
-        """Create a scenario context with its own random number generator.
-
-        Parameters
-        ----------
-        cfg : dict[str, Any]
-            Scenario configuration mapping.
-        shared : dict[str, Any]
-            Shared model payload produced by :meth:`Model._shared_payload`.
-        logger : Any
-            Worker logger used for scenario output.
-        seed : int
-            Seed for the worker-specific random number generator.
-
-        Returns
-        -------
-        None
-        """
-        self.cfg = cfg
-        self.logger = logger
-        self.rng = default_rng(seed)
-
-        # Unpack shared, then alias for getattr to work like the Model instance
-        for k, v in shared.items():
-            setattr(self, k, v)
-
-        # Direct scenario callers/tests may omit optional AFO keys.
-        self.afo_inputs = getattr(self, "afo_inputs", None)
-        self.feedlot_bmp_cps = set(getattr(self, "feedlot_bmp_cps", set()) or set())
-
-        # Keep the full hydrologic PID->parcel-index map normalized for repeated lookups.
-        self.pid_to_index = {str(pid): int(idx) for pid, idx in self.pid_to_index.items()}
-
-        # Bind helpers with self as first arg
-        self._sample_from_stats = types.MethodType(_sample_from_stats, self)
-        self._piecewise_quantile_sample = types.MethodType(_piecewise_quantile_sample, self)
-        self._trunc_normal = types.MethodType(_trunc_normal, self)
-
-        self._select_bmp_type = types.MethodType(_select_bmp_type, self)
-        self._get_bmp_name = types.MethodType(_get_bmp_name, self)
-        self._get_pathway_load_rates = types.MethodType(_get_pathway_load_rates, self)
-        self._get_current_total_load_rate = types.MethodType(_get_current_total_load_rate, self)
-        self._apply_pathway_reduction = types.MethodType(_apply_pathway_reduction, self)
-        self._sample_efficiency_map = types.MethodType(_sample_efficiency_map, self)    # pathway-aware
-        self._simulate_wetland = types.MethodType(_simulate_wetland, self)
-        self._simulate_grassed = types.MethodType(_simulate_grassed, self)
-        self._simulate_infield = types.MethodType(_simulate_infield, self)
-        self._get_bmp_selection_probs = types.MethodType(_get_bmp_selection_probs, self)
-        self._get_bmp_cost = types.MethodType(_get_bmp_cost, self)
-
-        self._sample_parcel_index = types.MethodType(_sample_parcel_index, self)
-        self._sample_load_rate = types.MethodType(_sample_load_rate, self)
-        self._get_parcel_metadata = types.MethodType(_get_parcel_metadata, self)
-        self._get_parcel_up_list = types.MethodType(_get_parcel_up_list, self)
-        self._get_parcel_out_oids = types.MethodType(_get_parcel_out_oids, self)
-        self._delivery_coeffs = types.MethodType(_get_delivery_coeffs, self)
+# Historical name retained for external callers and regression fixtures.
+_ScenarioContext = ScenarioModelContext
 
 
 def _run_one_scenario(
@@ -800,24 +496,12 @@ def _run_one_scenario(
     with log_scope(label=f"scenario {sid}", logger=logger, level=logging.INFO):
         logger.info(f"=== scenario {sid} start ===")
 
-        n_pol = len(ctx.pollutants)
-        load_state = None
-        afo_assignments = []
-        manure_mass_ledger = []
-
-        # The two supported model formulations now own baseline generation.
-        # Keep selection/RNG execution order fixed for numerical equivalence.
-        if ctx.load_generation_mode == LOAD_MODE_PLET_RUSLE:
-            baseline_load_rates, load_state, afo_assignments, manure_mass_ledger = (
-                initialize_plet_rusle_baseline(ctx, logger)
-            )
-        elif ctx.load_generation_mode == LOAD_MODE_STATISTICAL:
-            baseline_load_rates, load_state, afo_assignments, manure_mass_ledger = (
-                initialize_statistical_baseline(ctx, n_pol, logger)
-            )
-        else:
-            raise ValueError(f"Unsupported load-generation mode: {ctx.load_generation_mode!r}")
-        load_rates = baseline_load_rates.copy()
+        scientific_model = AnnualModelRealization.initialize(ctx, logger)
+        baseline_load_rates = scientific_model.baseline_load_rates
+        load_rates = scientific_model.load_rates
+        load_state = scientific_model.load_state
+        afo_assignments = scientific_model.afo_assignments
+        manure_mass_ledger = scientific_model.manure_mass_ledger
 
         # Limits
         limit_n = cfg.get("bmp_limit_n",None)
@@ -841,8 +525,6 @@ def _run_one_scenario(
         records: Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]] = defaultdict(list)
         scenario_bmps: List[Dict[str, Any]] = []
         scenario_parcels: List[Dict[str, Any]] = []
-        scenario_load_parameters: List[Dict[str, Any]] = []
-        cumul: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
         # Initialize summary collector once per scenario
         collector = BMPSummaryCollector(ctx.pollutants, scenario_id=sid)
@@ -877,149 +559,20 @@ def _run_one_scenario(
                 failed_flag = placement_plan.failed
                 recovery_effect_scale = placement_plan.recovery_effect_scale
 
-                # Per-BMP record
-                bmp_rec: Dict[str, Any] = dict(
-                    scenario=sid,
-                    cps=cps,
-                    cps_name=ctx._get_bmp_name(cps),
-                    pid=str(pid),
-                    **{
-                        OUTPUT_IMPACTED_PIDS: "",
-                        OUTPUT_LINEAR_LENGTH: None,
-                        OUTPUT_BUFFER_AREA: None,
-                        OUTPUT_PORTION_TREATED: None,
-                        OUTPUT_WETLAND_AREA: None,
-                        OUTPUT_CATCHMENT_RATIO: None,
-                    },
-                )
-                bmp_rec[OUTPUT_BMP_FAILED] = bool(failed_flag)
-                bmp_rec["load_generation_mode"] = str(ctx.load_generation_mode)
-
-                bmp_mass_rate_outputs = {OUTPUT_TREATED: np.zeros(n_pol, dtype=float), OUTPUT_REMOVED: np.zeros(n_pol, dtype=float)}
-
-                # Preserve the current pre-BMP load state long enough to derive a
-                # true mass denominator after the BMP routine identifies its
-                # impacted parcels. This is especially important for wetlands.
-                pre_bmp_load_rates = load_rates.copy()
-
-                # Feedlot CPS treat feedlot source only; all other CPS treat
-                # agricultural/background loads, not the direct feedlot source.
-                ctx.current_bmp_targets_feedlot = bool(cps in getattr(ctx, "feedlot_bmp_cps", set()))
-                if ctx.current_bmp_targets_feedlot and not getattr(ctx, "afo_inputs", None):
-                    raise ValueError("feedlot-specific CPS requires configured AFO inputs")
-                if ctx.current_bmp_targets_feedlot and cps in (412, 656, 657):
-                    raise ValueError("Wetland/buffer CPS cannot be classified as feedlot-only")
-
-                # Apply BMP using sampled efficiency by flow pathway.
-                if response_family(cps) == "wetland":
-                    ctx._simulate_wetland(
-                        parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs,
-                        design=placement_plan.design,
-                    )
-                elif response_family(cps) == "grassed":
-                    ctx._simulate_grassed(
-                        parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs,
-                        design=placement_plan.design,
-                    )
-                else:
-                    ctx._simulate_infield(parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs)
-
-                # A manure-capturing feedlot BMP can increase field application
-                # and therefore *increase* loading at different parcels. Count
-                # those signed changes in both net BMP mass and outlet impacts.
-                direct_bmp_removed = np.asarray(bmp_mass_rate_outputs[OUTPUT_REMOVED], dtype=float).copy()
-                # AFO gains are sampled after BMP response in the original
-                # model. Record them so replay avoids any recovery resampling.
-                previous_afo_effects = len(getattr(ctx, "afo_bmp_effect_records", []))
-                manure_changes = (
-                    apply_afo_feedlot_manure_effect(
-                        ctx, str(pid), cps, load_rates,
-                        bmp_effect_scale=recovery_effect_scale,
-                        realized_recovery_gains=placement_plan.recovery_gains,
-                    ) if ctx.current_bmp_targets_feedlot else []
-                )
-                recovery_gains = tuple(
-                    float(effect["recovery_fraction"])
-                    for effect in getattr(ctx, "afo_bmp_effect_records", [])[previous_afo_effects:]
-                )
-                for change in manure_changes:
-                    bmp_mass_rate_outputs[OUTPUT_REMOVED][change["pol_idx"]] -= change["added_export_kg"]
-                    if load_state is not None:
-                        # Keep PLET's equivalent manure concentration diagnostic
-                        # aligned with the reallocated surface nutrient mass.
-                        idx = change["parcel_idx"]
-                        pol = str(ctx.pollutants[change["pol_idx"]]).upper()
-                        runoff_mm = plet_annual_surface_runoff_in(load_state.parameters[idx])[3] * 25.4
-                        if runoff_mm > 0 and pol in load_state.concentrations[idx]:
-                            rate = change["added_export_kg"] / float(ctx.parcel_area_ha[idx])
-                            load_state.concentrations[idx][pol] += 100 * rate / runoff_mm
-                for pol_idx, pol in enumerate(ctx.pollutants):
-                    bmp_rec[f"induced_manure_{str(pol).lower()}_kg_yr"] = sum(
-                        ch["added_export_kg"] for ch in manure_changes if ch["pol_idx"] == pol_idx
-                    )
-
-                # Stochastic cost and budget accounting are generator-owned.
-                # This call intentionally occurs AFTER AFO recovery draws.
+                # The scientific model owns treatment, AFO response and accounting.
+                pending = scientific_model.apply_placement(placement_plan, sid)
+                # AFO recovery has to precede stochastic cost sampling to retain
+                # the existing deterministic random stream and exact replay.
                 placement_plan = scenario_generator.complete_placement(
-                    ctx, placement_plan, recovery_gains=recovery_gains,
+                    ctx, placement_plan, recovery_gains=pending.recovery_gains,
                 )
                 cost_this = float(placement_plan.cost_usd)
                 total_bmp = scenario_generator.total_bmp
                 total_cost = scenario_generator.total_cost
-
-                # Finalize the BMP record using explicit mass fields. The current
-                # one-year timestep converts annual mass rates to timestep mass.
-                bmp_rec[OUTPUT_COST_USD] = cost_this
-                treated_mass_kg = np.asarray(bmp_mass_rate_outputs[OUTPUT_TREATED], dtype=float) * _CURRENT_TIMESTEP_YEARS
-                removed_mass_kg = np.asarray(bmp_mass_rate_outputs[OUTPUT_REMOVED], dtype=float) * _CURRENT_TIMESTEP_YEARS
-                induced_receiver_indices = tuple(sorted({
-                    int(ch["parcel_idx"]) for ch in manure_changes
-                    if float(ch["added_export_kg"]) != 0.
-                }))
-                accounting_indices = sorted(
-                    set(_bmp_impacted_parcel_indices(ctx, parcel_idx, bmp_rec))
-                    | set(induced_receiver_indices)
-                )
-                # Distinguish the physically treated parcels from the wider
-                # accounting boundary used for net mass and its percentage.
-                bmp_rec["mass_accounting_pids"] = ",".join(
-                    str(ctx.parcel_ids[idx]) for idx in accounting_indices
-                )
-                baseline_mass_kg = _baseline_mass_before_bmp_kg(
-                    ctx, pre_bmp_load_rates, parcel_idx, bmp_rec,
-                    extra_parcel_indices=induced_receiver_indices,
-                )
-                for pol_idx, pol in enumerate(ctx.pollutants):
-                    bmp_rec[f"direct_bmp_removed_{pol}_kg_yr"] = float(
-                        direct_bmp_removed[pol_idx]
-                    )
-                _add_mass_metrics_to_bmp_record(
-                    bmp_rec,
-                    list(ctx.pollutants),
-                    baseline_mass_kg,
-                    treated_mass_kg,
-                    removed_mass_kg,
-                )
+                bmp_rec = scientific_model.complete_placement(pending, cost_this)
                 scenario_bmps.append(bmp_rec)
-
-                # Summary metrics are calculated from accumulated masses rather
-                # than from parcel areal-load-rate denominators or averaged efficiencies.
                 collector.add_bmp_record(bmp_rec)
-
-                # Attribute actual signed load changes to the affected parcel's
-                # outlets and delivery factors, not just the BMP host. Wetlands
-                # may change several upstream parcels, while feedlot recovery
-                # may increase manure export on separate receiving parcels.
-                changes = _removed_mass_by_parcel_kg(
-                    ctx,
-                    pre_bmp_load_rates,
-                    load_rates,
-                    parcel_idx,
-                    bmp_rec,
-                    removed_mass_kg,
-                    extra_parcel_indices=induced_receiver_indices,
-                )
-                _accumulate_delivered_bmp_reductions(ctx, changes, cumul)
+                cumul = scientific_model.delivered_reductions
                 # Record current cumulative for each axis choice
                 for pol in ctx.pollutants:
                     for oid in ctx.outlet_oids:
@@ -1059,39 +612,7 @@ def _run_one_scenario(
             manure_dir.mkdir(parents=True, exist_ok=True)
             manure_df = pd.DataFrame([dict(scenario=sid, **rec) for rec in manure_mass_ledger])
             _write_parquet_atomic(manure_df, manure_dir / f"s{sid}.parquet", logger=logger)
-            # One row per operation prevents accidentally summing replicated
-            # operation-wide excretion figures across multiple receiving fields.
-            budget_rows = []
-            for op_id, grouped in manure_df.groupby("afo_id", sort=True):
-                first = grouped.iloc[0]
-                budget = {"scenario": sid, "afo_id": op_id,
-                          "receiver_count": len(grouped)}
-                for source, target in (
-                    ("animal_n_produced_kg", "tn_produced_kg"),
-                    ("animal_p_produced_kg", "tp_produced_kg"),
-                    ("operation_available_tn_kg", "tn_available_kg"),
-                    ("operation_available_tp_kg", "tp_available_kg"),
-                ):
-                    budget[target] = float(first[source])
-                for key in ("tn_applied_kg", "tp_applied_kg",
-                            "tn_exported_kg", "tp_exported_kg"):
-                    budget[key] = float(grouped[key].sum())
-                op_state = getattr(ctx, "afo_bmp_operation_state", {}).get(op_id)
-                if op_state:
-                    for nutrient in ("tn", "tp"):
-                        full = op_state["available_full"][nutrient.upper()]
-                        budget[f"final_{nutrient}_available_kg"] = full * op_state["current_collection"]
-                        budget[f"final_{nutrient}_applied_kg"] = full * op_state["current_collection"]
-                        pol_idx = next(i for i, pol in enumerate(ctx.pollutants)
-                                       if str(pol).upper() == nutrient.upper())
-                        budget[f"final_{nutrient}_exported_kg"] = sum(
-                            src["current_rate"] * float(ctx.parcel_area_ha[src["parcel_idx"]])
-                            for src in op_state["sources"] if src["pol_idx"] == pol_idx
-                        )
-                for nutrient in ("tn", "tp"):
-                    if not np.isclose(budget[f"{nutrient}_available_kg"], budget[f"{nutrient}_applied_kg"], rtol=1e-10, atol=1e-8):
-                        raise AssertionError(f"AFO {op_id}: non-conserved {nutrient} allocation")
-                budget_rows.append(budget)
+            budget_rows = build_operation_budget_rows(ctx, sid, manure_df)
             budgets_dir = outputs_dir / "afo_operation_budgets"
             budgets_dir.mkdir(parents=True, exist_ok=True)
             _write_parquet_atomic(pd.DataFrame(budget_rows), budgets_dir / f"s{sid}.parquet", logger=logger)
@@ -1105,21 +626,7 @@ def _run_one_scenario(
         # Direct feedlot and manure-field components retained independently
         # through BMP application (kg/year) to enable source-specific auditing.
         if afo_assignments:
-            component_rows = []
-            for idx, pid in enumerate(ctx.parcel_ids):
-                area_ha = float(ctx.parcel_area_ha[idx])
-                for pol_idx, pollutant in enumerate(ctx.pollutants):
-                    row = {"scenario": sid, "pid": str(pid), "pollutant": pollutant}
-                    for label, initial, final in (
-                        ("direct_feedlot", ctx.baseline_afo_feedlot_pathway_rates,
-                         ctx.current_afo_feedlot_pathway_rates),
-                        ("manure_field", ctx.baseline_afo_manure_pathway_rates,
-                         ctx.current_afo_manure_pathway_rates),
-                    ):
-                        for path_idx, path in enumerate(ctx.pathway_names):
-                            row[f"baseline_{label}_{path}_kg_yr"] = float(initial[idx, pol_idx, path_idx]) * area_ha
-                            row[f"final_{label}_{path}_kg_yr"] = float(final[idx, pol_idx, path_idx]) * area_ha
-                    component_rows.append(row)
+            component_rows = build_load_component_rows(ctx, sid)
             component_dir = outputs_dir / "afo_load_components"
             component_dir.mkdir(parents=True, exist_ok=True)
             _write_parquet_atomic(pd.DataFrame(component_rows), component_dir / f"s{sid}.parquet", logger=logger)
@@ -1133,45 +640,9 @@ def _run_one_scenario(
                 row[f"final_load_rate_{pol}_kg_ha_yr"] = float(load_rates[parcel_idx, pol_idx])
             scenario_parcels.append(row)
 
-        # Realized stochastic PLET/RUSLE inputs and derived diagnostics.
-        if load_state is not None:
-            for parcel_idx, pid_i in enumerate(ctx.parcel_ids):
-                initial_params = load_state.baseline_parameters[parcel_idx]
-                final_params = load_state.parameters[parcel_idx]
-                initial_conc = load_state.baseline_concentrations[parcel_idx]
-                final_conc = load_state.concentrations[parcel_idx]
-                initial_gw_conc = load_state.baseline_groundwater_concentrations[parcel_idx]
-                final_gw_conc = load_state.groundwater_concentrations[parcel_idx]
-                row: Dict[str, Any] = {"scenario": sid, "pid": str(pid_i)}
-                for key in sorted(set(initial_params) | set(final_params)):
-                    row[f"initial_{key}"] = initial_params.get(key)
-                    row[f"final_{key}"] = final_params.get(key)
-                for pol in sorted(set(initial_conc) | set(final_conc)):
-                    label = str(pol).lower()
-                    row[f"initial_concentration_{label}_mg_l"] = initial_conc.get(pol)
-                    row[f"final_concentration_{label}_mg_l"] = final_conc.get(pol)
-                for pol in sorted(set(initial_gw_conc) | set(final_gw_conc)):
-                    label = str(pol).lower()
-                    row[f"initial_groundwater_concentration_{label}_mg_l"] = initial_gw_conc.get(pol)
-                    row[f"final_groundwater_concentration_{label}_mg_l"] = final_gw_conc.get(pol)
-                for pol_idx, pol in enumerate(ctx.pollutants):
-                    label = str(pol).lower()
-                    for path_idx, path in enumerate(ctx.pathway_names):
-                        path_label = str(path).lower().replace(" ", "_")
-                        initial_pathway_load_rate = float(
-                            load_state.baseline_pathway_load_rates[parcel_idx, pol_idx, path_idx]
-                        )
-                        final_pathway_load_rate = float(
-                            load_state.pathway_load_rates[parcel_idx, pol_idx, path_idx]
-                        )
-                        # Explicit annual areal-load-rate columns.
-                        row[f"initial_{path_label}_{label}_load_rate_kg_ha_yr"] = initial_pathway_load_rate
-                        row[f"final_{path_label}_{label}_load_rate_kg_ha_yr"] = final_pathway_load_rate
-                for key, value in calculate_load_diagnostics(initial_params).items():
-                    row[f"initial_{key}"] = value
-                for key, value in calculate_load_diagnostics(final_params).items():
-                    row[f"final_{key}"] = value
-                scenario_load_parameters.append(row)
+        # The scientific model owns derived load diagnostics; the driver
+        # merely collects and persists the model-supplied records.
+        scenario_load_parameters = model_parameter_records(ctx, sid, load_state)
 
         # Build summary tables once, then write parquet outputs.
         summary_df = collector.generate_summary_dataframe()

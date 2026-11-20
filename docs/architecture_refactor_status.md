@@ -197,3 +197,84 @@ model driver still owns some scientific response and mass-accounting logic.
   from the patch-construction environment. Tests requiring those optional
   dependencies must be rerun in the project's normal environment. Passing
   the available tests does not prove full native Parquet equivalence.
+
+---
+
+# Phase 3: scientific model state and driver separation
+
+This patch applies to the uploaded **`dev_arch_refac (2)` ZIP**, which already
+contains Phase 2. It does **not** alter input schemas, user-facing CLI flags,
+BMP methods, PLET/RUSLE equations, or statistical sampling algorithms.
+
+## Separation of responsibilities
+
+- `src/models/assemblies/annual_model_realization.py` owns one independent
+  realization of annual scientific model state, using an explicit dataclass.
+  `initialize()` selects the supported PLET/RUSLE or statistical baseline
+  assembly. `apply_placement()` performs scientific BMP and AFO responses;
+  `complete_placement()` reconciles signed parcel mass changes and updates
+  pollutant delivery to linked outlets. These two placement calls straddle
+  generator-owned cost sampling **on purpose** to preserve the original RNG
+  stream and exact Phase 2 replay behavior.
+- `src/models/accounting/bmp_mass.py` owns physical mass calculations and
+  before/after parcel deltas. `src/models/routing/outlet_delivery.py` owns
+  scientific parcel-to-outlet delivery. The driver no longer applies their
+  equations itself; it reads accumulated outlet-reduction values.
+- `src/models/accounting/afo_accounting.py` owns manure operation budget
+  calculations, conservation checks, and AFO component-load records.
+  `src/models/diagnostics/load_parameter_records.py` owns the PLET/RUSLE
+  numerical diagnostics. The **driver** still writes all output files.
+- `src/models/model_context.py` replaces repeated per-instance
+  `types.MethodType` binding with statically declared Python helper methods.
+  It offers an isolated `ScenarioModelContext` and validates required worker
+  fields; `src.model._ScenarioContext` remains a backwards-compatible alias.
+- `src/scenarios/deterministic_selection.py` owns the legacy deterministic
+  BMP-selection helper. Existing `src.model` imports of old private helpers
+  are preserved for downstream tools and unit tests.
+- `src/driver/monte_carlo_driver.py` now coordinates the generator and model,
+  requests cost draws, manages output records and delegates to its
+  `driver/results/` collectors. It does not implement BMP response equations,
+  AFO-induced loads, or scientific delivery calculations.
+
+## Before/after numerical evidence
+
+The exact supplied `dev_arch_refac (2)` ZIP was extracted twice. Eight
+controlled scenarios were run on the **untouched** and **refactored** source,
+using identical seeds and in-memory output capture (not Parquet serialization).
+Both full JSON snapshots have identical sizes and SHA-256 digests:
+
+`7008d89edd41fc2433775ac836d8c8a80b7250fd9f671b6b93f114200ac4867a`
+
+The cases are PLET/RUSLE in-field, wetland and grassed-waterway treatments;
+statistical in-field loads; AFO mass-based loads; budget-constrained
+multi-BMP execution; statistical multiple-BMP execution; and manure recovery.
+This establishes **exact equality of the captured tables and outlet
+trajectories** for these scenarios, not universal model equivalence.
+
+The prior golden and replay tests remain in place. New tests in
+`tests/test_phase3_model_driver_separation.py` exercise the model contract
+independently of the driver, validate worker-context requirements and check
+that scientific helpers are not attached per instance.
+
+A broad scientific regression selection passed (**346 passed**, one
+deselected) with one environment-only exception: `test_custom_csv_config_and_parallel_mass_simulations` requires
+`pyarrow`, which is absent in the patch-construction environment. The same
+failure was reproduced on the untouched uploaded branch. Full native Parquet
+I/O, and the complete test suite, must still be run in the user's environment:
+
+```console
+python -m pytest tests
+```
+
+## Explicit limits / future phases
+
+This is **not yet a BMI implementation**. `src/interfaces/bmi/` is unchanged.
+`AnnualModelRealization` provides the first concrete native Python scientific
+execution boundary; a future BMI adapter should wrap it without copying its
+scientific logic. Historical process kernels still accept a mutable context
+with domain and scenario attributes, and the parallel worker payload remains
+mapping-based for backwards compatibility. Do not claim full cross-model
+scenario independence: the Phase 2 scenario schema still contains sampled
+model-response efficiencies and AFO recovery values. Changing the RNG streams
+or replacing the remaining context mapping requires a separate, explicitly
+validated migration.
