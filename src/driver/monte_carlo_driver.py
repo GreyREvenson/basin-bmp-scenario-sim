@@ -30,7 +30,9 @@ from src.bmp import (
     _simulate_infield,
     _simulate_wetland,
 )
-from src.scenarios.stochastic_scenario_generator import StochasticScenarioGenerator
+from src.scenarios.stochastic_scenario_generator import (
+    BMPScenario, StochasticScenarioGenerator,
+)
 from src.bmp.bmp_response_registry import response_family
 from src.formulations.formulation_registry import validate_formulation_selection
 from src.cost import _estimate_costs_for_probabilities, _get_bmp_cost, _select_cost_rate_median
@@ -644,7 +646,7 @@ class Model:
             random_seed=self.data.get("random_seed"),
         )
 
-    def run_all_scenarios(self) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
+    def run_all_scenarios(self, *, replay_dir: Path | str | None = None) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
         """Run all scenarios and return cross-scenario trajectory data.
 
         The method spawns workers when configured, executes each scenario,
@@ -669,10 +671,21 @@ class Model:
         ss = SeedSequence(base_seed if base_seed is not None else None)
         child_seeds = ss.spawn(n_scenarios)
 
+        # Load and validate every requested replay artifact before launching
+        # workers; no scenario is silently regenerated if a file is missing.
+        if replay_dir is None:
+            replay_scenarios = [None] * n_scenarios
+        else:
+            replay_root = Path(replay_dir)
+            replay_scenarios = [
+                BMPScenario.load(replay_root / f"s{sidx + 1}.json")
+                for sidx in range(n_scenarios)
+            ]
         self.logger.info(f"Running {n_scenarios} scenario(s) with n_jobs={n_jobs}")
         func = delayed(_run_one_scenario)
         results = Parallel(n_jobs=n_jobs)(
-            func(shared, self.cfg, sidx, int(child_seeds[sidx].generate_state(1)[0]), outputs_dir)
+            func(shared, self.cfg, sidx, int(child_seeds[sidx].generate_state(1)[0]),
+                 outputs_dir, replay_scenarios[sidx])
             for sidx in range(n_scenarios)
         )
 
@@ -754,6 +767,7 @@ def _run_one_scenario(
     sidx: int,
     seed: int,
     outputs_dir: Path,
+    scenario_definition: BMPScenario | None = None,
 ) -> Dict[Tuple[str, str, str, str], List[Tuple[int, float, float]]]:
     """Run one scenario and write its output files.
 
@@ -834,7 +848,8 @@ def _run_one_scenario(
         collector = BMPSummaryCollector(ctx.pollutants, scenario_id=sid)
 
         # The selection generator owns eligibility and stochastic placement policy.
-        scenario_generator = StochasticScenarioGenerator(ctx, cfg)
+        scenario_generator = StochasticScenarioGenerator(ctx, cfg, replay=scenario_definition)
+        scenario_generator.validate_replay(ctx, sid, seed)
 
         # Main loop: a parcel is sampled only while at least one CPS is selectable.
         while True:
@@ -845,31 +860,22 @@ def _run_one_scenario(
                 logger.info("BMP placement stopped: count limit reached.")
                 break
 
-            placement = scenario_generator.next_placement(ctx)
-            if placement is None:
+            placement_plan = scenario_generator.next_realization(ctx)
+            if placement_plan is None:
                 logger.info("BMP placement stopped: no selectable parcel/CPS combinations remain.")
                 break
-            parcel_idx, pid, cps = placement.parcel_index, placement.pid, placement.cps
+            parcel_idx, pid, cps = (
+                placement_plan.choice.parcel_index,
+                placement_plan.choice.pid,
+                placement_plan.choice.cps,
+            )
             # Scope each BMP placement for deeper indentation
             with log_scope(label=f"apply bmp cps={cps} pid={pid}", logger=logger):
-                eff_maps = [
-                    ctx._sample_efficiency_map(cps, pol_idx) for pol_idx in range(n_pol)
-                ]
-
-                # Optional BMP failure draw scales the sampled efficiency effects.
-                failed_flag = False
-                fr_cfg = ctx.cfg[CFG_BMP_FAIL_RATE]
-                fail_rate = float(fr_cfg if fr_cfg is not None else 0.0)
-                recovery_effect_scale = 1.0
-                if fail_rate > 0.0:
-                    failed = int(ctx.rng.choice([0, 1], p=[1.0 - fail_rate, fail_rate]))
-                    if failed == 1:
-                        red_cfg = ctx.cfg[CFG_BMP_FAIL_REDUCTION]
-                        reduction = float(red_cfg if red_cfg is not None else DEFAULT_BMP_FAIL_REDUCTION)
-                        eff_maps = [{k: float(v) * reduction for k, v in emap.items()} for emap in eff_maps]
-                        recovery_effect_scale = reduction
-                        failed_flag = True
-                        ctx.logger.verbose(f"BMP failure triggered for cps={cps}; scaling efficiencies by {reduction:.2f}")
+                # Stochastic parameters and physical designs are supplied by
+                # the scenario generator, never sampled inside model response.
+                eff_maps = placement_plan.efficiency_maps()
+                failed_flag = placement_plan.failed
+                recovery_effect_scale = placement_plan.recovery_effect_scale
 
                 # Per-BMP record
                 bmp_rec: Dict[str, Any] = dict(
@@ -906,24 +912,35 @@ def _run_one_scenario(
 
                 # Apply BMP using sampled efficiency by flow pathway.
                 if response_family(cps) == "wetland":
-                    ctx._simulate_wetland(parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs)
-                    quantity = float(bmp_rec[OUTPUT_WETLAND_AREA])
+                    ctx._simulate_wetland(
+                        parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs,
+                        design=placement_plan.design,
+                    )
                 elif response_family(cps) == "grassed":
-                    ctx._simulate_grassed(parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs)
-                    quantity = float(bmp_rec[OUTPUT_BUFFER_AREA]) if bmp_rec[OUTPUT_BUFFER_AREA] else 0.0
+                    ctx._simulate_grassed(
+                        parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs,
+                        design=placement_plan.design,
+                    )
                 else:
                     ctx._simulate_infield(parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs)
-                    quantity = float(ctx.parcel_area_ha[parcel_idx])
 
                 # A manure-capturing feedlot BMP can increase field application
                 # and therefore *increase* loading at different parcels. Count
                 # those signed changes in both net BMP mass and outlet impacts.
                 direct_bmp_removed = np.asarray(bmp_mass_rate_outputs[OUTPUT_REMOVED], dtype=float).copy()
+                # AFO gains are sampled after BMP response in the original
+                # model. Record them so replay avoids any recovery resampling.
+                previous_afo_effects = len(getattr(ctx, "afo_bmp_effect_records", []))
                 manure_changes = (
                     apply_afo_feedlot_manure_effect(
                         ctx, str(pid), cps, load_rates,
                         bmp_effect_scale=recovery_effect_scale,
+                        realized_recovery_gains=placement_plan.recovery_gains,
                     ) if ctx.current_bmp_targets_feedlot else []
+                )
+                recovery_gains = tuple(
+                    float(effect["recovery_fraction"])
+                    for effect in getattr(ctx, "afo_bmp_effect_records", [])[previous_afo_effects:]
                 )
                 for change in manure_changes:
                     bmp_mass_rate_outputs[OUTPUT_REMOVED][change["pol_idx"]] -= change["added_export_kg"]
@@ -941,27 +958,14 @@ def _run_one_scenario(
                         ch["added_export_kg"] for ch in manure_changes if ch["pol_idx"] == pol_idx
                     )
 
-                # Physical treatment extent remains defined by the BMP routines.
-                # For feedlot BMPs, however, cost quantities refer to the AFO
-                # footprint (or explicitly configured practice dimensions), not
-                # the full host parcel. Non-feedlot cost accounting is unchanged.
-                cost_area_ha = quantity
-                cost_length_m = None
-                if ctx.current_bmp_targets_feedlot:
-                    cost_area_ha, cost_length_m = feedlot_bmp_cost_quantities(
-                        ctx.afo_inputs, str(pid), cps
-                    )
-                # Costing and totals
-                cost_this = ctx._get_bmp_cost(
-                    cps, cost_area_ha,
-                    **({"feedlot": True, "cost_length_m": cost_length_m}
-                       if ctx.current_bmp_targets_feedlot else {}),
+                # Stochastic cost and budget accounting are generator-owned.
+                # This call intentionally occurs AFTER AFO recovery draws.
+                placement_plan = scenario_generator.complete_placement(
+                    ctx, placement_plan, recovery_gains=recovery_gains,
                 )
-                total_cost += cost_this
-                total_bmp += 1
-
-                # Mark CPS as applied for this parcel
-                scenario_generator.mark_applied(placement)
+                cost_this = float(placement_plan.cost_usd)
+                total_bmp = scenario_generator.total_bmp
+                total_cost = scenario_generator.total_cost
 
                 # Finalize the BMP record using explicit mass fields. The current
                 # one-year timestep converts annual mass rates to timestep mass.
@@ -1033,6 +1037,12 @@ def _run_one_scenario(
                                 else:
                                     yval = 0.0
                                 records[(pol, oid, xax, yax)].append((sid, xval, yval))
+
+        # The fully realized scenario is a model-independent, replayable artifact.
+        # Writing the JSON never samples RNGs or modifies modeled loads.
+        scenario_generator.complete_scenario(ctx, sid, seed).save(
+            outputs_dir / "scenario_definitions" / f"s{sid}.json"
+        )
 
         # Realized operation-to-field allocations, independently auditable for
         # deterministic and stochastic location assumptions.

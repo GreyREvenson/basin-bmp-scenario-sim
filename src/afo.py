@@ -1181,6 +1181,7 @@ def _hydrology(
 def apply_afo_feedlot_manure_effect(
     ctx: Any, host_pid: str, cps: int, load_rates: np.ndarray,
     *, bmp_effect_scale: float = 1.0,
+    realized_recovery_gains: tuple[float, ...] | None = None,
 ) -> list[dict[str, Any]]:
     """Apply an explicitly configured manure-collection gain after a feedlot BMP.
 
@@ -1199,12 +1200,19 @@ def apply_afo_feedlot_manure_effect(
     rows = getattr(ctx, "afo_bmp_effects_by_host_cps", {}).get(
         (str(host_pid), int(cps)), []
     )
+    if realized_recovery_gains is not None and len(realized_recovery_gains) != len(rows):
+        raise ValueError("Replayed AFO recovery count does not match configured effects")
     changes: list[dict[str, Any]] = []
-    for effect in rows:
+    for effect_index, effect in enumerate(rows):
         op_id = str(effect["afo_id"])
         op = operation_state[op_id]
-        gain = _draw(ctx, effect, "additional_collection_fraction", fraction=True)
-        gain *= bmp_effect_scale
+        if realized_recovery_gains is None:
+            gain = _draw(ctx, effect, "additional_collection_fraction", fraction=True)
+            gain *= bmp_effect_scale
+        else:
+            # The stored gain is already scaled by BMP failure; do not resample.
+            gain = _finite(realized_recovery_gains[effect_index],
+                           "replayed additional_collection_fraction", 0, 1)
         old = op["current_collection"]
         new = old + (1. - old) * gain
         for source in op["sources"]:

@@ -39,6 +39,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--outputs", help="Override the outputs directory from config")
     parser.add_argument("--seed", type=int, help="Override random seed from config")
     parser.add_argument("--quiet", action="store_true", help="Disable console logging")
+    parser.add_argument(
+        "--scenario-replay-dir", type=Path,
+        help="Replay recorded BMP realizations from a scenario_definitions directory; "
+             "requires the same validated inputs, formulation, and seed",
+    )
     parser.add_argument("--version", action="version", version="basin-bmp-sim 0.1.0")
     return parser.parse_args()
 
@@ -54,6 +59,7 @@ def run_from_config(
     verbose: bool | None = None,
     console: bool = True,
     make_plots: bool = True,
+    scenario_replay_dir: str | Path | None = None,
 ) -> Path:
     """Run the model from one configuration file.
 
@@ -96,7 +102,10 @@ def run_from_config(
     data = load_and_validate_all(cfg, logger)
 
     sim = Model(cfg, data, logger)
-    scenario_records = sim.run_all_scenarios()
+    if scenario_replay_dir is None:
+        scenario_records = sim.run_all_scenarios()
+    else:
+        scenario_records = sim.run_all_scenarios(replay_dir=scenario_replay_dir)
 
     if make_plots:
         make_summary_plots(cfg, data, scenario_records, outputs_dir, logger)
@@ -114,6 +123,7 @@ def main() -> None:
             outputs=args.outputs,
             seed=args.seed,
             console=not args.quiet,
+            scenario_replay_dir=args.scenario_replay_dir,
         )
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}")

@@ -51,6 +51,7 @@ def _simulate_grassed(
     load_rates: np.ndarray,
     bmp_rec: Dict[str, Any],
     bmp_mass_rate_outputs: Dict[str, np.ndarray],
+    design=None,
 ) -> None:
     """Apply a grassed buffer BMP to the selected parcel.
 
@@ -80,39 +81,13 @@ def _simulate_grassed(
     with log_scope(label="simulate_grassed", logger=self.logger):
         self.logger.verbose("calling simulate_grassed")
 
-        # Determine linear length as a fraction of parcel perimeter
-        perim_m = float(self.parcel_perim_m[parcel_idx])
-        deterministic_design = self.cfg.get(CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS, False)
-        if deterministic_design:
-            perim_frac = 0.25
-        else:
-            frac_stats = {"min": 0.1, "max": 0.3, "mean": 0.2}  # heuristic
-            perim_frac = self._sample_from_stats(stats=frac_stats, kind=None)
-        length_m = perim_m * perim_frac
-        self.logger.verbose(
-            f"grassed buffer length={length_m:.2f} m from fraction={perim_frac:.2f} of perimeter={perim_m:.2f} m"
-        )
-
-        # Depth and area (length * depth -> m^2 -> ha)
-        depth_ft = float(self.cfg[CFG_BUFFER_DEPTH_FT])
-        depth_m = depth_ft * FT_TO_M
-        area_ha = (length_m * depth_m) / 10000.0
-        self.logger.verbose(
-            f"grassed buffer depth={depth_ft:.2f} ft ({depth_m:.2f} m), area={area_ha:.4f} ha"
-        )
-
-        # Portion treated
-        if deterministic_design:
-            treated_area_fraction = 0.25
-        else:
-            frac_stats = {"min": 0.2, "max": 0.4, "mean": 0.3}  # heuristic
-            treated_area_fraction = self._sample_from_stats(stats=frac_stats, kind=None)
-
-        # Update record and outputs
-        bmp_rec[OUTPUT_LINEAR_LENGTH] = float(length_m)
-        bmp_rec[OUTPUT_BUFFER_AREA] = float(area_ha)
-        bmp_rec[OUTPUT_PORTION_TREATED] = float(treated_area_fraction)
-
+        if design is None:
+            from src.scenarios.bmp_designs import sample_bmp_design
+            design = sample_bmp_design(self, parcel_idx, 412)
+        if design.family != "grassed":
+            raise ValueError(f"Expected grassed-waterway design, got {design.family!r}")
+        bmp_rec.update(design.record_fields())
+        treated_area_fraction = design.treated[0][1]
         parcel_area_ha = float(self.parcel_area_ha[parcel_idx])
         for pol_idx, pollutant in enumerate(self.pollutants):
             load_rate = float(load_rates[parcel_idx, pol_idx])

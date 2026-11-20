@@ -118,3 +118,82 @@ tables (2,563 parcels each), two scenario-metric tables, and the 144-row
 outlet-trajectory table. The environment used a temporary in-memory/pickle
 serialization substitution because `pyarrow` was missing. This confirms
 scientific outputs and dataframe values, **not** native Parquet I/O.
+
+---
+
+# Phase 2: incremental, replayable stochastic scenario realization
+
+This second patch applies to the uploaded `dev_arch_refac (1)` branch **after
+Phase 1**. It adds an explicit scenario-generation contract without changing
+PLET/RUSLE, statistical, wetland-routing or AFO-response equations.
+
+## What changed
+
+- `src/scenarios/bmp_designs.py` owns model-independent *physical* design
+  sampling for wetlands, grassed waterways, and in-field practices. Each
+  frozen `BMPDesign` records affected hydrologic parcel indices, treatment
+  fractions, cost geometry, and associated output metadata. Wetland designs
+  still use the full upstream graph and preserve its deterministic tie order.
+- `src/scenarios/stochastic_scenario_generator.py` owns eligible placement
+  selection, stochastic BMP efficiencies, BMP failure draws, sampled physical
+  designs, per-placement cost draws and stopping bookkeeping. It now provides
+  frozen `RealizedBMPPlacement` and `BMPScenario` data classes.
+- BMP response methods consume explicit physical designs and efficiency maps;
+  for older direct-call tests, a missing design is still sampled using the
+  same design helper. This compatibility path can be removed in a later phase.
+- AFO recovery effects remain in the scientific model. The realized recovery
+  gains are recorded and can be injected during replay without resampling.
+- The driver saves each completed realization to
+  `outputs/scenario_definitions/s<id>.json` using a versioned schema.
+- Replay is available with the same seed, domain, formulation and validated
+  inputs. From the command line:
+
+  ```console
+  python run_model.py path/to/config.yaml --outputs before --seed 43812
+  python run_model.py path/to/config.yaml --outputs after --seed 43812 --scenario-replay-dir before/scenario_definitions
+  python scripts/compare_model_results.py before after
+  ```
+
+  The scenario count must match, because each input JSON file is loaded by its
+  numbered scenario ID. Missing artifacts and incompatible scenario metadata
+  cause errors, not silent resampling. In Python, call
+  `Model.run_all_scenarios(replay_dir=...)` or
+  `_run_one_scenario(..., scenario_definition=BMPScenario.load(path))`.
+
+## Why generation is incremental, not up front
+
+The **existing** RNG is shared between baseline loads, selected BMPs, design,
+AFO recovery, and cost. Generating all designs and costs before simulating
+loads would reorder draws and change seeded results. Phase 2 therefore
+realizes and applies one placement at a time; the resulting **complete**
+scenario definition is replayable. A later phase can introduce independently
+seeded random streams, a fully model-independent scenario definition and a
+separate model-response uncertainty realization. Such a change should be
+intentional and documented as potentially changing existing seed-to-output
+identity.
+
+`BMPScenario` currently includes both model-independent physical design and
+**model-specific response efficiencies/recovery gains** to ensure exact replay.
+Do not yet treat it as a portable formulation-neutral interchange schema.
+There is **no CSDMS BMI implementation** in this phase; the three BMI adapters,
+variable catalog, and model-state independence remain upcoming work. The
+model driver still owns some scientific response and mass-accounting logic.
+
+## Before/after verification
+
+- The permanent Phase 1 golden-result tests still pass.
+- `tests/golden/pre_phase2_seeded_extended_results.json` was captured from
+  the unmodified new uploaded branch (before Phase 2 edits), using the same
+  controlled fixtures used by `tests/test_phase2_scenario_generation.py`.
+  The three extended cases include multiple BMP types with cost- and count-
+  constrained placement and stochastic failure, a statistical multi-BMP run,
+  and mass-based AFO recovery. **All output table values, BMP records and
+  outlet trajectories matched byte-for-byte** in JSON capture between the
+  original and refactored versions.
+- Every extended case is also replayed from its saved JSON realization, and
+  the replayed outputs are compared to the generated outputs; attempted
+  placement/design resampling during replay fails the test.
+- The full suite requires `pyarrow` and `python-calamine`, which are absent
+  from the patch-construction environment. Tests requiring those optional
+  dependencies must be rerun in the project's normal environment. Passing
+  the available tests does not prove full native Parquet equivalence.

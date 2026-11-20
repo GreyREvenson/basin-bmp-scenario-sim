@@ -1,0 +1,3655 @@
+{
+  "afo_recovery": {
+    "tables": {
+      "afo_load_components/s1.parquet": {
+        "baseline_direct_feedlot_subsurface_kg_yr": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "baseline_direct_feedlot_surface_kg_yr": [
+          238.69912993752942,
+          47.73982598750588,
+          0.0
+        ],
+        "baseline_manure_field_subsurface_kg_yr": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "baseline_manure_field_surface_kg_yr": [
+          29.291676595277604,
+          3.0306381155273834,
+          0.0
+        ],
+        "final_direct_feedlot_subsurface_kg_yr": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_direct_feedlot_surface_kg_yr": [
+          119.34956496876471,
+          35.804869490629414,
+          0.0
+        ],
+        "final_manure_field_subsurface_kg_yr": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "final_manure_field_surface_kg_yr": [
+          43.937514892916404,
+          4.545957173291075,
+          0.0
+        ],
+        "pid": [
+          "P1",
+          "P1",
+          "P1"
+        ],
+        "pollutant": [
+          "TN",
+          "TP",
+          "TSS"
+        ],
+        "scenario": [
+          1,
+          1,
+          1
+        ]
+      },
+      "afo_manure_assignments/s1.parquet": {
+        "afo_id": [
+          "demo"
+        ],
+        "allocation": [
+          "explicit"
+        ],
+        "eligible_area_ha": [
+          0.8
+        ],
+        "host_pid": [
+          "P1"
+        ],
+        "receiving_pid": [
+          "P1"
+        ],
+        "scenario": [
+          1
+        ]
+      },
+      "afo_manure_bmp_effects/s1.parquet": {
+        "added_available_tn_kg": [
+          73.229191488194
+        ],
+        "added_available_tp_kg": [
+          37.88297644409229
+        ],
+        "added_surface_tn_kg": [
+          14.6458382976388
+        ],
+        "added_surface_tp_kg": [
+          1.515319057763692
+        ],
+        "afo_id": [
+          "demo"
+        ],
+        "collection_after": [
+          0.75
+        ],
+        "collection_before": [
+          0.5
+        ],
+        "cps": [
+          340
+        ],
+        "host_pid": [
+          "P1"
+        ],
+        "recovery_fraction": [
+          0.5
+        ],
+        "scenario": [
+          1
+        ]
+      },
+      "afo_mass_ledger/s1.parquet": {
+        "afo_id": [
+          "demo"
+        ],
+        "allocation": [
+          "explicit"
+        ],
+        "animal_n_produced_kg": [
+          292.916765952776
+        ],
+        "animal_p_produced_kg": [
+          151.53190577636917
+        ],
+        "eligible_area_ha": [
+          0.8
+        ],
+        "host_pid": [
+          "P1"
+        ],
+        "operation_available_tn_kg": [
+          146.458382976388
+        ],
+        "operation_available_tp_kg": [
+          75.76595288818459
+        ],
+        "receiving_pid": [
+          "P1"
+        ],
+        "reference_runoff_mm": [
+          null
+        ],
+        "runoff_adjusted_export": [
+          false
+        ],
+        "runoff_mm": [
+          117.78475609756096
+        ],
+        "scenario": [
+          1
+        ],
+        "tn_application_kg_ha": [
+          183.072978720485
+        ],
+        "tn_applied_kg": [
+          146.458382976388
+        ],
+        "tn_effective_export_fraction": [
+          0.2
+        ],
+        "tn_exported_kg": [
+          29.291676595277604
+        ],
+        "tn_surface_export_fraction": [
+          0.2
+        ],
+        "tp_application_kg_ha": [
+          94.70744111023073
+        ],
+        "tp_applied_kg": [
+          75.76595288818459
+        ],
+        "tp_effective_export_fraction": [
+          0.04
+        ],
+        "tp_exported_kg": [
+          3.0306381155273834
+        ],
+        "tp_surface_export_fraction": [
+          0.04
+        ]
+      },
+      "afo_operation_budgets/s1.parquet": {
+        "afo_id": [
+          "demo"
+        ],
+        "final_tn_applied_kg": [
+          219.687574464582
+        ],
+        "final_tn_available_kg": [
+          219.687574464582
+        ],
+        "final_tn_exported_kg": [
+          43.937514892916404
+        ],
+        "final_tp_applied_kg": [
+          113.64892933227688
+        ],
+        "final_tp_available_kg": [
+          113.64892933227688
+        ],
+        "final_tp_exported_kg": [
+          4.545957173291075
+        ],
+        "receiver_count": [
+          1
+        ],
+        "scenario": [
+          1
+        ],
+        "tn_applied_kg": [
+          146.458382976388
+        ],
+        "tn_available_kg": [
+          146.458382976388
+        ],
+        "tn_exported_kg": [
+          29.291676595277604
+        ],
+        "tn_produced_kg": [
+          292.916765952776
+        ],
+        "tp_applied_kg": [
+          75.76595288818459
+        ],
+        "tp_available_kg": [
+          75.76595288818459
+        ],
+        "tp_exported_kg": [
+          3.0306381155273834
+        ],
+        "tp_produced_kg": [
+          151.53190577636917
+        ]
+      },
+      "bmps/s1.parquet": {
+        "baseline_mass_TN_kg": [
+          297.2478648293016
+        ],
+        "baseline_mass_TP_kg": [
+          62.304306812256144
+        ],
+        "baseline_mass_TSS_kg": [
+          1076.017109946678
+        ],
+        "buffer_area_ha": [
+          null
+        ],
+        "catchment_to_wetland_ratio": [
+          null
+        ],
+        "cost_usd": [
+          50.0
+        ],
+        "cps": [
+          340
+        ],
+        "cps_name": [
+          "Cover Crop"
+        ],
+        "direct_bmp_removed_TN_kg_yr": [
+          119.34956496876471
+        ],
+        "direct_bmp_removed_TP_kg_yr": [
+          11.93495649687647
+        ],
+        "direct_bmp_removed_TSS_kg_yr": [
+          0.0
+        ],
+        "failed": [
+          false
+        ],
+        "impacted_pids": [
+          ""
+        ],
+        "induced_manure_tn_kg_yr": [
+          14.6458382976388
+        ],
+        "induced_manure_tp_kg_yr": [
+          1.515319057763692
+        ],
+        "induced_manure_tss_kg_yr": [
+          0
+        ],
+        "linear_length_m": [
+          null
+        ],
+        "load_generation_mode": [
+          "plet_rusle"
+        ],
+        "mass_accounting_pids": [
+          "P1"
+        ],
+        "mass_timestep_years": [
+          1.0
+        ],
+        "overall_reduction_fraction_TN": [
+          0.3522438310238271
+        ],
+        "overall_reduction_fraction_TP": [
+          0.16723783590933214
+        ],
+        "overall_reduction_fraction_TSS": [
+          0.0
+        ],
+        "pid": [
+          "P1"
+        ],
+        "portion_treated": [
+          null
+        ],
+        "realized_efficiency_TN": [
+          0.43864310145800783
+        ],
+        "realized_efficiency_TP": [
+          0.21825880642798592
+        ],
+        "realized_efficiency_TSS": [
+          null
+        ],
+        "removed_mass_TN_kg": [
+          104.7037266711259
+        ],
+        "removed_mass_TP_kg": [
+          10.419637439112778
+        ],
+        "removed_mass_TSS_kg": [
+          0.0
+        ],
+        "scenario": [
+          1
+        ],
+        "treated_baseline_mass_TN_kg": [
+          238.69912993752942
+        ],
+        "treated_baseline_mass_TP_kg": [
+          47.73982598750588
+        ],
+        "treated_baseline_mass_TSS_kg": [
+          0.0
+        ],
+        "treatment_exposure_fraction_TN": [
+          0.8030305956095108
+        ],
+        "treatment_exposure_fraction_TP": [
+          0.7662363716101048
+        ],
+        "treatment_exposure_fraction_TSS": [
+          0.0
+        ],
+        "wetland_area_ha": [
+          null
+        ]
+      },
+      "load_parameters/s1.parquet": {
+        "final_annual_infiltration_in": [
+          9.6
+        ],
+        "final_annual_precip_in": [
+          40.0
+        ],
+        "final_annual_runoff_in": [
+          4.637195121951219
+        ],
+        "final_annual_storm_runoff_in": [
+          4.637195121951219
+        ],
+        "final_c": [
+          0.1
+        ],
+        "final_cn": [
+          80.0
+        ],
+        "final_concentration_tn_mg_l": [
+          39.30322696132513
+        ],
+        "final_concentration_tp_mg_l": [
+          4.059546280781586
+        ],
+        "final_enrichment_ratio": [
+          2.0
+        ],
+        "final_event_rainfall_in": [
+          1.28
+        ],
+        "final_event_runoff_in": [
+          0.18548780487804878
+        ],
+        "final_groundwater_concentration_tn_mg_l": [
+          3.0
+        ],
+        "final_groundwater_concentration_tp_mg_l": [
+          0.3
+        ],
+        "final_groundwater_multiplier": [
+          1.0
+        ],
+        "final_hsg": [
+          "B"
+        ],
+        "final_ia_ratio": [
+          0.2
+        ],
+        "final_infiltration_fraction": [
+          0.3
+        ],
+        "final_k": [
+          0.2
+        ],
+        "final_land_cover": [
+          "cropland"
+        ],
+        "final_load_multiplier_tn": [
+          1.0
+        ],
+        "final_load_multiplier_tp": [
+          1.0
+        ],
+        "final_load_multiplier_tss": [
+          1.0
+        ],
+        "final_ls": [
+          1.5
+        ],
+        "final_p": [
+          0.5
+        ],
+        "final_r": [
+          100.0
+        ],
+        "final_rain_correction_fraction": [
+          0.8
+        ],
+        "final_rain_days": [
+          100.0
+        ],
+        "final_runoff_day_fraction": [
+          0.25
+        ],
+        "final_runoff_multiplier": [
+          1.0
+        ],
+        "final_sdr": [
+          0.4
+        ],
+        "final_sediment_delivery_multiplier": [
+          1.0
+        ],
+        "final_sediment_load_rate_kg_ha_yr": [
+          1345.0213874333474
+        ],
+        "final_sediment_multiplier": [
+          1.0
+        ],
+        "final_sediment_n_pct": [
+          1.0
+        ],
+        "final_sediment_p_pct": [
+          0.5
+        ],
+        "final_subsurface_tn_load_rate_kg_ha_yr": [
+          5.8521600000000005
+        ],
+        "final_subsurface_tp_load_rate_kg_ha_yr": [
+          0.585216
+        ],
+        "final_subsurface_tss_load_rate_kg_ha_yr": [
+          0.0
+        ],
+        "final_surface_tn_load_rate_kg_ha_yr": [
+          186.69197815817566
+        ],
+        "final_surface_tp_load_rate_kg_ha_yr": [
+          51.299453373143365
+        ],
+        "final_surface_tss_load_rate_kg_ha_yr": [
+          1076.017109946678
+        ],
+        "initial_annual_infiltration_in": [
+          9.6
+        ],
+        "initial_annual_precip_in": [
+          40.0
+        ],
+        "initial_annual_runoff_in": [
+          4.637195121951219
+        ],
+        "initial_annual_storm_runoff_in": [
+          4.637195121951219
+        ],
+        "initial_c": [
+          0.1
+        ],
+        "initial_cn": [
+          80.0
+        ],
+        "initial_concentration_tn_mg_l": [
+          26.868817974216753
+        ],
+        "initial_concentration_tp_mg_l": [
+          2.77303085385439
+        ],
+        "initial_enrichment_ratio": [
+          2.0
+        ],
+        "initial_event_rainfall_in": [
+          1.28
+        ],
+        "initial_event_runoff_in": [
+          0.18548780487804878
+        ],
+        "initial_groundwater_concentration_tn_mg_l": [
+          3.0
+        ],
+        "initial_groundwater_concentration_tp_mg_l": [
+          0.3
+        ],
+        "initial_groundwater_multiplier": [
+          1.0
+        ],
+        "initial_hsg": [
+          "B"
+        ],
+        "initial_ia_ratio": [
+          0.2
+        ],
+        "initial_infiltration_fraction": [
+          0.3
+        ],
+        "initial_k": [
+          0.2
+        ],
+        "initial_land_cover": [
+          "cropland"
+        ],
+        "initial_load_multiplier_tn": [
+          1.0
+        ],
+        "initial_load_multiplier_tp": [
+          1.0
+        ],
+        "initial_load_multiplier_tss": [
+          1.0
+        ],
+        "initial_ls": [
+          1.5
+        ],
+        "initial_p": [
+          0.5
+        ],
+        "initial_r": [
+          100.0
+        ],
+        "initial_rain_correction_fraction": [
+          0.8
+        ],
+        "initial_rain_days": [
+          100.0
+        ],
+        "initial_runoff_day_fraction": [
+          0.25
+        ],
+        "initial_runoff_multiplier": [
+          1.0
+        ],
+        "initial_sdr": [
+          0.4
+        ],
+        "initial_sediment_delivery_multiplier": [
+          1.0
+        ],
+        "initial_sediment_load_rate_kg_ha_yr": [
+          1345.0213874333474
+        ],
+        "initial_sediment_multiplier": [
+          1.0
+        ],
+        "initial_sediment_n_pct": [
+          1.0
+        ],
+        "initial_sediment_p_pct": [
+          0.5
+        ],
+        "initial_subsurface_tn_load_rate_kg_ha_yr": [
+          5.8521600000000005
+        ],
+        "initial_subsurface_tp_load_rate_kg_ha_yr": [
+          0.585216
+        ],
+        "initial_subsurface_tss_load_rate_kg_ha_yr": [
+          0.0
+        ],
+        "initial_surface_tn_load_rate_kg_ha_yr": [
+          291.39570482930156
+        ],
+        "initial_surface_tp_load_rate_kg_ha_yr": [
+          61.71909081225614
+        ],
+        "initial_surface_tss_load_rate_kg_ha_yr": [
+          1076.017109946678
+        ],
+        "pid": [
+          "P1"
+        ],
+        "scenario": [
+          1
+        ]
+      },
+      "parcels/s1.parquet": {
+        "baseline_load_rate_TN_kg_ha_yr": [
+          297.2478648293016
+        ],
+        "baseline_load_rate_TP_kg_ha_yr": [
+          62.304306812256144
+        ],
+        "baseline_load_rate_TSS_kg_ha_yr": [
+          1076.017109946678
+        ],
+        "final_load_rate_TN_kg_ha_yr": [
+          192.54413815817566
+        ],
+        "final_load_rate_TP_kg_ha_yr": [
+          51.88466937314337
+        ],
+        "final_load_rate_TSS_kg_ha_yr": [
+          1076.017109946678
+        ],
+        "pid": [
+          "P1"
+        ],
+        "scenario": [
+          1
+        ]
+      },
+      "scenario_metrics/s1.parquet": {
+        "baseline_mass_TN_kg_count": [
+          1,
+          1
+        ],
+        "baseline_mass_TN_kg_max": [
+          297.2478648293016,
+          297.2478648293016
+        ],
+        "baseline_mass_TN_kg_mean": [
+          297.2478648293016,
+          297.2478648293016
+        ],
+        "baseline_mass_TN_kg_min": [
+          297.2478648293016,
+          297.2478648293016
+        ],
+        "baseline_mass_TN_kg_p25": [
+          297.2478648293016,
+          297.2478648293016
+        ],
+        "baseline_mass_TN_kg_p50": [
+          297.2478648293016,
+          297.2478648293016
+        ],
+        "baseline_mass_TN_kg_p75": [
+          297.2478648293016,
+          297.2478648293016
+        ],
+        "baseline_mass_TN_kg_std": [
+          null,
+          null
+        ],
+        "baseline_mass_TN_kg_total": [
+          297.2478648293016,
+          297.2478648293016
+        ],
+        "baseline_mass_TP_kg_count": [
+          1,
+          1
+        ],
+        "baseline_mass_TP_kg_max": [
+          62.304306812256144,
+          62.304306812256144
+        ],
+        "baseline_mass_TP_kg_mean": [
+          62.304306812256144,
+          62.304306812256144
+        ],
+        "baseline_mass_TP_kg_min": [
+          62.304306812256144,
+          62.304306812256144
+        ],
+        "baseline_mass_TP_kg_p25": [
+          62.304306812256144,
+          62.304306812256144
+        ],
+        "baseline_mass_TP_kg_p50": [
+          62.304306812256144,
+          62.304306812256144
+        ],
+        "baseline_mass_TP_kg_p75": [
+          62.304306812256144,
+          62.304306812256144
+        ],
+        "baseline_mass_TP_kg_std": [
+          null,
+          null
+        ],
+        "baseline_mass_TP_kg_total": [
+          62.304306812256144,
+          62.304306812256144
+        ],
+        "baseline_mass_TSS_kg_count": [
+          1,
+          1
+        ],
+        "baseline_mass_TSS_kg_max": [
+          1076.017109946678,
+          1076.017109946678
+        ],
+        "baseline_mass_TSS_kg_mean": [
+          1076.017109946678,
+          1076.017109946678
+        ],
+        "baseline_mass_TSS_kg_min": [
+          1076.017109946678,
+          1076.017109946678
+        ],
+        "baseline_mass_TSS_kg_p25": [
+          1076.017109946678,
+          1076.017109946678
+        ],
+        "baseline_mass_TSS_kg_p50": [
+          1076.017109946678,
+          1076.017109946678
+        ],
+        "baseline_mass_TSS_kg_p75": [
+          1076.017109946678,
+          1076.017109946678
+        ],
+        "baseline_mass_TSS_kg_std": [
+          null,
+          null
+        ],
+        "baseline_mass_TSS_kg_total": [
+          1076.017109946678,
+          1076.017109946678
+        ],
+        "bmp_count": [
+          1,
+          1
+        ],
+        "cost_usd_count": [
+          1,
+          1
+        ],
+        "cost_usd_max": [
+          50.0,
+          50.0
+        ],
+        "cost_usd_mean": [
+          50.0,
+          50.0
+        ],
+        "cost_usd_min": [
+          50.0,
+          50.0
+        ],
+        "cost_usd_p25": [
+          50.0,
+          50.0
+        ],
+        "cost_usd_p50": [
+          50.0,
+          50.0
+        ],
+        "cost_usd_p75": [
+          50.0,
+          50.0
+        ],
+        "cost_usd_std": [
+          null,
+          null
+        ],
+        "cps": [
+          340,
+          0
+        ],
+        "cps_name": [
+          "Cover Crop",
+          "All CPS"
+        ],
+        "failures_count": [
+          0,
+          0
+        ],
+        "overall_reduction_fraction_TN": [
+          0.3522438310238271,
+          0.3522438310238271
+        ],
+        "overall_reduction_fraction_TP": [
+          0.16723783590933214,
+          0.16723783590933214
+        ],
+        "overall_reduction_fraction_TSS": [
+          0.0,
+          0.0
+        ],
+        "realized_efficiency_TN": [
+          0.43864310145800783,
+          0.43864310145800783
+        ],
+        "realized_efficiency_TP": [
+          0.21825880642798592,
+          0.21825880642798592
+        ],
+        "realized_efficiency_TSS": [
+          null,
+          null
+        ],
+        "removed_mass_TN_kg_count": [
+          1,
+          1
+        ],
+        "removed_mass_TN_kg_max": [
+          104.7037266711259,
+          104.7037266711259
+        ],
+        "removed_mass_TN_kg_mean": [
+          104.7037266711259,
+          104.7037266711259
+        ],
+        "removed_mass_TN_kg_min": [
+          104.7037266711259,
+          104.7037266711259
+        ],
+        "removed_mass_TN_kg_p25": [
+          104.7037266711259,
+          104.7037266711259
+        ],
+        "removed_mass_TN_kg_p50": [
+          104.7037266711259,
+          104.7037266711259
+        ],
+        "removed_mass_TN_kg_p75": [
+          104.7037266711259,
+          104.7037266711259
+        ],
+        "removed_mass_TN_kg_std": [
+          null,
+          null
+        ],
+        "removed_mass_TN_kg_total": [
+          104.7037266711259,
+          104.7037266711259
+        ],
+        "removed_mass_TP_kg_count": [
+          1,
+          1
+        ],
+        "removed_mass_TP_kg_max": [
+          10.419637439112778,
+          10.419637439112778
+        ],
+        "removed_mass_TP_kg_mean": [
+          10.419637439112778,
+          10.419637439112778
+        ],
+        "removed_mass_TP_kg_min": [
+          10.419637439112778,
+          10.419637439112778
+        ],
+        "removed_mass_TP_kg_p25": [
+          10.419637439112778,
+          10.419637439112778
+        ],
+        "removed_mass_TP_kg_p50": [
+          10.419637439112778,
+          10.419637439112778
+        ],
+        "removed_mass_TP_kg_p75": [
+          10.419637439112778,
+          10.419637439112778
+        ],
+        "removed_mass_TP_kg_std": [
+          null,
+          null
+        ],
+        "removed_mass_TP_kg_total": [
+          10.419637439112778,
+          10.419637439112778
+        ],
+        "removed_mass_TSS_kg_count": [
+          1,
+          1
+        ],
+        "removed_mass_TSS_kg_max": [
+          0.0,
+          0.0
+        ],
+        "removed_mass_TSS_kg_mean": [
+          0.0,
+          0.0
+        ],
+        "removed_mass_TSS_kg_min": [
+          0.0,
+          0.0
+        ],
+        "removed_mass_TSS_kg_p25": [
+          0.0,
+          0.0
+        ],
+        "removed_mass_TSS_kg_p50": [
+          0.0,
+          0.0
+        ],
+        "removed_mass_TSS_kg_p75": [
+          0.0,
+          0.0
+        ],
+        "removed_mass_TSS_kg_std": [
+          null,
+          null
+        ],
+        "removed_mass_TSS_kg_total": [
+          0.0,
+          0.0
+        ],
+        "scenario": [
+          1,
+          1
+        ],
+        "total_cost_usd": [
+          50.0,
+          50.0
+        ],
+        "treated_baseline_mass_TN_kg_count": [
+          1,
+          1
+        ],
+        "treated_baseline_mass_TN_kg_max": [
+          238.69912993752942,
+          238.69912993752942
+        ],
+        "treated_baseline_mass_TN_kg_mean": [
+          238.69912993752942,
+          238.69912993752942
+        ],
+        "treated_baseline_mass_TN_kg_min": [
+          238.69912993752942,
+          238.69912993752942
+        ],
+        "treated_baseline_mass_TN_kg_p25": [
+          238.69912993752942,
+          238.69912993752942
+        ],
+        "treated_baseline_mass_TN_kg_p50": [
+          238.69912993752942,
+          238.69912993752942
+        ],
+        "treated_baseline_mass_TN_kg_p75": [
+          238.69912993752942,
+          238.69912993752942
+        ],
+        "treated_baseline_mass_TN_kg_std": [
+          null,
+          null
+        ],
+        "treated_baseline_mass_TN_kg_total": [
+          238.69912993752942,
+          238.69912993752942
+        ],
+        "treated_baseline_mass_TP_kg_count": [
+          1,
+          1
+        ],
+        "treated_baseline_mass_TP_kg_max": [
+          47.73982598750588,
+          47.73982598750588
+        ],
+        "treated_baseline_mass_TP_kg_mean": [
+          47.73982598750588,
+          47.73982598750588
+        ],
+        "treated_baseline_mass_TP_kg_min": [
+          47.73982598750588,
+          47.73982598750588
+        ],
+        "treated_baseline_mass_TP_kg_p25": [
+          47.73982598750588,
+          47.73982598750588
+        ],
+        "treated_baseline_mass_TP_kg_p50": [
+          47.73982598750588,
+          47.73982598750588
+        ],
+        "treated_baseline_mass_TP_kg_p75": [
+          47.73982598750588,
+          47.73982598750588
+        ],
+        "treated_baseline_mass_TP_kg_std": [
+          null,
+          null
+        ],
+        "treated_baseline_mass_TP_kg_total": [
+          47.73982598750588,
+          47.73982598750588
+        ],
+        "treated_baseline_mass_TSS_kg_count": [
+          1,
+          1
+        ],
+        "treated_baseline_mass_TSS_kg_max": [
+          0.0,
+          0.0
+        ],
+        "treated_baseline_mass_TSS_kg_mean": [
+          0.0,
+          0.0
+        ],
+        "treated_baseline_mass_TSS_kg_min": [
+          0.0,
+          0.0
+        ],
+        "treated_baseline_mass_TSS_kg_p25": [
+          0.0,
+          0.0
+        ],
+        "treated_baseline_mass_TSS_kg_p50": [
+          0.0,
+          0.0
+        ],
+        "treated_baseline_mass_TSS_kg_p75": [
+          0.0,
+          0.0
+        ],
+        "treated_baseline_mass_TSS_kg_std": [
+          null,
+          null
+        ],
+        "treated_baseline_mass_TSS_kg_total": [
+          0.0,
+          0.0
+        ],
+        "treatment_exposure_fraction_TN": [
+          0.8030305956095108,
+          0.8030305956095108
+        ],
+        "treatment_exposure_fraction_TP": [
+          0.7662363716101048,
+          0.7662363716101048
+        ],
+        "treatment_exposure_fraction_TSS": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    "trajectory": {
+      "TN|O1|cost|total": [
+        [
+          1,
+          50.0,
+          104.70372667112593
+        ]
+      ],
+      "TN|O1|count|total": [
+        [
+          1,
+          1,
+          104.70372667112593
+        ]
+      ],
+      "TP|O1|cost|total": [
+        [
+          1,
+          50.0,
+          10.419637439112776
+        ]
+      ],
+      "TP|O1|count|total": [
+        [
+          1,
+          1,
+          10.419637439112776
+        ]
+      ],
+      "TSS|O1|cost|total": [
+        [
+          1,
+          50.0,
+          0.0
+        ]
+      ],
+      "TSS|O1|count|total": [
+        [
+          1,
+          1,
+          0.0
+        ]
+      ]
+    }
+  },
+  "mixed_budget": {
+    "tables": {
+      "bmps/s1.parquet": {
+        "baseline_mass_TN_kg": [
+          36.57132287061817,
+          29.257292152963625,
+          23.77176911472272
+        ],
+        "baseline_mass_TP_kg": [
+          14.417303386528596,
+          12.670004463212521,
+          11.138374705310957
+        ],
+        "baseline_mass_TSS_kg": [
+          1345.0213874333474,
+          1076.017109946678,
+          860.8136879573424
+        ],
+        "buffer_area_ha": [
+          null,
+          null,
+          0.00600350917344477
+        ],
+        "catchment_to_wetland_ratio": [
+          null,
+          1.5132267507643096,
+          null
+        ],
+        "cost_usd": [
+          67.40826765065603,
+          80.0,
+          70.0
+        ],
+        "cps": [
+          340,
+          656,
+          412
+        ],
+        "cps_name": [
+          "Cover Crop",
+          "Constructed Wetland",
+          "Grassed Waterway"
+        ],
+        "direct_bmp_removed_TN_kg_yr": [
+          7.314030717654542,
+          5.485523038240906,
+          3.044045230126313
+        ],
+        "direct_bmp_removed_TP_kg_yr": [
+          1.7472989233160745,
+          1.5316297579015652,
+          0.9935216390825936
+        ],
+        "direct_bmp_removed_TSS_kg_yr": [
+          269.0042774866695,
+          215.2034219893356,
+          127.3828479113407
+        ],
+        "failed": [
+          true,
+          true,
+          false
+        ],
+        "impacted_pids": [
+          "",
+          "",
+          ""
+        ],
+        "induced_manure_tn_kg_yr": [
+          0,
+          0,
+          0
+        ],
+        "induced_manure_tp_kg_yr": [
+          0,
+          0,
+          0
+        ],
+        "induced_manure_tss_kg_yr": [
+          0,
+          0,
+          0
+        ],
+        "linear_length_m": [
+          null,
+          null,
+          19.69655240631486
+        ],
+        "load_generation_mode": [
+          "plet_rusle",
+          "plet_rusle",
+          "plet_rusle"
+        ],
+        "mass_accounting_pids": [
+          "P1",
+          "P1",
+          "P1"
+        ],
+        "mass_timestep_years": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "overall_reduction_fraction_TN": [
+          0.19999360546869144,
+          0.1874925064685198,
+          0.12805295287177534
+        ],
+        "overall_reduction_fraction_TP": [
+          0.1211945726930277,
+          0.12088628400634481,
+          0.0891980800941152
+        ],
+        "overall_reduction_fraction_TSS": [
+          0.2,
+          0.2,
+          0.1479795798944744
+        ],
+        "pid": [
+          "P1",
+          "P1",
+          "P1"
+        ],
+        "portion_treated": [
+          null,
+          null,
+          0.369948949736186
+        ],
+        "realized_efficiency_TN": [
+          0.19999360546869144,
+          0.1874925064685198,
+          0.3461368195884623
+        ],
+        "realized_efficiency_TP": [
+          0.1211945726930277,
+          0.12088628400634481,
+          0.24110915886563047
+        ],
+        "realized_efficiency_TSS": [
+          0.2,
+          0.2,
+          0.4
+        ],
+        "removed_mass_TN_kg": [
+          7.314030717654542,
+          5.485523038240906,
+          3.044045230126313
+        ],
+        "removed_mass_TP_kg": [
+          1.7472989233160745,
+          1.5316297579015652,
+          0.9935216390825936
+        ],
+        "removed_mass_TSS_kg": [
+          269.0042774866695,
+          215.2034219893356,
+          127.3828479113407
+        ],
+        "scenario": [
+          1,
+          1,
+          1
+        ],
+        "treated_baseline_mass_TN_kg": [
+          36.57132287061817,
+          29.257292152963625,
+          8.794341017362774
+        ],
+        "treated_baseline_mass_TP_kg": [
+          14.417303386528596,
+          12.670004463212521,
+          4.120630023997888
+        ],
+        "treated_baseline_mass_TSS_kg": [
+          1345.0213874333474,
+          1076.017109946678,
+          318.45711977835174
+        ],
+        "treatment_exposure_fraction_TN": [
+          1.0,
+          1.0,
+          0.369948949736186
+        ],
+        "treatment_exposure_fraction_TP": [
+          1.0,
+          1.0,
+          0.369948949736186
+        ],
+        "treatment_exposure_fraction_TSS": [
+          1.0,
+          1.0,
+          0.369948949736186
+        ],
+        "wetland_area_ha": [
+          null,
+          0.39789485755548526,
+          null
+        ]
+      },
+      "load_parameters/s1.parquet": {
+        "final_annual_infiltration_in": [
+          9.6
+        ],
+        "final_annual_precip_in": [
+          40.0
+        ],
+        "final_annual_runoff_in": [
+          4.637195121951219
+        ],
+        "final_annual_storm_runoff_in": [
+          4.637195121951219
+        ],
+        "final_c": [
+          0.1
+        ],
+        "final_cn": [
+          80.0
+        ],
+        "final_concentration_tn_mg_l": [
+          2.0
+        ],
+        "final_concentration_tp_mg_l": [
+          0.2
+        ],
+        "final_enrichment_ratio": [
+          2.0
+        ],
+        "final_event_rainfall_in": [
+          1.28
+        ],
+        "final_event_runoff_in": [
+          0.18548780487804878
+        ],
+        "final_groundwater_concentration_tn_mg_l": [
+          3.0
+        ],
+        "final_groundwater_concentration_tp_mg_l": [
+          0.3
+        ],
+        "final_groundwater_multiplier": [
+          1.0
+        ],
+        "final_hsg": [
+          "B"
+        ],
+        "final_ia_ratio": [
+          0.2
+        ],
+        "final_infiltration_fraction": [
+          0.3
+        ],
+        "final_k": [
+          0.2
+        ],
+        "final_land_cover": [
+          "cropland"
+        ],
+        "final_load_multiplier_tn": [
+          1.0
+        ],
+        "final_load_multiplier_tp": [
+          1.0
+        ],
+        "final_load_multiplier_tss": [
+          1.0
+        ],
+        "final_ls": [
+          1.5
+        ],
+        "final_p": [
+          0.5
+        ],
+        "final_r": [
+          100.0
+        ],
+        "final_rain_correction_fraction": [
+          0.8
+        ],
+        "final_rain_days": [
+          100.0
+        ],
+        "final_runoff_day_fraction": [
+          0.25
+        ],
+        "final_runoff_multiplier": [
+          1.0
+        ],
+        "final_sdr": [
+          0.4
+        ],
+        "final_sediment_delivery_multiplier": [
+          1.0
+        ],
+        "final_sediment_load_rate_kg_ha_yr": [
+          1345.0213874333474
+        ],
+        "final_sediment_multiplier": [
+          1.0
+        ],
+        "final_sediment_n_pct": [
+          1.0
+        ],
+        "final_sediment_p_pct": [
+          0.5
+        ],
+        "final_subsurface_tn_load_rate_kg_ha_yr": [
+          7.3152
+        ],
+        "final_subsurface_tp_load_rate_kg_ha_yr": [
+          0.6357728887220808
+        ],
+        "final_subsurface_tss_load_rate_kg_ha_yr": [
+          0.0
+        ],
+        "final_surface_tn_load_rate_kg_ha_yr": [
+          13.412523884596405
+        ],
+        "final_surface_tp_load_rate_kg_ha_yr": [
+          9.509080177506283
+        ],
+        "final_surface_tss_load_rate_kg_ha_yr": [
+          733.4308400460017
+        ],
+        "initial_annual_infiltration_in": [
+          9.6
+        ],
+        "initial_annual_precip_in": [
+          40.0
+        ],
+        "initial_annual_runoff_in": [
+          4.637195121951219
+        ],
+        "initial_annual_storm_runoff_in": [
+          4.637195121951219
+        ],
+        "initial_c": [
+          0.1
+        ],
+        "initial_cn": [
+          80.0
+        ],
+        "initial_concentration_tn_mg_l": [
+          2.0
+        ],
+        "initial_concentration_tp_mg_l": [
+          0.2
+        ],
+        "initial_enrichment_ratio": [
+          2.0
+        ],
+        "initial_event_rainfall_in": [
+          1.28
+        ],
+        "initial_event_runoff_in": [
+          0.18548780487804878
+        ],
+        "initial_groundwater_concentration_tn_mg_l": [
+          3.0
+        ],
+        "initial_groundwater_concentration_tp_mg_l": [
+          0.3
+        ],
+        "initial_groundwater_multiplier": [
+          1.0
+        ],
+        "initial_hsg": [
+          "B"
+        ],
+        "initial_ia_ratio": [
+          0.2
+        ],
+        "initial_infiltration_fraction": [
+          0.3
+        ],
+        "initial_k": [
+          0.2
+        ],
+        "initial_land_cover": [
+          "cropland"
+        ],
+        "initial_load_multiplier_tn": [
+          1.0
+        ],
+        "initial_load_multiplier_tp": [
+          1.0
+        ],
+        "initial_load_multiplier_tss": [
+          1.0
+        ],
+        "initial_ls": [
+          1.5
+        ],
+        "initial_p": [
+          0.5
+        ],
+        "initial_r": [
+          100.0
+        ],
+        "initial_rain_correction_fraction": [
+          0.8
+        ],
+        "initial_rain_days": [
+          100.0
+        ],
+        "initial_runoff_day_fraction": [
+          0.25
+        ],
+        "initial_runoff_multiplier": [
+          1.0
+        ],
+        "initial_sdr": [
+          0.4
+        ],
+        "initial_sediment_delivery_multiplier": [
+          1.0
+        ],
+        "initial_sediment_load_rate_kg_ha_yr": [
+          1345.0213874333474
+        ],
+        "initial_sediment_multiplier": [
+          1.0
+        ],
+        "initial_sediment_n_pct": [
+          1.0
+        ],
+        "initial_sediment_p_pct": [
+          0.5
+        ],
+        "initial_subsurface_tn_load_rate_kg_ha_yr": [
+          7.3152
+        ],
+        "initial_subsurface_tp_load_rate_kg_ha_yr": [
+          0.73152
+        ],
+        "initial_subsurface_tss_load_rate_kg_ha_yr": [
+          0.0
+        ],
+        "initial_surface_tn_load_rate_kg_ha_yr": [
+          29.256122870618167
+        ],
+        "initial_surface_tp_load_rate_kg_ha_yr": [
+          13.685783386528596
+        ],
+        "initial_surface_tss_load_rate_kg_ha_yr": [
+          1345.0213874333474
+        ],
+        "pid": [
+          "P1"
+        ],
+        "scenario": [
+          1
+        ]
+      },
+      "parcels/s1.parquet": {
+        "baseline_load_rate_TN_kg_ha_yr": [
+          36.57132287061817
+        ],
+        "baseline_load_rate_TP_kg_ha_yr": [
+          14.417303386528596
+        ],
+        "baseline_load_rate_TSS_kg_ha_yr": [
+          1345.0213874333474
+        ],
+        "final_load_rate_TN_kg_ha_yr": [
+          20.727723884596404
+        ],
+        "final_load_rate_TP_kg_ha_yr": [
+          10.144853066228363
+        ],
+        "final_load_rate_TSS_kg_ha_yr": [
+          733.4308400460017
+        ],
+        "pid": [
+          "P1"
+        ],
+        "scenario": [
+          1
+        ]
+      },
+      "scenario_metrics/s1.parquet": {
+        "baseline_mass_TN_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "baseline_mass_TN_kg_max": [
+          36.57132287061817,
+          23.77176911472272,
+          29.257292152963625,
+          36.57132287061817
+        ],
+        "baseline_mass_TN_kg_mean": [
+          36.57132287061817,
+          23.77176911472272,
+          29.257292152963625,
+          29.866794712768172
+        ],
+        "baseline_mass_TN_kg_min": [
+          36.57132287061817,
+          23.77176911472272,
+          29.257292152963625,
+          23.77176911472272
+        ],
+        "baseline_mass_TN_kg_p25": [
+          36.57132287061817,
+          23.77176911472272,
+          29.257292152963625,
+          26.514530633843172
+        ],
+        "baseline_mass_TN_kg_p50": [
+          36.57132287061817,
+          23.77176911472272,
+          29.257292152963625,
+          29.257292152963625
+        ],
+        "baseline_mass_TN_kg_p75": [
+          36.57132287061817,
+          23.77176911472272,
+          29.257292152963625,
+          32.914307511790895
+        ],
+        "baseline_mass_TN_kg_std": [
+          null,
+          null,
+          null,
+          6.421507931578107
+        ],
+        "baseline_mass_TN_kg_total": [
+          36.57132287061817,
+          23.77176911472272,
+          29.257292152963625,
+          89.60038413830452
+        ],
+        "baseline_mass_TP_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "baseline_mass_TP_kg_max": [
+          14.417303386528596,
+          11.138374705310957,
+          12.670004463212521,
+          14.417303386528596
+        ],
+        "baseline_mass_TP_kg_mean": [
+          14.417303386528596,
+          11.138374705310957,
+          12.670004463212521,
+          12.741894185017358
+        ],
+        "baseline_mass_TP_kg_min": [
+          14.417303386528596,
+          11.138374705310957,
+          12.670004463212521,
+          11.138374705310957
+        ],
+        "baseline_mass_TP_kg_p25": [
+          14.417303386528596,
+          11.138374705310957,
+          12.670004463212521,
+          11.90418958426174
+        ],
+        "baseline_mass_TP_kg_p50": [
+          14.417303386528596,
+          11.138374705310957,
+          12.670004463212521,
+          12.670004463212521
+        ],
+        "baseline_mass_TP_kg_p75": [
+          14.417303386528596,
+          11.138374705310957,
+          12.670004463212521,
+          13.543653924870558
+        ],
+        "baseline_mass_TP_kg_std": [
+          null,
+          null,
+          null,
+          1.6406460383653125
+        ],
+        "baseline_mass_TP_kg_total": [
+          14.417303386528596,
+          11.138374705310957,
+          12.670004463212521,
+          38.225682555052074
+        ],
+        "baseline_mass_TSS_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "baseline_mass_TSS_kg_max": [
+          1345.0213874333474,
+          860.8136879573424,
+          1076.017109946678,
+          1345.0213874333474
+        ],
+        "baseline_mass_TSS_kg_mean": [
+          1345.0213874333474,
+          860.8136879573424,
+          1076.017109946678,
+          1093.9507284457893
+        ],
+        "baseline_mass_TSS_kg_min": [
+          1345.0213874333474,
+          860.8136879573424,
+          1076.017109946678,
+          860.8136879573424
+        ],
+        "baseline_mass_TSS_kg_p25": [
+          1345.0213874333474,
+          860.8136879573424,
+          1076.017109946678,
+          968.4153989520102
+        ],
+        "baseline_mass_TSS_kg_p50": [
+          1345.0213874333474,
+          860.8136879573424,
+          1076.017109946678,
+          1076.017109946678
+        ],
+        "baseline_mass_TSS_kg_p75": [
+          1345.0213874333474,
+          860.8136879573424,
+          1076.017109946678,
+          1210.5192486900128
+        ],
+        "baseline_mass_TSS_kg_std": [
+          null,
+          null,
+          null,
+          242.6014943530131
+        ],
+        "baseline_mass_TSS_kg_total": [
+          1345.0213874333474,
+          860.8136879573424,
+          1076.017109946678,
+          3281.8521853373677
+        ],
+        "bmp_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "buffer_area_ha_count": [
+          null,
+          1.0,
+          null,
+          1.0
+        ],
+        "buffer_area_ha_max": [
+          null,
+          0.00600350917344477,
+          null,
+          0.00600350917344477
+        ],
+        "buffer_area_ha_mean": [
+          null,
+          0.00600350917344477,
+          null,
+          0.00600350917344477
+        ],
+        "buffer_area_ha_min": [
+          null,
+          0.00600350917344477,
+          null,
+          0.00600350917344477
+        ],
+        "buffer_area_ha_p25": [
+          null,
+          0.00600350917344477,
+          null,
+          0.00600350917344477
+        ],
+        "buffer_area_ha_p50": [
+          null,
+          0.00600350917344477,
+          null,
+          0.00600350917344477
+        ],
+        "buffer_area_ha_p75": [
+          null,
+          0.00600350917344477,
+          null,
+          0.00600350917344477
+        ],
+        "buffer_area_ha_std": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "catchment_ratio_count": [
+          null,
+          null,
+          1.0,
+          1.0
+        ],
+        "catchment_ratio_max": [
+          null,
+          null,
+          1.5132267507643096,
+          1.5132267507643096
+        ],
+        "catchment_ratio_mean": [
+          null,
+          null,
+          1.5132267507643096,
+          1.5132267507643096
+        ],
+        "catchment_ratio_min": [
+          null,
+          null,
+          1.5132267507643096,
+          1.5132267507643096
+        ],
+        "catchment_ratio_p25": [
+          null,
+          null,
+          1.5132267507643096,
+          1.5132267507643096
+        ],
+        "catchment_ratio_p50": [
+          null,
+          null,
+          1.5132267507643096,
+          1.5132267507643096
+        ],
+        "catchment_ratio_p75": [
+          null,
+          null,
+          1.5132267507643096,
+          1.5132267507643096
+        ],
+        "catchment_ratio_std": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "cost_usd_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "cost_usd_max": [
+          67.40826765065603,
+          70.0,
+          80.0,
+          80.0
+        ],
+        "cost_usd_mean": [
+          67.40826765065603,
+          70.0,
+          80.0,
+          72.46942255021868
+        ],
+        "cost_usd_min": [
+          67.40826765065603,
+          70.0,
+          80.0,
+          67.40826765065603
+        ],
+        "cost_usd_p25": [
+          67.40826765065603,
+          70.0,
+          80.0,
+          68.70413382532801
+        ],
+        "cost_usd_p50": [
+          67.40826765065603,
+          70.0,
+          80.0,
+          70.0
+        ],
+        "cost_usd_p75": [
+          67.40826765065603,
+          70.0,
+          80.0,
+          75.0
+        ],
+        "cost_usd_std": [
+          null,
+          null,
+          null,
+          6.6491703759209875
+        ],
+        "cps": [
+          340,
+          412,
+          656,
+          0
+        ],
+        "cps_name": [
+          "Cover Crop",
+          "Grassed Waterway",
+          "Constructed Wetland",
+          "All CPS"
+        ],
+        "failures_count": [
+          1,
+          0,
+          1,
+          2
+        ],
+        "linear_length_m_count": [
+          null,
+          1.0,
+          null,
+          1.0
+        ],
+        "linear_length_m_max": [
+          null,
+          19.69655240631486,
+          null,
+          19.69655240631486
+        ],
+        "linear_length_m_mean": [
+          null,
+          19.69655240631486,
+          null,
+          19.69655240631486
+        ],
+        "linear_length_m_min": [
+          null,
+          19.69655240631486,
+          null,
+          19.69655240631486
+        ],
+        "linear_length_m_p25": [
+          null,
+          19.69655240631486,
+          null,
+          19.69655240631486
+        ],
+        "linear_length_m_p50": [
+          null,
+          19.69655240631486,
+          null,
+          19.69655240631486
+        ],
+        "linear_length_m_p75": [
+          null,
+          19.69655240631486,
+          null,
+          19.69655240631486
+        ],
+        "linear_length_m_std": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "overall_reduction_fraction_TN": [
+          0.19999360546869144,
+          0.12805295287177534,
+          0.1874925064685198,
+          0.17682512344552057
+        ],
+        "overall_reduction_fraction_TP": [
+          0.1211945726930277,
+          0.0891980800941152,
+          0.12088628400634481,
+          0.11176910481970107
+        ],
+        "overall_reduction_fraction_TSS": [
+          0.2,
+          0.1479795798944744,
+          0.2,
+          0.18635529964445233
+        ],
+        "realized_efficiency_TN": [
+          0.19999360546869144,
+          0.3461368195884623,
+          0.1874925064685198,
+          0.2123153494124328
+        ],
+        "realized_efficiency_TP": [
+          0.1211945726930277,
+          0.24110915886563047,
+          0.12088628400634481,
+          0.13690267961906685
+        ],
+        "realized_efficiency_TSS": [
+          0.2,
+          0.4,
+          0.2,
+          0.2232493250059426
+        ],
+        "removed_mass_TN_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "removed_mass_TN_kg_max": [
+          7.314030717654542,
+          3.044045230126313,
+          5.485523038240906,
+          7.314030717654542
+        ],
+        "removed_mass_TN_kg_mean": [
+          7.314030717654542,
+          3.044045230126313,
+          5.485523038240906,
+          5.281199662007253
+        ],
+        "removed_mass_TN_kg_min": [
+          7.314030717654542,
+          3.044045230126313,
+          5.485523038240906,
+          3.044045230126313
+        ],
+        "removed_mass_TN_kg_p25": [
+          7.314030717654542,
+          3.044045230126313,
+          5.485523038240906,
+          4.26478413418361
+        ],
+        "removed_mass_TN_kg_p50": [
+          7.314030717654542,
+          3.044045230126313,
+          5.485523038240906,
+          5.485523038240906
+        ],
+        "removed_mass_TN_kg_p75": [
+          7.314030717654542,
+          3.044045230126313,
+          5.485523038240906,
+          6.399776877947724
+        ],
+        "removed_mass_TN_kg_std": [
+          null,
+          null,
+          null,
+          2.1423130134231227
+        ],
+        "removed_mass_TN_kg_total": [
+          7.314030717654542,
+          3.044045230126313,
+          5.485523038240906,
+          15.84359898602176
+        ],
+        "removed_mass_TP_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "removed_mass_TP_kg_max": [
+          1.7472989233160745,
+          0.9935216390825936,
+          1.5316297579015652,
+          1.7472989233160745
+        ],
+        "removed_mass_TP_kg_mean": [
+          1.7472989233160745,
+          0.9935216390825936,
+          1.5316297579015652,
+          1.4241501067667446
+        ],
+        "removed_mass_TP_kg_min": [
+          1.7472989233160745,
+          0.9935216390825936,
+          1.5316297579015652,
+          0.9935216390825936
+        ],
+        "removed_mass_TP_kg_p25": [
+          1.7472989233160745,
+          0.9935216390825936,
+          1.5316297579015652,
+          1.2625756984920793
+        ],
+        "removed_mass_TP_kg_p50": [
+          1.7472989233160745,
+          0.9935216390825936,
+          1.5316297579015652,
+          1.5316297579015652
+        ],
+        "removed_mass_TP_kg_p75": [
+          1.7472989233160745,
+          0.9935216390825936,
+          1.5316297579015652,
+          1.6394643406088198
+        ],
+        "removed_mass_TP_kg_std": [
+          null,
+          null,
+          null,
+          0.38821251282338587
+        ],
+        "removed_mass_TP_kg_total": [
+          1.7472989233160745,
+          0.9935216390825936,
+          1.5316297579015652,
+          4.2724503203002335
+        ],
+        "removed_mass_TSS_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "removed_mass_TSS_kg_max": [
+          269.0042774866695,
+          127.3828479113407,
+          215.2034219893356,
+          269.0042774866695
+        ],
+        "removed_mass_TSS_kg_mean": [
+          269.0042774866695,
+          127.3828479113407,
+          215.2034219893356,
+          203.86351579578195
+        ],
+        "removed_mass_TSS_kg_min": [
+          269.0042774866695,
+          127.3828479113407,
+          215.2034219893356,
+          127.3828479113407
+        ],
+        "removed_mass_TSS_kg_p25": [
+          269.0042774866695,
+          127.3828479113407,
+          215.2034219893356,
+          171.29313495033816
+        ],
+        "removed_mass_TSS_kg_p50": [
+          269.0042774866695,
+          127.3828479113407,
+          215.2034219893356,
+          215.2034219893356
+        ],
+        "removed_mass_TSS_kg_p75": [
+          269.0042774866695,
+          127.3828479113407,
+          215.2034219893356,
+          242.10384973800254
+        ],
+        "removed_mass_TSS_kg_std": [
+          null,
+          null,
+          null,
+          71.48847762471166
+        ],
+        "removed_mass_TSS_kg_total": [
+          269.0042774866695,
+          127.3828479113407,
+          215.2034219893356,
+          611.5905473873459
+        ],
+        "scenario": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "total_cost_usd": [
+          67.40826765065603,
+          70.0,
+          80.0,
+          217.40826765065603
+        ],
+        "treated_baseline_mass_TN_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "treated_baseline_mass_TN_kg_max": [
+          36.57132287061817,
+          8.794341017362774,
+          29.257292152963625,
+          36.57132287061817
+        ],
+        "treated_baseline_mass_TN_kg_mean": [
+          36.57132287061817,
+          8.794341017362774,
+          29.257292152963625,
+          24.874318680314857
+        ],
+        "treated_baseline_mass_TN_kg_min": [
+          36.57132287061817,
+          8.794341017362774,
+          29.257292152963625,
+          8.794341017362774
+        ],
+        "treated_baseline_mass_TN_kg_p25": [
+          36.57132287061817,
+          8.794341017362774,
+          29.257292152963625,
+          19.0258165851632
+        ],
+        "treated_baseline_mass_TN_kg_p50": [
+          36.57132287061817,
+          8.794341017362774,
+          29.257292152963625,
+          29.257292152963625
+        ],
+        "treated_baseline_mass_TN_kg_p75": [
+          36.57132287061817,
+          8.794341017362774,
+          29.257292152963625,
+          32.914307511790895
+        ],
+        "treated_baseline_mass_TN_kg_std": [
+          null,
+          null,
+          null,
+          14.397847844920328
+        ],
+        "treated_baseline_mass_TN_kg_total": [
+          36.57132287061817,
+          8.794341017362774,
+          29.257292152963625,
+          74.62295604094457
+        ],
+        "treated_baseline_mass_TP_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "treated_baseline_mass_TP_kg_max": [
+          14.417303386528596,
+          4.120630023997888,
+          12.670004463212521,
+          14.417303386528596
+        ],
+        "treated_baseline_mass_TP_kg_mean": [
+          14.417303386528596,
+          4.120630023997888,
+          12.670004463212521,
+          10.402645957913002
+        ],
+        "treated_baseline_mass_TP_kg_min": [
+          14.417303386528596,
+          4.120630023997888,
+          12.670004463212521,
+          4.120630023997888
+        ],
+        "treated_baseline_mass_TP_kg_p25": [
+          14.417303386528596,
+          4.120630023997888,
+          12.670004463212521,
+          8.395317243605206
+        ],
+        "treated_baseline_mass_TP_kg_p50": [
+          14.417303386528596,
+          4.120630023997888,
+          12.670004463212521,
+          12.670004463212521
+        ],
+        "treated_baseline_mass_TP_kg_p75": [
+          14.417303386528596,
+          4.120630023997888,
+          12.670004463212521,
+          13.543653924870558
+        ],
+        "treated_baseline_mass_TP_kg_std": [
+          null,
+          null,
+          null,
+          5.510086798529395
+        ],
+        "treated_baseline_mass_TP_kg_total": [
+          14.417303386528596,
+          4.120630023997888,
+          12.670004463212521,
+          31.207937873739006
+        ],
+        "treated_baseline_mass_TSS_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "treated_baseline_mass_TSS_kg_max": [
+          1345.0213874333474,
+          318.45711977835174,
+          1076.017109946678,
+          1345.0213874333474
+        ],
+        "treated_baseline_mass_TSS_kg_mean": [
+          1345.0213874333474,
+          318.45711977835174,
+          1076.017109946678,
+          913.1652057194591
+        ],
+        "treated_baseline_mass_TSS_kg_min": [
+          1345.0213874333474,
+          318.45711977835174,
+          1076.017109946678,
+          318.45711977835174
+        ],
+        "treated_baseline_mass_TSS_kg_p25": [
+          1345.0213874333474,
+          318.45711977835174,
+          1076.017109946678,
+          697.2371148625148
+        ],
+        "treated_baseline_mass_TSS_kg_p50": [
+          1345.0213874333474,
+          318.45711977835174,
+          1076.017109946678,
+          1076.017109946678
+        ],
+        "treated_baseline_mass_TSS_kg_p75": [
+          1345.0213874333474,
+          318.45711977835174,
+          1076.017109946678,
+          1210.5192486900128
+        ],
+        "treated_baseline_mass_TSS_kg_std": [
+          null,
+          null,
+          null,
+          532.3054629997073
+        ],
+        "treated_baseline_mass_TSS_kg_total": [
+          1345.0213874333474,
+          318.45711977835174,
+          1076.017109946678,
+          2739.495617158377
+        ],
+        "treatment_exposure_fraction_TN": [
+          1.0,
+          0.369948949736186,
+          1.0,
+          0.8328419209203252
+        ],
+        "treatment_exposure_fraction_TP": [
+          1.0,
+          0.369948949736186,
+          1.0,
+          0.8164128352396006
+        ],
+        "treatment_exposure_fraction_TSS": [
+          1.0,
+          0.369948949736186,
+          1.0,
+          0.8347407081275242
+        ],
+        "wetland_area_ha_count": [
+          null,
+          null,
+          1.0,
+          1.0
+        ],
+        "wetland_area_ha_max": [
+          null,
+          null,
+          0.39789485755548526,
+          0.39789485755548526
+        ],
+        "wetland_area_ha_mean": [
+          null,
+          null,
+          0.39789485755548526,
+          0.39789485755548526
+        ],
+        "wetland_area_ha_min": [
+          null,
+          null,
+          0.39789485755548526,
+          0.39789485755548526
+        ],
+        "wetland_area_ha_p25": [
+          null,
+          null,
+          0.39789485755548526,
+          0.39789485755548526
+        ],
+        "wetland_area_ha_p50": [
+          null,
+          null,
+          0.39789485755548526,
+          0.39789485755548526
+        ],
+        "wetland_area_ha_p75": [
+          null,
+          null,
+          0.39789485755548526,
+          0.39789485755548526
+        ],
+        "wetland_area_ha_std": [
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "trajectory": {
+      "TN|O1|cost|total": [
+        [
+          1,
+          67.40826765065603,
+          7.314030717654543
+        ],
+        [
+          1,
+          147.40826765065603,
+          12.799553755895449
+        ],
+        [
+          1,
+          217.40826765065603,
+          15.843598986021764
+        ]
+      ],
+      "TN|O1|count|total": [
+        [
+          1,
+          1,
+          7.314030717654543
+        ],
+        [
+          1,
+          2,
+          12.799553755895449
+        ],
+        [
+          1,
+          3,
+          15.843598986021764
+        ]
+      ],
+      "TP|O1|cost|total": [
+        [
+          1,
+          67.40826765065603,
+          1.747298923316075
+        ],
+        [
+          1,
+          147.40826765065603,
+          3.2789286812176393
+        ],
+        [
+          1,
+          217.40826765065603,
+          4.2724503203002335
+        ]
+      ],
+      "TP|O1|count|total": [
+        [
+          1,
+          1,
+          1.747298923316075
+        ],
+        [
+          1,
+          2,
+          3.2789286812176393
+        ],
+        [
+          1,
+          3,
+          4.2724503203002335
+        ]
+      ],
+      "TSS|O1|cost|total": [
+        [
+          1,
+          67.40826765065603,
+          269.0042774866695
+        ],
+        [
+          1,
+          147.40826765065603,
+          484.207699476005
+        ],
+        [
+          1,
+          217.40826765065603,
+          611.5905473873457
+        ]
+      ],
+      "TSS|O1|count|total": [
+        [
+          1,
+          1,
+          269.0042774866695
+        ],
+        [
+          1,
+          2,
+          484.207699476005
+        ],
+        [
+          1,
+          3,
+          611.5905473873457
+        ]
+      ]
+    }
+  },
+  "statistical_multi": {
+    "tables": {
+      "bmps/s1.parquet": {
+        "baseline_mass_TN_kg": [
+          12.5,
+          11.499520627156091,
+          8.249760313578046
+        ],
+        "baseline_mass_TP_kg": [
+          3.8,
+          3.607374371415119,
+          2.9274478639744483
+        ],
+        "baseline_mass_TSS_kg": [
+          60.0,
+          56.15815920827939,
+          43.294895524967636
+        ],
+        "buffer_area_ha": [
+          0.008595670605959588,
+          null,
+          null
+        ],
+        "catchment_to_wetland_ratio": [
+          null,
+          0.06797828266052568,
+          null
+        ],
+        "cost_usd": [
+          21.0,
+          22.0,
+          20.0
+        ],
+        "cps": [
+          412,
+          656,
+          340
+        ],
+        "cps_name": [
+          "Grassed Waterway",
+          "Constructed Wetland",
+          "Cover Crop"
+        ],
+        "direct_bmp_removed_TN_kg_yr": [
+          1.0004793728439085,
+          3.249760313578046,
+          1.624880156789023
+        ],
+        "direct_bmp_removed_TP_kg_yr": [
+          0.19262562858488053,
+          0.6799265074406707,
+          0.5321365891218139
+        ],
+        "direct_bmp_removed_TSS_kg_yr": [
+          3.841840791720609,
+          12.863263683311757,
+          7.717958209987055
+        ],
+        "failed": [
+          false,
+          false,
+          false
+        ],
+        "impacted_pids": [
+          "",
+          "",
+          ""
+        ],
+        "induced_manure_tn_kg_yr": [
+          0,
+          0,
+          0
+        ],
+        "induced_manure_tp_kg_yr": [
+          0,
+          0,
+          0
+        ],
+        "induced_manure_tss_kg_yr": [
+          0,
+          0,
+          0
+        ],
+        "linear_length_m": [
+          28.20101904842384,
+          null,
+          null
+        ],
+        "load_generation_mode": [
+          "statistical",
+          "statistical",
+          "statistical"
+        ],
+        "mass_accounting_pids": [
+          "P1",
+          "P1",
+          "P1"
+        ],
+        "mass_timestep_years": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "overall_reduction_fraction_TN": [
+          0.08003834982751268,
+          0.282599633405913,
+          0.19696089280493143
+        ],
+        "overall_reduction_fraction_TP": [
+          0.05069095489075803,
+          0.1884823801012773,
+          0.18177491584747096
+        ],
+        "overall_reduction_fraction_TSS": [
+          0.06403067986201015,
+          0.229054225862434,
+          0.17826485354459864
+        ],
+        "pid": [
+          "P1",
+          "P1",
+          "P1"
+        ],
+        "portion_treated": [
+          0.2667944994250423,
+          null,
+          null
+        ],
+        "realized_efficiency_TN": [
+          0.29999999999999993,
+          0.282599633405913,
+          0.19696089280493143
+        ],
+        "realized_efficiency_TP": [
+          0.19,
+          0.1884823801012773,
+          0.18177491584747096
+        ],
+        "realized_efficiency_TSS": [
+          0.24000000000000002,
+          0.229054225862434,
+          0.17826485354459864
+        ],
+        "removed_mass_TN_kg": [
+          1.0004793728439085,
+          3.249760313578046,
+          1.624880156789023
+        ],
+        "removed_mass_TP_kg": [
+          0.19262562858488053,
+          0.6799265074406707,
+          0.5321365891218139
+        ],
+        "removed_mass_TSS_kg": [
+          3.841840791720609,
+          12.863263683311757,
+          7.717958209987055
+        ],
+        "scenario": [
+          1,
+          1,
+          1
+        ],
+        "treated_baseline_mass_TN_kg": [
+          3.334931242813029,
+          11.499520627156091,
+          8.249760313578046
+        ],
+        "treated_baseline_mass_TP_kg": [
+          1.0138190978151607,
+          3.607374371415119,
+          2.9274478639744483
+        ],
+        "treated_baseline_mass_TSS_kg": [
+          16.007669965502537,
+          56.15815920827939,
+          43.294895524967636
+        ],
+        "treatment_exposure_fraction_TN": [
+          0.2667944994250423,
+          1.0,
+          1.0
+        ],
+        "treatment_exposure_fraction_TP": [
+          0.2667944994250423,
+          1.0,
+          1.0
+        ],
+        "treatment_exposure_fraction_TSS": [
+          0.2667944994250423,
+          1.0,
+          1.0
+        ],
+        "wetland_area_ha": [
+          null,
+          0.9363486282781148,
+          null
+        ]
+      },
+      "parcels/s1.parquet": {
+        "baseline_load_rate_TN_kg_ha_yr": [
+          12.5
+        ],
+        "baseline_load_rate_TP_kg_ha_yr": [
+          3.8
+        ],
+        "baseline_load_rate_TSS_kg_ha_yr": [
+          60.0
+        ],
+        "final_load_rate_TN_kg_ha_yr": [
+          6.624880156789023
+        ],
+        "final_load_rate_TP_kg_ha_yr": [
+          2.3953112748526344
+        ],
+        "final_load_rate_TSS_kg_ha_yr": [
+          35.57693731498058
+        ],
+        "pid": [
+          "P1"
+        ],
+        "scenario": [
+          1
+        ]
+      },
+      "scenario_metrics/s1.parquet": {
+        "baseline_mass_TN_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "baseline_mass_TN_kg_max": [
+          8.249760313578046,
+          12.5,
+          11.499520627156091,
+          12.5
+        ],
+        "baseline_mass_TN_kg_mean": [
+          8.249760313578046,
+          12.5,
+          11.499520627156091,
+          10.749760313578046
+        ],
+        "baseline_mass_TN_kg_min": [
+          8.249760313578046,
+          12.5,
+          11.499520627156091,
+          8.249760313578046
+        ],
+        "baseline_mass_TN_kg_p25": [
+          8.249760313578046,
+          12.5,
+          11.499520627156091,
+          9.87464047036707
+        ],
+        "baseline_mass_TN_kg_p50": [
+          8.249760313578046,
+          12.5,
+          11.499520627156091,
+          11.499520627156091
+        ],
+        "baseline_mass_TN_kg_p75": [
+          8.249760313578046,
+          12.5,
+          11.499520627156091,
+          11.999760313578046
+        ],
+        "baseline_mass_TN_kg_std": [
+          null,
+          null,
+          null,
+          2.2221025502598963
+        ],
+        "baseline_mass_TN_kg_total": [
+          8.249760313578046,
+          12.5,
+          11.499520627156091,
+          32.24928094073414
+        ],
+        "baseline_mass_TP_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "baseline_mass_TP_kg_max": [
+          2.9274478639744483,
+          3.8,
+          3.607374371415119,
+          3.8
+        ],
+        "baseline_mass_TP_kg_mean": [
+          2.9274478639744483,
+          3.8,
+          3.607374371415119,
+          3.4449407451298555
+        ],
+        "baseline_mass_TP_kg_min": [
+          2.9274478639744483,
+          3.8,
+          3.607374371415119,
+          2.9274478639744483
+        ],
+        "baseline_mass_TP_kg_p25": [
+          2.9274478639744483,
+          3.8,
+          3.607374371415119,
+          3.2674111176947838
+        ],
+        "baseline_mass_TP_kg_p50": [
+          2.9274478639744483,
+          3.8,
+          3.607374371415119,
+          3.607374371415119
+        ],
+        "baseline_mass_TP_kg_p75": [
+          2.9274478639744483,
+          3.8,
+          3.607374371415119,
+          3.7036871857075595
+        ],
+        "baseline_mass_TP_kg_std": [
+          null,
+          null,
+          null,
+          0.4583942841395643
+        ],
+        "baseline_mass_TP_kg_total": [
+          2.9274478639744483,
+          3.8,
+          3.607374371415119,
+          10.334822235389566
+        ],
+        "baseline_mass_TSS_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "baseline_mass_TSS_kg_max": [
+          43.294895524967636,
+          60.0,
+          56.15815920827939,
+          60.0
+        ],
+        "baseline_mass_TSS_kg_mean": [
+          43.294895524967636,
+          60.0,
+          56.15815920827939,
+          53.151018244415674
+        ],
+        "baseline_mass_TSS_kg_min": [
+          43.294895524967636,
+          60.0,
+          56.15815920827939,
+          43.294895524967636
+        ],
+        "baseline_mass_TSS_kg_p25": [
+          43.294895524967636,
+          60.0,
+          56.15815920827939,
+          49.726527366623515
+        ],
+        "baseline_mass_TSS_kg_p50": [
+          43.294895524967636,
+          60.0,
+          56.15815920827939,
+          56.15815920827939
+        ],
+        "baseline_mass_TSS_kg_p75": [
+          43.294895524967636,
+          60.0,
+          56.15815920827939,
+          58.07907960413969
+        ],
+        "baseline_mass_TSS_kg_std": [
+          null,
+          null,
+          null,
+          8.749131469057199
+        ],
+        "baseline_mass_TSS_kg_total": [
+          43.294895524967636,
+          60.0,
+          56.15815920827939,
+          159.45305473324703
+        ],
+        "bmp_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "buffer_area_ha_count": [
+          null,
+          1.0,
+          null,
+          1.0
+        ],
+        "buffer_area_ha_max": [
+          null,
+          0.008595670605959588,
+          null,
+          0.008595670605959588
+        ],
+        "buffer_area_ha_mean": [
+          null,
+          0.008595670605959588,
+          null,
+          0.008595670605959588
+        ],
+        "buffer_area_ha_min": [
+          null,
+          0.008595670605959588,
+          null,
+          0.008595670605959588
+        ],
+        "buffer_area_ha_p25": [
+          null,
+          0.008595670605959588,
+          null,
+          0.008595670605959588
+        ],
+        "buffer_area_ha_p50": [
+          null,
+          0.008595670605959588,
+          null,
+          0.008595670605959588
+        ],
+        "buffer_area_ha_p75": [
+          null,
+          0.008595670605959588,
+          null,
+          0.008595670605959588
+        ],
+        "buffer_area_ha_std": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "catchment_ratio_count": [
+          null,
+          null,
+          1.0,
+          1.0
+        ],
+        "catchment_ratio_max": [
+          null,
+          null,
+          0.06797828266052568,
+          0.06797828266052568
+        ],
+        "catchment_ratio_mean": [
+          null,
+          null,
+          0.06797828266052568,
+          0.06797828266052568
+        ],
+        "catchment_ratio_min": [
+          null,
+          null,
+          0.06797828266052568,
+          0.06797828266052568
+        ],
+        "catchment_ratio_p25": [
+          null,
+          null,
+          0.06797828266052568,
+          0.06797828266052568
+        ],
+        "catchment_ratio_p50": [
+          null,
+          null,
+          0.06797828266052568,
+          0.06797828266052568
+        ],
+        "catchment_ratio_p75": [
+          null,
+          null,
+          0.06797828266052568,
+          0.06797828266052568
+        ],
+        "catchment_ratio_std": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "cost_usd_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "cost_usd_max": [
+          20.0,
+          21.0,
+          22.0,
+          22.0
+        ],
+        "cost_usd_mean": [
+          20.0,
+          21.0,
+          22.0,
+          21.0
+        ],
+        "cost_usd_min": [
+          20.0,
+          21.0,
+          22.0,
+          20.0
+        ],
+        "cost_usd_p25": [
+          20.0,
+          21.0,
+          22.0,
+          20.5
+        ],
+        "cost_usd_p50": [
+          20.0,
+          21.0,
+          22.0,
+          21.0
+        ],
+        "cost_usd_p75": [
+          20.0,
+          21.0,
+          22.0,
+          21.5
+        ],
+        "cost_usd_std": [
+          null,
+          null,
+          null,
+          1.0
+        ],
+        "cps": [
+          340,
+          412,
+          656,
+          0
+        ],
+        "cps_name": [
+          "Cover Crop",
+          "Grassed Waterway",
+          "Constructed Wetland",
+          "All CPS"
+        ],
+        "failures_count": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "linear_length_m_count": [
+          null,
+          1.0,
+          null,
+          1.0
+        ],
+        "linear_length_m_max": [
+          null,
+          28.20101904842384,
+          null,
+          28.20101904842384
+        ],
+        "linear_length_m_mean": [
+          null,
+          28.20101904842384,
+          null,
+          28.20101904842384
+        ],
+        "linear_length_m_min": [
+          null,
+          28.20101904842384,
+          null,
+          28.20101904842384
+        ],
+        "linear_length_m_p25": [
+          null,
+          28.20101904842384,
+          null,
+          28.20101904842384
+        ],
+        "linear_length_m_p50": [
+          null,
+          28.20101904842384,
+          null,
+          28.20101904842384
+        ],
+        "linear_length_m_p75": [
+          null,
+          28.20101904842384,
+          null,
+          28.20101904842384
+        ],
+        "linear_length_m_std": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "overall_reduction_fraction_TN": [
+          0.19696089280493143,
+          0.08003834982751268,
+          0.282599633405913,
+          0.18217832062699113
+        ],
+        "overall_reduction_fraction_TP": [
+          0.18177491584747096,
+          0.05069095489075803,
+          0.1884823801012773,
+          0.13591803450061143
+        ],
+        "overall_reduction_fraction_TSS": [
+          0.17826485354459864,
+          0.06403067986201015,
+          0.229054225862434,
+          0.15316773156762264
+        ],
+        "realized_efficiency_TN": [
+          0.19696089280493143,
+          0.29999999999999993,
+          0.282599633405913,
+          0.25450813727134075
+        ],
+        "realized_efficiency_TP": [
+          0.18177491584747096,
+          0.19,
+          0.1884823801012773,
+          0.18608497385727737
+        ],
+        "realized_efficiency_TSS": [
+          0.17826485354459864,
+          0.24000000000000002,
+          0.229054225862434,
+          0.21152701707651692
+        ],
+        "removed_mass_TN_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "removed_mass_TN_kg_max": [
+          1.624880156789023,
+          1.0004793728439085,
+          3.249760313578046,
+          3.249760313578046
+        ],
+        "removed_mass_TN_kg_mean": [
+          1.624880156789023,
+          1.0004793728439085,
+          3.249760313578046,
+          1.958373281070326
+        ],
+        "removed_mass_TN_kg_min": [
+          1.624880156789023,
+          1.0004793728439085,
+          3.249760313578046,
+          1.0004793728439085
+        ],
+        "removed_mass_TN_kg_p25": [
+          1.624880156789023,
+          1.0004793728439085,
+          3.249760313578046,
+          1.3126797648164659
+        ],
+        "removed_mass_TN_kg_p50": [
+          1.624880156789023,
+          1.0004793728439085,
+          3.249760313578046,
+          1.624880156789023
+        ],
+        "removed_mass_TN_kg_p75": [
+          1.624880156789023,
+          1.0004793728439085,
+          3.249760313578046,
+          2.4373202351835346
+        ],
+        "removed_mass_TN_kg_std": [
+          null,
+          null,
+          null,
+          1.1611328242473553
+        ],
+        "removed_mass_TN_kg_total": [
+          1.624880156789023,
+          1.0004793728439085,
+          3.249760313578046,
+          5.875119843210978
+        ],
+        "removed_mass_TP_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "removed_mass_TP_kg_max": [
+          0.5321365891218139,
+          0.19262562858488053,
+          0.6799265074406707,
+          0.6799265074406707
+        ],
+        "removed_mass_TP_kg_mean": [
+          0.5321365891218139,
+          0.19262562858488053,
+          0.6799265074406707,
+          0.4682295750491217
+        ],
+        "removed_mass_TP_kg_min": [
+          0.5321365891218139,
+          0.19262562858488053,
+          0.6799265074406707,
+          0.19262562858488053
+        ],
+        "removed_mass_TP_kg_p25": [
+          0.5321365891218139,
+          0.19262562858488053,
+          0.6799265074406707,
+          0.36238110885334723
+        ],
+        "removed_mass_TP_kg_p50": [
+          0.5321365891218139,
+          0.19262562858488053,
+          0.6799265074406707,
+          0.5321365891218139
+        ],
+        "removed_mass_TP_kg_p75": [
+          0.5321365891218139,
+          0.19262562858488053,
+          0.6799265074406707,
+          0.6060315482812424
+        ],
+        "removed_mass_TP_kg_std": [
+          null,
+          null,
+          null,
+          0.24985719215017974
+        ],
+        "removed_mass_TP_kg_total": [
+          0.5321365891218139,
+          0.19262562858488053,
+          0.6799265074406707,
+          1.4046887251473652
+        ],
+        "removed_mass_TSS_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "removed_mass_TSS_kg_max": [
+          7.717958209987055,
+          3.841840791720609,
+          12.863263683311757,
+          12.863263683311757
+        ],
+        "removed_mass_TSS_kg_mean": [
+          7.717958209987055,
+          3.841840791720609,
+          12.863263683311757,
+          8.141020895006474
+        ],
+        "removed_mass_TSS_kg_min": [
+          7.717958209987055,
+          3.841840791720609,
+          12.863263683311757,
+          3.841840791720609
+        ],
+        "removed_mass_TSS_kg_p25": [
+          7.717958209987055,
+          3.841840791720609,
+          12.863263683311757,
+          5.779899500853832
+        ],
+        "removed_mass_TSS_kg_p50": [
+          7.717958209987055,
+          3.841840791720609,
+          12.863263683311757,
+          7.717958209987055
+        ],
+        "removed_mass_TSS_kg_p75": [
+          7.717958209987055,
+          3.841840791720609,
+          12.863263683311757,
+          10.290610946649405
+        ],
+        "removed_mass_TSS_kg_std": [
+          null,
+          null,
+          null,
+          4.5255667350977244
+        ],
+        "removed_mass_TSS_kg_total": [
+          7.717958209987055,
+          3.841840791720609,
+          12.863263683311757,
+          24.42306268501942
+        ],
+        "scenario": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "total_cost_usd": [
+          20.0,
+          21.0,
+          22.0,
+          63.0
+        ],
+        "treated_baseline_mass_TN_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "treated_baseline_mass_TN_kg_max": [
+          8.249760313578046,
+          3.334931242813029,
+          11.499520627156091,
+          11.499520627156091
+        ],
+        "treated_baseline_mass_TN_kg_mean": [
+          8.249760313578046,
+          3.334931242813029,
+          11.499520627156091,
+          7.694737394515722
+        ],
+        "treated_baseline_mass_TN_kg_min": [
+          8.249760313578046,
+          3.334931242813029,
+          11.499520627156091,
+          3.334931242813029
+        ],
+        "treated_baseline_mass_TN_kg_p25": [
+          8.249760313578046,
+          3.334931242813029,
+          11.499520627156091,
+          5.792345778195537
+        ],
+        "treated_baseline_mass_TN_kg_p50": [
+          8.249760313578046,
+          3.334931242813029,
+          11.499520627156091,
+          8.249760313578046
+        ],
+        "treated_baseline_mass_TN_kg_p75": [
+          8.249760313578046,
+          3.334931242813029,
+          11.499520627156091,
+          9.87464047036707
+        ],
+        "treated_baseline_mass_TN_kg_std": [
+          null,
+          null,
+          null,
+          4.110494834474945
+        ],
+        "treated_baseline_mass_TN_kg_total": [
+          8.249760313578046,
+          3.334931242813029,
+          11.499520627156091,
+          23.084212183547166
+        ],
+        "treated_baseline_mass_TP_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "treated_baseline_mass_TP_kg_max": [
+          2.9274478639744483,
+          1.0138190978151607,
+          3.607374371415119,
+          3.607374371415119
+        ],
+        "treated_baseline_mass_TP_kg_mean": [
+          2.9274478639744483,
+          1.0138190978151607,
+          3.607374371415119,
+          2.5162137777349094
+        ],
+        "treated_baseline_mass_TP_kg_min": [
+          2.9274478639744483,
+          1.0138190978151607,
+          3.607374371415119,
+          1.0138190978151607
+        ],
+        "treated_baseline_mass_TP_kg_p25": [
+          2.9274478639744483,
+          1.0138190978151607,
+          3.607374371415119,
+          1.9706334808948045
+        ],
+        "treated_baseline_mass_TP_kg_p50": [
+          2.9274478639744483,
+          1.0138190978151607,
+          3.607374371415119,
+          2.9274478639744483
+        ],
+        "treated_baseline_mass_TP_kg_p75": [
+          2.9274478639744483,
+          1.0138190978151607,
+          3.607374371415119,
+          3.2674111176947838
+        ],
+        "treated_baseline_mass_TP_kg_std": [
+          null,
+          null,
+          null,
+          1.344792677169418
+        ],
+        "treated_baseline_mass_TP_kg_total": [
+          2.9274478639744483,
+          1.0138190978151607,
+          3.607374371415119,
+          7.548641333204728
+        ],
+        "treated_baseline_mass_TSS_kg_count": [
+          1,
+          1,
+          1,
+          3
+        ],
+        "treated_baseline_mass_TSS_kg_max": [
+          43.294895524967636,
+          16.007669965502537,
+          56.15815920827939,
+          56.15815920827939
+        ],
+        "treated_baseline_mass_TSS_kg_mean": [
+          43.294895524967636,
+          16.007669965502537,
+          56.15815920827939,
+          38.48690823291653
+        ],
+        "treated_baseline_mass_TSS_kg_min": [
+          43.294895524967636,
+          16.007669965502537,
+          56.15815920827939,
+          16.007669965502537
+        ],
+        "treated_baseline_mass_TSS_kg_p25": [
+          43.294895524967636,
+          16.007669965502537,
+          56.15815920827939,
+          29.651282745235086
+        ],
+        "treated_baseline_mass_TSS_kg_p50": [
+          43.294895524967636,
+          16.007669965502537,
+          56.15815920827939,
+          43.294895524967636
+        ],
+        "treated_baseline_mass_TSS_kg_p75": [
+          43.294895524967636,
+          16.007669965502537,
+          56.15815920827939,
+          49.726527366623515
+        ],
+        "treated_baseline_mass_TSS_kg_std": [
+          null,
+          null,
+          null,
+          20.502512113372322
+        ],
+        "treated_baseline_mass_TSS_kg_total": [
+          43.294895524967636,
+          16.007669965502537,
+          56.15815920827939,
+          115.46072469874957
+        ],
+        "treatment_exposure_fraction_TN": [
+          1.0,
+          0.2667944994250423,
+          1.0,
+          0.7158054849647654
+        ],
+        "treatment_exposure_fraction_TP": [
+          1.0,
+          0.2667944994250423,
+          1.0,
+          0.7304084348307308
+        ],
+        "treatment_exposure_fraction_TSS": [
+          1.0,
+          0.2667944994250423,
+          1.0,
+          0.7241048149996667
+        ],
+        "wetland_area_ha_count": [
+          null,
+          null,
+          1.0,
+          1.0
+        ],
+        "wetland_area_ha_max": [
+          null,
+          null,
+          0.9363486282781148,
+          0.9363486282781148
+        ],
+        "wetland_area_ha_mean": [
+          null,
+          null,
+          0.9363486282781148,
+          0.9363486282781148
+        ],
+        "wetland_area_ha_min": [
+          null,
+          null,
+          0.9363486282781148,
+          0.9363486282781148
+        ],
+        "wetland_area_ha_p25": [
+          null,
+          null,
+          0.9363486282781148,
+          0.9363486282781148
+        ],
+        "wetland_area_ha_p50": [
+          null,
+          null,
+          0.9363486282781148,
+          0.9363486282781148
+        ],
+        "wetland_area_ha_p75": [
+          null,
+          null,
+          0.9363486282781148,
+          0.9363486282781148
+        ],
+        "wetland_area_ha_std": [
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "trajectory": {
+      "TN|O1|cost|total": [
+        [
+          1,
+          21.0,
+          1.000479372843909
+        ],
+        [
+          1,
+          43.0,
+          4.2502396864219545
+        ],
+        [
+          1,
+          63.0,
+          5.875119843210977
+        ]
+      ],
+      "TN|O1|count|total": [
+        [
+          1,
+          1,
+          1.000479372843909
+        ],
+        [
+          1,
+          2,
+          4.2502396864219545
+        ],
+        [
+          1,
+          3,
+          5.875119843210977
+        ]
+      ],
+      "TP|O1|cost|total": [
+        [
+          1,
+          21.0,
+          0.19262562858488064
+        ],
+        [
+          1,
+          43.0,
+          0.8725521360255515
+        ],
+        [
+          1,
+          63.0,
+          1.4046887251473654
+        ]
+      ],
+      "TP|O1|count|total": [
+        [
+          1,
+          1,
+          0.19262562858488064
+        ],
+        [
+          1,
+          2,
+          0.8725521360255515
+        ],
+        [
+          1,
+          3,
+          1.4046887251473654
+        ]
+      ],
+      "TSS|O1|cost|total": [
+        [
+          1,
+          21.0,
+          3.8418407917206068
+        ],
+        [
+          1,
+          43.0,
+          16.705104475032364
+        ],
+        [
+          1,
+          63.0,
+          24.423062685019417
+        ]
+      ],
+      "TSS|O1|count|total": [
+        [
+          1,
+          1,
+          3.8418407917206068
+        ],
+        [
+          1,
+          2,
+          16.705104475032364
+        ],
+        [
+          1,
+          3,
+          24.423062685019417
+        ]
+      ]
+    }
+  }
+}

@@ -176,3 +176,17 @@ The AFO examples use mode-specific GeoPackages: legacy
 `afo_example.gpkg`, PLET mass-based `afo_mass_example_generated.gpkg`, and
 statistical mass-based `afo_mass_statistical_example.gpkg`. See the
 [GeoPackage reference](afo_example_geopackage_reference.md) for table/column inventories.
+
+### Replaying sampled BMP realizations (Phase 2)
+
+After an ordinary run, each Monte Carlo scenario has a versioned realization
+in `outputs/scenario_definitions/s<scenario-id>.json` with BMP host parcels,
+CPS codes, physical designs, affected-parcel treatment fractions, sampled
+response efficiencies, recovery gains and costs. These outputs are diagnostic
+and reproducibility artifacts, not alternative YAML model formulations.
+
+Use `--scenario-replay-dir` to reuse these definitions on another run with the
+same input data, seed, scenario count and approved model formulation. Replay
+still regenerates baseline model stochastic inputs using the original scenario
+seed; it does **not** transfer arbitrary baseline state between formulations.
+Modified or cross-model scenario definitions are unsupported in this phase.
