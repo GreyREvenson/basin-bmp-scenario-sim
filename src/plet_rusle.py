@@ -518,7 +518,7 @@ def _sample_plet_hydrology(
 
 
 
-def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
+def initialize_plet_rusle_state(ctx: Any, *, process_methods=None) -> Tuple[np.ndarray, LoadState]:
     """Create the initial parcel load state for a scenario.
 
     This function samples parcel-level parameters and concentrations, verifies
@@ -578,11 +578,16 @@ def initialize_plet_rusle_state(ctx: Any) -> Tuple[np.ndarray, LoadState]:
         combined = apply_plet_parameter_defaults(combined, ctx.pollutants)
         parameters.append(combined)
         has_rusle.append(all(name in combined for name in _REQUIRED_RUSLE))
-        parcel_pathway_load_rates = calculate_plet_pathway_load_rates(
+        nutrient_method = (
+            process_methods.nutrients if process_methods is not None
+            else calculate_plet_pathway_load_rates
+        )
+        parcel_pathway_load_rates = nutrient_method(
             combined,
             concentrations[i],
             groundwater_concentrations[i],
             ctx.pollutants,
+            **({"process_methods": process_methods} if process_methods is not None else {}),
         )
         pathway_load_rates[i, :, :] = parcel_pathway_load_rates
         # Compatibility field retained for callers/tests that inspect the old

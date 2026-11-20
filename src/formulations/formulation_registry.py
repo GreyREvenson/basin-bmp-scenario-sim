@@ -76,4 +76,8 @@ def validate_formulation_selection(cfg: Mapping[str, Any]) -> Formulation:
                 f"Unapproved BMP response method {method!r} for {kind!r} "
                 f"in formulation {requested!r}; currently approved: {approved!r}"
             )
+    # Reject approved-looking method identifiers that have no registered
+    # executable implementation, before any Monte Carlo realizations begin.
+    from src.formulations.formulation_builder import validate_registered_formulation
+    validate_registered_formulation(form)
     return form

@@ -46,6 +46,8 @@ def calculate_plet_pathway_load_rates(
     concentrations: Mapping[str, float],
     groundwater_concentrations: Optional[Mapping[str, float]],
     pollutants: Sequence[str],
+    *,
+    process_methods=None,
 ) -> np.ndarray:
     """Calculate the two PLET/RUSLE pathways: surface and subsurface.
 
@@ -82,11 +84,16 @@ def calculate_plet_pathway_load_rates(
     if missing:
         raise ValueError(f"PLET inputs are missing required parameters: {missing}")
 
-    _, _, _, annual_runoff_in = plet_annual_surface_runoff_in(parameters)
+    # Use the selected approved process functions when a watershed assembly
+    # supplies them. Legacy direct calls retain the exact original defaults.
+    runoff = process_methods.runoff if process_methods is not None else plet_annual_surface_runoff_in
+    infiltration = process_methods.infiltration if process_methods is not None else plet_annual_infiltration_in
+    sediment = process_methods.sediment if process_methods is not None else rusle_sediment_load_rate_kg_ha_yr
+    _, _, _, annual_runoff_in = runoff(parameters)
     runoff_l_ha = annual_runoff_in * INCH_OVER_HA_TO_LITERS
-    infiltration_l_ha = plet_annual_infiltration_in(parameters) * INCH_OVER_HA_TO_LITERS
+    infiltration_l_ha = infiltration(parameters) * INCH_OVER_HA_TO_LITERS
     has_rusle = all(name in parameters for name in _REQUIRED_RUSLE)
-    sediment_load_rate_kg_ha_yr = rusle_sediment_load_rate_kg_ha_yr(parameters) if has_rusle else 0.0
+    sediment_load_rate_kg_ha_yr = sediment(parameters) if has_rusle else 0.0
     enrichment_ratio = validate_parameter_value(
         "enrichment_ratio", parameters["enrichment_ratio"]
     )

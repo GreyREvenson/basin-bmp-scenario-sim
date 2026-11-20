@@ -11,16 +11,13 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
 import numpy as np
 from src.afo import apply_afo_feedlot_manure_effect
-from src.bmp.bmp_response_registry import response_family
+from src.formulations.formulation_builder import ScientificMethodPlan, build_method_plan
 from src.constants import (
     OUTPUT_TREATED, OUTPUT_REMOVED, OUTPUT_COST_USD, OUTPUT_IMPACTED_PIDS,
     OUTPUT_LINEAR_LENGTH, OUTPUT_BUFFER_AREA, OUTPUT_PORTION_TREATED,
     OUTPUT_WETLAND_AREA, OUTPUT_CATCHMENT_RATIO, OUTPUT_BMP_FAILED,
-    LOAD_MODE_PLET_RUSLE, LOAD_MODE_STATISTICAL,
     CURRENT_TIMESTEP_YEARS as _CURRENT_TIMESTEP_YEARS,
 )
-from src.models.assemblies.plet_rusle_annual import initialize_plet_rusle_baseline
-from src.models.assemblies.statistical_annual import initialize_statistical_baseline
 from src.models.accounting.bmp_mass import (
     _bmp_impacted_parcel_indices, _baseline_mass_before_bmp_kg,
     _add_mass_metrics_to_bmp_record, _removed_mass_by_parcel_kg,
@@ -54,17 +51,14 @@ class AnnualModelRealization:
     load_state: Any
     afo_assignments: list
     manure_mass_ledger: list
+    method_plan: ScientificMethodPlan | None = None
     delivered_reductions: dict = field(default_factory=lambda: defaultdict(lambda: defaultdict(float)))
 
     @classmethod
     def initialize(cls, ctx: Any, logger) -> "AnnualModelRealization":
-        if ctx.load_generation_mode == LOAD_MODE_PLET_RUSLE:
-            baseline, load_state, afo, ledger = initialize_plet_rusle_baseline(ctx, logger)
-        elif ctx.load_generation_mode == LOAD_MODE_STATISTICAL:
-            baseline, load_state, afo, ledger = initialize_statistical_baseline(ctx, len(ctx.pollutants), logger)
-        else:
-            raise ValueError(f"Unsupported load-generation mode: {ctx.load_generation_mode!r}")
-        return cls(ctx, baseline, baseline.copy(), load_state, afo, ledger)
+        methods = build_method_plan(ctx.cfg, ctx.load_generation_mode)
+        baseline, load_state, afo, ledger = methods.initialize_baseline(ctx, logger)
+        return cls(ctx, baseline, baseline.copy(), load_state, afo, ledger, methods)
 
     def apply_placement(self, placement_plan, sid: int) -> PendingPlacementResponse:
         """Apply physical treatment and AFO recovery, preserving RNG ordering.
@@ -114,19 +108,15 @@ class AnnualModelRealization:
         if ctx.current_bmp_targets_feedlot and cps in (412, 656, 657):
             raise ValueError("Wetland/buffer CPS cannot be classified as feedlot-only")
 
-        # Apply BMP using sampled efficiency by flow pathway.
-        if response_family(cps) == "wetland":
-            ctx._simulate_wetland(
-                parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs,
-                design=placement_plan.design,
-            )
-        elif response_family(cps) == "grassed":
-            ctx._simulate_grassed(
-                parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs,
-                design=placement_plan.design,
-            )
-        else:
-            ctx._simulate_infield(parcel_idx, eff_maps, load_rates, bmp_rec, bmp_mass_rate_outputs)
+        # Scientific BMP-response dispatch is resolved from the reviewed
+        # formulation; CPS selection and sampled design remain generator-owned.
+        if self.method_plan is None:
+            raise RuntimeError("Scientific realization has no resolved method plan")
+        response_method = self.method_plan.bmp_response(cps)
+        response_method.apply(
+            ctx, parcel_idx, eff_maps, load_rates, bmp_rec,
+            bmp_mass_rate_outputs, placement_plan.design,
+        )
 
         # A manure-capturing feedlot BMP can increase field application
         # and therefore *increase* loading at different parcels. Count

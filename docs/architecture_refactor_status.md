@@ -278,3 +278,15 @@ scenario independence: the Phase 2 scenario schema still contains sampled
 model-response efficiencies and AFO recovery values. Changing the RNG streams
 or replacing the remaining context mapping requires a separate, explicitly
 validated migration.
+
+---
+
+# Phase 4: approved scientific method dispatch
+
+The fourth patch adds executable method registries and a resolved formulation
+plan. Baseline assembly selection, PLET/RUSLE process calculation, and BMP
+response dispatch now use registered callable implementations associated with
+the selected, preflight-approved formulation, rather than selection of BMP
+response families inside the annual scientific model. No new numerical model
+is authorized. See `docs/phase4_formulation_method_contracts.md` for the method
+contracts, scientific safeguards, and tests. This remains pre-BMI work.
