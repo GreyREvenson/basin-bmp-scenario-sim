@@ -384,3 +384,20 @@ layouts before sampling. Native science, CLI, output schema, RNG order and
 replay are unchanged. The eight seeded result captures remain byte-identical.
 This is a tested extension point, **not** authorization of a new model or
 complete cross-model BMI interoperability.
+
+---
+
+## Phase 11: opt-in backend selection and capability negotiation
+
+See [phase11_backend_selection.md](phase11_backend_selection.md). A versioned
+backend-selection manifest explicitly chooses the native Phase 9 BMI
+components or an independently implemented annual backend created through a
+trusted Python factory. The external factory returns a typed domain, science
+backend and scientific capability declaration. Preflight rejects unsupported
+CPS codes, wrong pollutant/pathway identities, missing signed-efficiency or
+multi-parcel semantics and any additional requested AFO/upstream features
+before baseline RNG draws. A new optional CLI route executes the selected
+BMI coupler and writes model-neutral scenario JSON. The original Monte Carlo
+YAML CLI, native Parquet outputs, scientific methods, and RNG/replay logic are
+unchanged. This phase supports **single selected scenarios**, not yet full
+external-model ensemble scheduling or automatically compatible science.

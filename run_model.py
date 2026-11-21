@@ -20,6 +20,7 @@ from src.input_config import load_and_validate_all, normalize_config, resolve_co
 from src.input_validation import validate_config
 from src.logging_utils import make_logger
 from src.model import Model
+from src.driver.backend_selection import run_backend_selection
 from src.plotting import make_summary_plots
 
 
@@ -35,7 +36,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run the BMP scenario model using a YAML configuration file."
     )
-    parser.add_argument("config", help="Path to the YAML configuration file")
+    parser.add_argument("config", nargs="?", help="Path to the YAML configuration file (native mode)")
+    parser.add_argument(
+        "--backend-selection", type=Path,
+        help="Opt-in Phase 11 JSON selection for one native or external annual BMI scenario",
+    )
+    parser.add_argument(
+        "--coupled-result", type=Path,
+        help="Destination JSON file for --backend-selection (not native Parquet output)",
+    )
     parser.add_argument("--outputs", help="Override the outputs directory from config")
     parser.add_argument("--seed", type=int, help="Override random seed from config")
     parser.add_argument("--quiet", action="store_true", help="Disable console logging")
@@ -45,7 +54,10 @@ def parse_args() -> argparse.Namespace:
              "requires the same validated inputs, formulation, and seed",
     )
     parser.add_argument("--version", action="version", version="basin-bmp-sim 0.1.0")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.config is None and args.backend_selection is None:
+        parser.error("Supply a native YAML config or --backend-selection")
+    return args
 
 
 def run_from_config(
@@ -118,13 +130,27 @@ def main() -> None:
     """Parse CLI arguments and run the configured model."""
     args = parse_args()
     try:
-        run_from_config(
-            args.config,
-            outputs=args.outputs,
-            seed=args.seed,
-            console=not args.quiet,
-            scenario_replay_dir=args.scenario_replay_dir,
-        )
+        if args.backend_selection is not None:
+            if (args.config is not None or args.outputs is not None or
+                    args.seed is not None or args.scenario_replay_dir is not None):
+                raise ValueError(
+                    "--backend-selection cannot be combined with native YAML, "
+                    "--outputs, --seed, or --scenario-replay-dir; "
+                    "use the selection and startup manifests instead"
+                )
+            if args.coupled_result is None:
+                raise ValueError("--backend-selection requires --coupled-result")
+            run_backend_selection(args.backend_selection, args.coupled_result)
+        else:
+            if args.coupled_result is not None:
+                raise ValueError("--coupled-result requires --backend-selection")
+            run_from_config(
+                args.config,
+                outputs=args.outputs,
+                seed=args.seed,
+                console=not args.quiet,
+                scenario_replay_dir=args.scenario_replay_dir,
+            )
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}")
         sys.exit(1)
