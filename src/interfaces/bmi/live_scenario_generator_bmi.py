@@ -8,11 +8,13 @@ pure BMI exchange contract.
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import numpy as np
 
 from src.interfaces.bmi.array_component import BmiArrayComponent
+from src.interfaces.coupling_lifecycle import LIFECYCLE_SCHEMA_VERSION
 from src.interfaces.exchange_variables import LIVE_GENERATOR_VARIABLES
 from src.interfaces.domain_index_contract import index_contract_values
 from src.interfaces.domain_exchange import DOMAIN_FIELDS, install_placement_domain
@@ -86,6 +88,8 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         self._domain_ready = not self._require_domain_import
         self._publish({
             **index_contract_values(self._ctx),
+            "coupling__lifecycle_schema_version": LIFECYCLE_SCHEMA_VERSION,
+            "scenario__replay_utf8": [],
             **{name: ([] if name != "domain__schema_version" else 0)
                for name in DOMAIN_FIELDS},
             "coupling__generator_rng_state_utf8": encode_rng_state(self._ctx.rng),
@@ -198,6 +202,18 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         return self._generator.complete_scenario(
             self._ctx, self._scenario_id, int(seed),
         )
+
+    def export_replay(self, seed: int) -> None:
+        """Publish an authoritative replay through a BMI byte output.
+
+        This is a version-1 project lifecycle *extension*, not a BMI 2.0
+        method. It validates the full replay (including completeness) before
+        publishing and does not draw any random numbers.
+        """
+        scenario = self.completed_scenario(seed)
+        payload = json.dumps(scenario.to_dict(), separators=(",", ":"),
+                             allow_nan=False).encode("utf-8")
+        self._publish({"scenario__replay_utf8": np.frombuffer(payload, dtype=np.uint8).copy()})
 
     def finalize(self) -> None:
         if self._pending is not None:

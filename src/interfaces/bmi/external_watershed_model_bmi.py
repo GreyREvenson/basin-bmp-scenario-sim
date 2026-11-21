@@ -15,6 +15,7 @@ from src.interfaces.annual_model_contract import (
     PLACEMENT_FIELDS,
 )
 from src.interfaces.bmi.array_component import BmiArrayComponent
+from src.interfaces.coupling_lifecycle import LIFECYCLE_SCHEMA_VERSION
 from src.interfaces.bmi.record_exchange import encode_bmp_record
 from src.interfaces.domain_index_contract import index_contract_values
 from src.interfaces.exchange_variables import MODEL_VARIABLES
@@ -72,6 +73,7 @@ class ExternalWatershedModelBmi(BmiArrayComponent):
         self._cost_received = False
         self._publish({
             **index_contract_values(self.domain),
+            "coupling__lifecycle_schema_version": LIFECYCLE_SCHEMA_VERSION,
             **{k: v.copy() for k, v in self.domain.domain_values().items()},
             "coupling__model_rng_state_utf8": encode_rng_state(self.rng),
             "coupling__generator_rng_state_utf8": [],

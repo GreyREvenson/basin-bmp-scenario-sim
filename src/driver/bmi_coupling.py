@@ -28,6 +28,8 @@ from src.interfaces.bmi.live_scenario_generator_bmi import (
 from src.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
 from src.interfaces.placement_exchange import PLACEMENT_FIELDS
 from src.interfaces.bmi.record_exchange import decode_bmp_record
+from src.interfaces.coupling_lifecycle import CouplerPhase, negotiate_lifecycle
+from src.scenarios.stochastic_scenario_generator import BMPScenario
 from src.interfaces.exchange_variables import EXCHANGE_SCHEMA_VERSION, MODEL_VARIABLES
 from src.interfaces.domain_exchange import DOMAIN_FIELDS
 from src.scenarios.generator_context import GeneratorModelContext
@@ -165,6 +167,7 @@ class AnnualBmiScenarioCoupler:
         )
         self.model = WatershedModelBmi(ctx, logger)
         self.initialized = False
+        self._phase = CouplerPhase.CREATED
         self._startup_manifest = None
         self._generator_config_file = ""
         self._model_config_file = ""
@@ -190,6 +193,7 @@ class AnnualBmiScenarioCoupler:
         coupled.generator = LiveScenarioGeneratorBmi(require_domain_import=True)
         coupled.model = WatershedModelBmi()
         coupled.initialized = False
+        coupled._phase = CouplerPhase.CREATED
         coupled._startup_manifest = str(Path(manifest_path).resolve())
         coupled._generator_config_file = ""
         coupled._model_config_file = ""
@@ -214,36 +218,55 @@ class AnnualBmiScenarioCoupler:
         coupled.generator = generator
         coupled.model = model
         coupled.initialized = False
+        coupled._phase = CouplerPhase.CREATED
         coupled._startup_manifest = None
         coupled._generator_config_file = str(generator_config_file)
         coupled._model_config_file = str(model_config_file)
         return coupled
 
+    @property
+    def lifecycle_phase(self) -> str:
+        """Public logical state of this coupled realization."""
+        return self._phase.value
+
     def initialize(self):
-        if self.initialized:
-            raise RuntimeError("BMI scenario coupler already initialized")
-        # Baseline simulation must use the worker RNG *before* the first
-        # placement is sampled; initialize in precisely the original order.
-        self.model.initialize(self._model_config_file or self._startup_manifest or "")
-        self.generator.initialize(self._generator_config_file or self._startup_manifest or "")
-        if self._startup_manifest is not None:
-            self.ctx = self.model._ctx
-            self.cfg = self.ctx.cfg
-            self.logger = self.ctx.logger
-            self.generator_context = self.generator._ctx
-        validate_bmi_index_contract(self.generator, self.model)
-        validate_annual_model_bmi(self.model)
-        # The generator receives its physical parcel geometry, upstream CSR
-        # adjacency and selection universe from the model via BMI. This must
-        # occur before the first placement/design draw.
-        for name in DOMAIN_FIELDS:
-            transfer_bmi_value(self.model, self.generator, name)
-        self.generator.accept_domain()
-        self.model.set_value("scenario__identifier", np.array([self.scenario_id], dtype=np.int64))
+        if self._phase is not CouplerPhase.CREATED:
+            raise RuntimeError("BMI scenario coupler already initialized or finalized")
+        # The baseline model consumes its draws *before* the generator samples.
+        # No private _ctx or other implementation fields are read across the
+        # boundary, including for separately file-initialized components.
+        initialized = []
+        try:
+            self.model.initialize(self._model_config_file or self._startup_manifest or "")
+            initialized.append(self.model)
+            self.generator.initialize(self._generator_config_file or self._startup_manifest or "")
+            initialized.append(self.generator)
+            negotiate_lifecycle(self.generator, self.model)
+            validate_bmi_index_contract(self.generator, self.model)
+            validate_annual_model_bmi(self.model)
+            for name in DOMAIN_FIELDS:
+                transfer_bmi_value(self.model, self.generator, name)
+            self.generator.accept_domain()
+            self.model.set_value("scenario__identifier", np.array([self.scenario_id], dtype=np.int64))
+        except Exception:
+            # Keep independently initialized components usable for retry only
+            # through a *new* coupler; avoid leaking owned resources if any
+            # negotiation or domain validation fails.
+            for component in reversed(initialized):
+                try:
+                    component.finalize()
+                except Exception:
+                    pass
+            self._phase = CouplerPhase.FINALIZED
+            self.initialized = False
+            raise
         self.initialized = True
+        self._phase = CouplerPhase.READY
 
     def next_bmp(self) -> CompletedBMPResponse | None:
-        if not self.initialized:
+        if self._phase is CouplerPhase.EXHAUSTED:
+            return None
+        if self._phase is not CouplerPhase.READY:
             raise RuntimeError("Initialize the BMI coupler before execution")
         # Worker baseline may have consumed stochastic draws. Synchronize
         # the generator's separate stream before any placement is sampled.
@@ -251,6 +274,7 @@ class AnnualBmiScenarioCoupler:
         try:
             self.generator.update()
         except NoEligiblePlacements:
+            self._phase = CouplerPhase.EXHAUSTED
             return None
 
         cps = int(get_bmi_value(self.generator, "placement__cps_code")[0])
@@ -285,10 +309,34 @@ class AnnualBmiScenarioCoupler:
         )
 
     def completed_scenario(self):
-        """Persist replayable scenario definitions via the generator owner."""
-        return self.generator.completed_scenario(self.seed)
+        """Read the replay through the generator's advertised BMI byte array.
+
+        ``export_replay`` is the versioned public lifecycle extension; the
+        coupler never receives a generator-owned Python scenario instance.
+        """
+        if self._phase not in (CouplerPhase.READY, CouplerPhase.EXHAUSTED):
+            raise RuntimeError("Initialize the BMI coupler before exporting replay")
+        self.generator.export_replay(self.seed)
+        raw = get_bmi_value(self.generator, "scenario__replay_utf8").tobytes()
+        try:
+            data = json.loads(raw.decode("utf-8"))
+            scenario = BMPScenario.from_dict(data)
+        except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Invalid BMI replay JSON payload") from exc
+        if scenario.scenario_id != self.scenario_id or scenario.seed != self.seed:
+            raise ValueError("BMI replay scenario identity or seed mismatch")
+        return scenario
 
     def finalize(self):
-        self.generator.finalize()
-        self.model.finalize()
-        self.initialized = False
+        if self._phase is CouplerPhase.FINALIZED:
+            return
+        try:
+            self.generator.finalize()
+        finally:
+            # Always release the independent scientific model owner even if
+            # the generator's cleanup fails.
+            try:
+                self.model.finalize()
+            finally:
+                self.initialized = False
+                self._phase = CouplerPhase.FINALIZED

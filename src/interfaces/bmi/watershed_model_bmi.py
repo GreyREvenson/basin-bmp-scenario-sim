@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 
 from src.interfaces.bmi.array_component import BmiArrayComponent
+from src.interfaces.coupling_lifecycle import LIFECYCLE_SCHEMA_VERSION
 from src.interfaces.exchange_variables import MODEL_VARIABLES
 from src.interfaces.domain_index_contract import index_contract_values
 from src.interfaces.domain_exchange import export_placement_domain
@@ -65,6 +66,7 @@ class WatershedModelBmi(BmiArrayComponent):
         # Variable-width vectors may be resized by standard BMI set_value().
         self._publish({
             **index_contract_values(self._ctx),
+            "coupling__lifecycle_schema_version": LIFECYCLE_SCHEMA_VERSION,
             **export_placement_domain(self._ctx),
             "coupling__model_rng_state_utf8": encode_rng_state(self._ctx.rng),
             "coupling__generator_rng_state_utf8": [],

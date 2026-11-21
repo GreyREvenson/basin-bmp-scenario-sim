@@ -118,6 +118,13 @@ PLACEMENT_OUTPUT_VARIABLES = (
 # The manifest provides stable parcel/outlet identifiers, pollutant/pathway
 # positions and available BMP CPS codes. It does not encode parcel geometry,
 # routing topology, or approve arbitrary scientific formulations.
+# A distinct protocol version covers project-specific coupling lifecycle
+# extensions; it is independent of the numeric exchange schema version.
+LIFECYCLE_OUTPUT_VARIABLES = (
+    ExchangeVariable("coupling__lifecycle_schema_version", "1", "int64", rank=0,
+                     description="Version of the public live-coupling extension protocol"),
+)
+
 DOMAIN_INDEX_VARIABLES = (
     ExchangeVariable("coupling__exchange_schema_version", "1", "int64", rank=0),
     ExchangeVariable("coupling__index_manifest_utf8", "1", "uint8",
@@ -144,7 +151,7 @@ DOMAIN_INPUT_VARIABLES = tuple(
     for v in DOMAIN_OUTPUT_VARIABLES
 )
 
-MODEL_VARIABLES = DOMAIN_INDEX_VARIABLES + DOMAIN_OUTPUT_VARIABLES + (
+MODEL_VARIABLES = DOMAIN_INDEX_VARIABLES + LIFECYCLE_OUTPUT_VARIABLES + DOMAIN_OUTPUT_VARIABLES + (
     ExchangeVariable("coupling__model_rng_state_utf8", "1", "uint8",
                      description="Logical RNG state after watershed-model draws"),
     ExchangeVariable("coupling__generator_rng_state_utf8", "1", "uint8",
@@ -180,7 +187,9 @@ DRIVER_VARIABLES = DOMAIN_INDEX_VARIABLES + (
                      description="Row-major (pollutant,outlet) last scenario signed delivered change"),
 )
 
-LIVE_GENERATOR_VARIABLES = DOMAIN_INDEX_VARIABLES + DOMAIN_INPUT_VARIABLES + PLACEMENT_OUTPUT_VARIABLES + (
+LIVE_GENERATOR_VARIABLES = DOMAIN_INDEX_VARIABLES + LIFECYCLE_OUTPUT_VARIABLES + DOMAIN_INPUT_VARIABLES + PLACEMENT_OUTPUT_VARIABLES + (
+    ExchangeVariable("scenario__replay_utf8", "1", "uint8",
+                     description="Explicitly exported completed scenario JSON; empty until export_replay()"),
     ExchangeVariable("coupling__generator_rng_state_utf8", "1", "uint8",
                      description="Logical RNG state after generator draws"),
     ExchangeVariable("coupling__model_rng_state_utf8", "1", "uint8",
