@@ -1,7 +1,8 @@
 """Opt-in selection of native/external annual BMI backends and executions.
 
 Version 1 retains a single model-neutral scenario. Version 2 adds explicit
-serial ensemble execution through a fresh component pair per scenario.
+serial ensemble execution; version 3 adds checkpointed/resumable execution
+with optional process-level parallelism.
 The historical Monte Carlo CLI and Parquet outputs remain unchanged; no
 third-party results are presented as scientifically equivalent to PLET/RUSLE.
 """
@@ -22,7 +23,7 @@ from src.interfaces.backend_capabilities import (
 from src.interfaces.bmi import ExternalWatershedModelBmi, LiveScenarioGeneratorBmi
 from src.interfaces.component_bootstrap import ComponentStartup
 
-SELECTION_SCHEMA_VERSION = 2
+SELECTION_SCHEMA_VERSION = 3
 _SELECTION_FIELDS = frozenset({
     "schema_version", "backend", "component_manifest", "external_factory",
     "backend_options", "required_features", "ensemble",
@@ -34,10 +35,19 @@ class EnsemblePlan:
     """Opt-in deterministic ensemble using the startup seed as a root seed."""
 
     n_scenarios: int
+    n_jobs: int = 1
+    checkpoint_dir: Path | None = None
+    resume: bool = False
 
     def __post_init__(self) -> None:
         if type(self.n_scenarios) is not int or self.n_scenarios < 1:
             raise ValueError("Ensemble n_scenarios must be a positive integer")
+        if type(self.n_jobs) is not int or not 1 <= self.n_jobs <= 64:
+            raise ValueError("Ensemble n_jobs must be an integer in [1, 64]")
+        if type(self.resume) is not bool:
+            raise ValueError("Ensemble resume must be a boolean")
+        if self.resume and self.checkpoint_dir is None:
+            raise ValueError("Ensemble resume requires checkpoint_dir")
 
 
 @dataclass(frozen=True)
@@ -63,16 +73,32 @@ class BackendSelection:
         if not isinstance(data, dict):
             raise ValueError("Backend selection must be an object with known fields only")
         version = data.get("schema_version")
-        if type(version) is not int or version not in (1, SELECTION_SCHEMA_VERSION):
+        if type(version) is not int or version not in (1, 2, SELECTION_SCHEMA_VERSION):
             raise ValueError("Unsupported backend selection schema version")
-        allowed_fields = _SELECTION_FIELDS if version == 2 else _SELECTION_FIELDS - {"ensemble"}
+        allowed_fields = _SELECTION_FIELDS if version >= 2 else _SELECTION_FIELDS - {"ensemble"}
         if set(data) - allowed_fields:
             raise ValueError("Backend selection must be an object with known fields only")
-        if version == 2:
+        if version in (2, 3):
             ensemble_data = data.get("ensemble")
-            if not isinstance(ensemble_data, dict) or set(ensemble_data) != {"n_scenarios"}:
-                raise ValueError("Version 2 requires ensemble with only n_scenarios")
-            ensemble = EnsemblePlan(ensemble_data["n_scenarios"])
+            if version == 2:
+                if not isinstance(ensemble_data, dict) or set(ensemble_data) != {"n_scenarios"}:
+                    raise ValueError("Version 2 requires ensemble with only n_scenarios")
+                ensemble = EnsemblePlan(ensemble_data["n_scenarios"])
+            else:
+                allowed = {"n_scenarios", "n_jobs", "checkpoint_dir", "resume"}
+                if (not isinstance(ensemble_data, dict) or
+                        set(ensemble_data) - allowed or
+                        not {"n_scenarios", "checkpoint_dir"} <= set(ensemble_data)):
+                    raise ValueError("Version 3 ensemble requires n_scenarios and checkpoint_dir with known fields only")
+                directory = ensemble_data["checkpoint_dir"]
+                if not isinstance(directory, str) or not directory.strip():
+                    raise ValueError("Ensemble checkpoint_dir must be a nonempty path")
+                ensemble = EnsemblePlan(
+                    ensemble_data["n_scenarios"],
+                    n_jobs=ensemble_data.get("n_jobs", 1),
+                    checkpoint_dir=(path.parent / directory).resolve(),
+                    resume=ensemble_data.get("resume", False),
+                )
         else:
             ensemble = None
         backend = data.get("backend")

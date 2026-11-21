@@ -1,4 +1,4 @@
-"""Deterministic, serial ensembles for selected annual BMI backends.
+"""Deterministic ensembles for selected annual BMI backends.
 
 The driver operates exclusively on per-realization Phase 11 JSON records. A
 fresh independently initialized generator/model pair is constructed for each
@@ -58,7 +58,8 @@ def _summary_stats(data: np.ndarray) -> dict[str, Any]:
 
 
 def summarize_ensemble(records: Sequence[Mapping[str, Any]], *,
-                       backend: str, base_seed: int, first_scenario_id: int) -> dict[str, Any]:
+                       backend: str, base_seed: int, first_scenario_id: int,
+                       include_scenarios: bool = True) -> dict[str, Any]:
     """Validate index identity and compute signed, model-neutral summaries.
 
     Flattened arrays retain Phase 11 row-major order. Statistics are across
@@ -127,7 +128,7 @@ def summarize_ensemble(records: Sequence[Mapping[str, Any]], *,
             "outlet_removed_mass_kg": outlet_rows[-1].tolist(),
         })
 
-    return {
+    summary = {
         "result_schema_version": ENSEMBLE_RESULT_SCHEMA_VERSION,
         "run_type": "ensemble",
         "backend": backend,
@@ -153,8 +154,10 @@ def summarize_ensemble(records: Sequence[Mapping[str, Any]], *,
             },
         },
         "scenario_summaries": rows,
-        "scenarios": list(records),
     }
+    if include_scenarios:
+        summary["scenarios"] = list(records)
+    return summary
 
 
 def run_backend_ensemble(selection, result_file: str | Path) -> Path:
@@ -168,7 +171,10 @@ def run_backend_ensemble(selection, result_file: str | Path) -> Path:
     from src.driver.backend_selection import run_selected_scenario, write_selected_result
 
     if selection.ensemble is None:
-        raise ValueError("Ensemble runner requires a version 2 selection")
+        raise ValueError("Ensemble runner requires an ensemble selection")
+    if selection.ensemble.checkpoint_dir is not None:
+        from src.driver.ensemble_checkpoints import run_checkpointed_ensemble
+        return run_checkpointed_ensemble(selection, result_file)
     root = ComponentStartup.read(selection.component_manifest)
     if root.replay_file is not None:
         raise ValueError("Ensemble startup cannot set replay_file")

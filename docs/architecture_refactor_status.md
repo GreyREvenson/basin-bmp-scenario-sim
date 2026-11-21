@@ -417,3 +417,17 @@ cross-scenario statistics, per-scenario BMI load/outlet summaries and complete
 replayable scenario definitions. The native Monte Carlo CLI and science are
 unchanged. The Phase 12 path is deliberately serial and in-memory; it does not
 replicate the native Parquet outputs or certify external model science.
+
+---
+
+## Phase 13: parallel and resumable model-neutral ensembles
+
+See [phase13_parallel_resumable_bmi_ensembles.md](phase13_parallel_resumable_bmi_ensembles.md).
+Selected-backend schema version 3 adds bounded spawn-based process parallelism,
+atomic per-realization JSON checkpoints, strict restart validation, exclusive
+checkpoint-directory ownership and a disk-streamed final Phase 12 JSON
+result. The Phase 12 seed schedule and result/replay schema are preserved;
+existing schemas 1–2 and the native scientific CLI are unchanged. Numeric
+statistics still require cross-scenario arrays in memory, while full BMP
+histories are not accumulated in RAM. User-controlled external data files and
+plugin versions must remain unchanged across resume attempts.
