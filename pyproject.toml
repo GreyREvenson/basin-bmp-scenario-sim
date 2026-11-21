@@ -43,7 +43,7 @@ python_files = ["test_*.py"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src", "src.*"]
+include = ["src", "src.*", "reference_backend", "reference_backend.*"]
 
 [tool.setuptools.package-data]
 src = ["data/afo/manure_excretion_reference.csv"]

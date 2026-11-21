@@ -41,3 +41,14 @@ architecturally mature. A practical completion milestone is independently
 initializing, running and validating a genuinely separate watershed backend
 through the versioned public contracts, with rigorous compatibility tests and
 no dependence on internal PLET Python objects.
+
+## Phase 19 — Independent public-interface acceptance demonstration
+
+An importable file-configured linear annual backend now runs through external
+backend selection, serial ensembles and checkpoint/restart without importing
+native scientific or driver internals. A public-method BMI acceptance command
+probes variable/grid metadata and two fresh deterministic coupled runs. This
+satisfies a **demonstration of the public coupling surface**, not the pending
+acceptance criterion of a scientifically meaningful, genuinely external
+watershed model or formal third-party BMI conformance. See
+`docs/phase19_public_backend_interoperability.md`.
