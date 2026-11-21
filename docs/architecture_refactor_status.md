@@ -401,3 +401,19 @@ BMI coupler and writes model-neutral scenario JSON. The original Monte Carlo
 YAML CLI, native Parquet outputs, scientific methods, and RNG/replay logic are
 unchanged. This phase supports **single selected scenarios**, not yet full
 external-model ensemble scheduling or automatically compatible science.
+
+
+---
+
+## Phase 12: deterministic model-neutral stochastic ensembles
+
+See [phase12_model_neutral_ensembles.md](phase12_model_neutral_ensembles.md).
+Backend-selection schema version 2 adds an explicit serial ensemble size
+while schema version 1 preserves the Phase 11 single-scenario behavior.
+Each realization owns a fresh BMI generator/model pair and deterministic
+worker seed; all existing capability, index, physical-domain and RNG handoffs
+remain intact. A self-contained result-schema-v2 JSON stores standardized
+cross-scenario statistics, per-scenario BMI load/outlet summaries and complete
+replayable scenario definitions. The native Monte Carlo CLI and science are
+unchanged. The Phase 12 path is deliberately serial and in-memory; it does not
+replicate the native Parquet outputs or certify external model science.

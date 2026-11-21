@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("config", nargs="?", help="Path to the YAML configuration file (native mode)")
     parser.add_argument(
         "--backend-selection", type=Path,
-        help="Opt-in Phase 11 JSON selection for one native or external annual BMI scenario",
+        help="Opt-in Phase 11/12 JSON selection for a single or ensemble annual BMI backend",
     )
     parser.add_argument(
         "--coupled-result", type=Path,

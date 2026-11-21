@@ -1,9 +1,9 @@
-"""Opt-in selection and execution of native or external annual BMI models.
+"""Opt-in selection of native/external annual BMI backends and executions.
 
-The project's historical Monte Carlo CLI continues to use its native model
-and Parquet outputs. This module supplies a separate model-neutral execution
-path, with explicitly trusted external Python factories. It does not silently
-re-label third-party outputs as calibrated PLET/RUSLE results.
+Version 1 retains a single model-neutral scenario. Version 2 adds explicit
+serial ensemble execution through a fresh component pair per scenario.
+The historical Monte Carlo CLI and Parquet outputs remain unchanged; no
+third-party results are presented as scientifically equivalent to PLET/RUSLE.
 """
 from __future__ import annotations
 
@@ -22,22 +22,34 @@ from src.interfaces.backend_capabilities import (
 from src.interfaces.bmi import ExternalWatershedModelBmi, LiveScenarioGeneratorBmi
 from src.interfaces.component_bootstrap import ComponentStartup
 
-SELECTION_SCHEMA_VERSION = 1
+SELECTION_SCHEMA_VERSION = 2
 _SELECTION_FIELDS = frozenset({
     "schema_version", "backend", "component_manifest", "external_factory",
-    "backend_options", "required_features",
+    "backend_options", "required_features", "ensemble",
 })
 
 
 @dataclass(frozen=True)
+class EnsemblePlan:
+    """Opt-in deterministic ensemble using the startup seed as a root seed."""
+
+    n_scenarios: int
+
+    def __post_init__(self) -> None:
+        if type(self.n_scenarios) is not int or self.n_scenarios < 1:
+            raise ValueError("Ensemble n_scenarios must be a positive integer")
+
+
+@dataclass(frozen=True)
 class BackendSelection:
-    """Versioned, file-resolved backend selection for a *single* scenario."""
+    """Versioned, file-resolved backend selection (single or ensemble)."""
 
     backend: str
     component_manifest: Path
     external_factory: str | None = None
     backend_options: Mapping[str, Any] | None = None
     required_features: frozenset[str] = frozenset()
+    ensemble: EnsemblePlan | None = None
 
     @classmethod
     def read(cls, filename: str | Path) -> "BackendSelection":
@@ -48,10 +60,21 @@ class BackendSelection:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError("Invalid backend selection JSON") from exc
-        if not isinstance(data, dict) or (set(data) - _SELECTION_FIELDS):
+        if not isinstance(data, dict):
             raise ValueError("Backend selection must be an object with known fields only")
-        if type(data.get("schema_version")) is not int or data["schema_version"] != SELECTION_SCHEMA_VERSION:
+        version = data.get("schema_version")
+        if type(version) is not int or version not in (1, SELECTION_SCHEMA_VERSION):
             raise ValueError("Unsupported backend selection schema version")
+        allowed_fields = _SELECTION_FIELDS if version == 2 else _SELECTION_FIELDS - {"ensemble"}
+        if set(data) - allowed_fields:
+            raise ValueError("Backend selection must be an object with known fields only")
+        if version == 2:
+            ensemble_data = data.get("ensemble")
+            if not isinstance(ensemble_data, dict) or set(ensemble_data) != {"n_scenarios"}:
+                raise ValueError("Version 2 requires ensemble with only n_scenarios")
+            ensemble = EnsemblePlan(ensemble_data["n_scenarios"])
+        else:
+            ensemble = None
         backend = data.get("backend")
         if backend not in ("native", "external"):
             raise ValueError("Backend selection requires 'native' or 'external'")
@@ -60,7 +83,7 @@ class BackendSelection:
             raise ValueError("Backend selection requires component_manifest path")
         component_manifest = (path.parent / manifest).resolve(strict=True)
         # Validate identity/seed/replay paths now; not after partial simulation.
-        ComponentStartup.read(component_manifest)
+        startup = ComponentStartup.read(component_manifest)
         factory = data.get("external_factory")
         options = data.get("backend_options", {})
         features = data.get("required_features", [])
@@ -77,7 +100,9 @@ class BackendSelection:
               len(factory.split(":")) != 2 or
               not all(part and part.isidentifier() for part in factory.replace(".", ":").split(":"))):
             raise ValueError("External backend requires a module.path:factory function")
-        return cls(backend, component_manifest, factory, options, frozenset(features))
+        if ensemble is not None and startup.replay_file is not None:
+            raise ValueError("Ensemble startup cannot set replay_file; use saved per-scenario replays")
+        return cls(backend, component_manifest, factory, options, frozenset(features), ensemble)
 
 
 def _load_external_factory(qualified: str):
@@ -117,13 +142,12 @@ def build_selected_coupler(selection: BackendSelection) -> AnnualBmiScenarioCoup
     )
 
 
-def run_backend_selection(selection_file: str | Path, result_file: str | Path) -> Path:
-    """Run one selected BMI realization and atomically save model-neutral JSON.
+def run_selected_scenario(selection: BackendSelection) -> dict[str, Any]:
+    """Execute one independently initialized realization; return its JSON record.
 
-    This intentionally does *not* write the native PLET/AFO Parquet tables or
-    claim that third-party BMP records have the native output schema.
+    A scenario owns a new coupler, model and generator. No scientific state is
+    retained across calls; this also supports deterministic ensemble execution.
     """
-    selection = BackendSelection.read(selection_file)
     coupler = build_selected_coupler(selection)
     initialized = False
     try:
@@ -156,16 +180,30 @@ def run_backend_selection(selection_file: str | Path, result_file: str | Path) -
             "bmp_responses": responses,
             "replay_scenario": coupler.completed_scenario().to_dict(),
         }
-        dest = Path(result_file).expanduser().resolve()
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        temp = dest.with_name(dest.name + ".tmp")
-        try:
-            temp.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-            temp.replace(dest)
-        finally:
-            if temp.exists():
-                temp.unlink()
-        return dest
+        return result
     finally:
         if initialized:
             coupler.finalize()
+
+
+def write_selected_result(result_file: str | Path, result: Mapping[str, Any]) -> Path:
+    """Write one complete result, never a partially completed ensemble."""
+    dest = Path(result_file).expanduser().resolve()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    temp = dest.with_name(dest.name + ".tmp")
+    try:
+        temp.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+        temp.replace(dest)
+    finally:
+        if temp.exists():
+            temp.unlink()
+    return dest
+
+
+def run_backend_selection(selection_file: str | Path, result_file: str | Path) -> Path:
+    """Execute the selected single realization (v1) or ensemble (v2)."""
+    selection = BackendSelection.read(selection_file)
+    if selection.ensemble is not None:
+        from src.driver.ensemble_runner import run_backend_ensemble
+        return run_backend_ensemble(selection, result_file)
+    return write_selected_result(result_file, run_selected_scenario(selection))
