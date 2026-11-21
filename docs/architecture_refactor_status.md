@@ -461,3 +461,18 @@ Scientific comparability must be explicitly asserted to enable strategy-mean
 Pareto frontiers; mixed backend types and mismatched full domain manifests
 cannot be ranked. The native and model-neutral scientific execution paths,
 RNG, replay, checkpoints, output schemas and calculations are unchanged.
+
+### Phase 17 — trace-aligned exploratory input sensitivity
+
+Added optional `src/driver/input_sensitivity.py` to analyze explicitly logged,
+scenario-aligned feature draws against signed annual outlet mass removals,
+target-attainment indicators, and implementation costs. It publishes
+reproducible tie-aware Spearman correlations, aligned-row bootstrap percentile
+intervals, predictor collinearity diagnostics, source SHA-256 hashes, and an
+optional descriptive SVG. It refuses to reconstruct unlogged inputs, refuses
+corrupted identities/outputs, and does not label observational correlations
+as causal contributions or variance-based sensitivity indices. See
+`docs/phase17_input_sensitivity.md`. This phase is additive post-processing;
+no scientific calculation, random-draw sequence, BMI contract, CLI or
+existing result format is modified. Formal variance attribution will require
+controlled input-draw experiment designs in a later phase.
