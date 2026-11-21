@@ -16,6 +16,7 @@ import numpy as np
 
 from src.driver.backend_selection import BackendSelection, build_selected_coupler
 from src.driver.bmi_coupling import get_bmi_value, validate_annual_model_bmi
+from src.interfaces.bmi.public_contract import verify_component, verify_public_contract
 
 
 def probe_component(component) -> dict[str, Any]:
@@ -69,6 +70,9 @@ def _run_probe(selection: BackendSelection) -> dict[str, Any]:
     try:
         coupler.initialize()
         initialized = True
+        verify_public_contract()
+        verify_component(coupler.generator, "live_generator")
+        verify_component(coupler.model, "annual_model")
         generator = probe_component(coupler.generator)
         model = probe_component(coupler.model)
         validate_annual_model_bmi(coupler.model)

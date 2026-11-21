@@ -82,7 +82,7 @@ def test_external_resume_only_restarts_missing_scenario_and_keeps_output_atomic(
         run_backend_selection(v3, output)
     assert output.read_bytes() == b"old verified output"
     assert [c[0] for c in calls] == [1, 2]
-    assert [p.name for p in (tmp_path / "checkpoints").glob("realization_*.json")] == [
+    assert sorted(p.name for p in (tmp_path / "checkpoints").glob("realization_*.json")) == [
         "realization_00000000.json", "realization_00000001.json"]
     calls = _plugin(monkeypatch, shared, cfg, seed)
     _v3(tmp_path, manifest, backend="external", n=3, resume=True)

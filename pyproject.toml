@@ -46,4 +46,4 @@ where = ["."]
 include = ["src", "src.*", "reference_backend", "reference_backend.*"]
 
 [tool.setuptools.package-data]
-src = ["data/afo/manure_excretion_reference.csv"]
+src = ["data/afo/manure_excretion_reference.csv", "interfaces/bmi/public_contract_v1.json"]

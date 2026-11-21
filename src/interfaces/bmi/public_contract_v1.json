@@ -1,0 +1,779 @@
+{
+  "bmi_methods": [
+    "initialize",
+    "update",
+    "update_until",
+    "finalize",
+    "get_component_name",
+    "get_input_item_count",
+    "get_output_item_count",
+    "get_input_var_names",
+    "get_output_var_names",
+    "get_var_grid",
+    "get_var_type",
+    "get_var_units",
+    "get_var_itemsize",
+    "get_var_nbytes",
+    "get_var_location",
+    "get_current_time",
+    "get_start_time",
+    "get_end_time",
+    "get_time_units",
+    "get_time_step",
+    "get_value",
+    "get_value_ptr",
+    "get_value_at_indices",
+    "set_value",
+    "set_value_at_indices",
+    "get_grid_rank",
+    "get_grid_size",
+    "get_grid_type",
+    "get_grid_shape",
+    "get_grid_spacing",
+    "get_grid_origin",
+    "get_grid_x",
+    "get_grid_y",
+    "get_grid_z",
+    "get_grid_node_count",
+    "get_grid_edge_count",
+    "get_grid_face_count",
+    "get_grid_edge_nodes",
+    "get_grid_face_edges",
+    "get_grid_face_nodes",
+    "get_grid_nodes_per_face"
+  ],
+  "bmi_version": "2.0",
+  "components": {
+    "annual_model": {
+      "project_extensions": [
+        "complete_pending"
+      ],
+      "variables": [
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "coupling__exchange_schema_version",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "output",
+          "name": "coupling__index_manifest_utf8",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "output",
+          "name": "coupling__index_fingerprint",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "coupling__lifecycle_schema_version",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "domain__schema_version",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "domain__parcel_area_ha",
+          "rank": 1,
+          "resizable": false,
+          "units": "ha"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "domain__parcel_perimeter_m",
+          "rank": 1,
+          "resizable": false,
+          "units": "m"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "domain__upstream_offset",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "domain__upstream_index",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "domain__selection_source_index",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "domain__selection_probability",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "output",
+          "name": "coupling__model_rng_state_utf8",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "input",
+          "name": "coupling__generator_rng_state_utf8",
+          "rank": 1,
+          "resizable": true,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "model__parcel_count",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "model__pollutant_count",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "model__parcel_baseline_load_rate",
+          "rank": 1,
+          "resizable": false,
+          "units": "kg ha-1 yr-1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "model__parcel_current_load_rate",
+          "rank": 1,
+          "resizable": false,
+          "units": "kg ha-1 yr-1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "model__outlet_count",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "model__outlet_removed_mass",
+          "rank": 1,
+          "resizable": false,
+          "units": "kg"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__recovery_gains",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "output",
+          "name": "model__last_bmp_record_utf8",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "input",
+          "name": "placement__cps_code",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "input",
+          "name": "placement__host_parcel_index",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "input",
+          "name": "placement__affected_parcel_index",
+          "rank": 1,
+          "resizable": true,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__affected_parcel_fraction",
+          "rank": 1,
+          "resizable": true,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__efficiency",
+          "rank": 1,
+          "resizable": true,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "input",
+          "name": "placement__failed",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__recovery_effect_scale",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__cost_quantity_ha",
+          "rank": 0,
+          "resizable": false,
+          "units": "ha"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__wetland_area_ha",
+          "rank": 0,
+          "resizable": false,
+          "units": "ha"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__catchment_area_ratio",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__buffer_length_m",
+          "rank": 0,
+          "resizable": false,
+          "units": "m"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__buffer_area_ha",
+          "rank": 0,
+          "resizable": false,
+          "units": "ha"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__portion_treated",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__recorded_recovery_gains",
+          "rank": 1,
+          "resizable": true,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__cost",
+          "rank": 0,
+          "resizable": false,
+          "units": "USD"
+        },
+        {
+          "dtype": "int64",
+          "intent": "input",
+          "name": "scenario__identifier",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        }
+      ]
+    },
+    "live_generator": {
+      "project_extensions": [
+        "accept_domain",
+        "complete_pending",
+        "export_replay"
+      ],
+      "variables": [
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "coupling__exchange_schema_version",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "output",
+          "name": "coupling__index_manifest_utf8",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "output",
+          "name": "coupling__index_fingerprint",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "coupling__lifecycle_schema_version",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "input",
+          "name": "domain__schema_version",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "domain__parcel_area_ha",
+          "rank": 1,
+          "resizable": true,
+          "units": "ha"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "domain__parcel_perimeter_m",
+          "rank": 1,
+          "resizable": true,
+          "units": "m"
+        },
+        {
+          "dtype": "int64",
+          "intent": "input",
+          "name": "domain__upstream_offset",
+          "rank": 1,
+          "resizable": true,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "input",
+          "name": "domain__upstream_index",
+          "rank": 1,
+          "resizable": true,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "input",
+          "name": "domain__selection_source_index",
+          "rank": 1,
+          "resizable": true,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "domain__selection_probability",
+          "rank": 1,
+          "resizable": true,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "placement__cps_code",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "placement__host_parcel_index",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "placement__affected_parcel_index",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__affected_parcel_fraction",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__efficiency",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "placement__failed",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__recovery_effect_scale",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__cost_quantity_ha",
+          "rank": 0,
+          "resizable": false,
+          "units": "ha"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__wetland_area_ha",
+          "rank": 0,
+          "resizable": false,
+          "units": "ha"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__catchment_area_ratio",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__buffer_length_m",
+          "rank": 0,
+          "resizable": false,
+          "units": "m"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__buffer_area_ha",
+          "rank": 0,
+          "resizable": false,
+          "units": "ha"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__portion_treated",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__recorded_recovery_gains",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "output",
+          "name": "scenario__replay_utf8",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "output",
+          "name": "coupling__generator_rng_state_utf8",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "input",
+          "name": "coupling__model_rng_state_utf8",
+          "rank": 1,
+          "resizable": true,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "placement__completed",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "placement__cost",
+          "rank": 0,
+          "resizable": false,
+          "units": "USD"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "scenario__bmp_count",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "scenario__cumulative_cost",
+          "rank": 0,
+          "resizable": false,
+          "units": "USD"
+        },
+        {
+          "dtype": "float64",
+          "intent": "input",
+          "name": "placement__recovery_gains",
+          "rank": 1,
+          "resizable": true,
+          "units": "1"
+        }
+      ]
+    },
+    "monte_carlo_driver": {
+      "project_extensions": [],
+      "variables": [
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "coupling__exchange_schema_version",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "output",
+          "name": "coupling__index_manifest_utf8",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "uint8",
+          "intent": "output",
+          "name": "coupling__index_fingerprint",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "ensemble__completed_scenario_count",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "ensemble__requested_scenario_count",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "scenario__bmp_count",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "scenario__total_cost",
+          "rank": 0,
+          "resizable": false,
+          "units": "USD"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "scenario__outlet_removed_mass",
+          "rank": 1,
+          "resizable": false,
+          "units": "kg"
+        }
+      ]
+    },
+    "recorded_scenario": {
+      "project_extensions": [],
+      "variables": [
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "scenario__identifier",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "scenario__random_seed",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "scenario__bmp_count",
+          "rank": 0,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "bmp__cps_code",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "bmp__host_parcel_index",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "bmp__implementation_cost",
+          "rank": 1,
+          "resizable": false,
+          "units": "USD"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "bmp__affected_parcel_offset",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "int64",
+          "intent": "output",
+          "name": "bmp__affected_parcel_index",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        },
+        {
+          "dtype": "float64",
+          "intent": "output",
+          "name": "bmp__affected_parcel_fraction",
+          "rank": 1,
+          "resizable": false,
+          "units": "1"
+        }
+      ]
+    }
+  },
+  "exchange_schema_version": 2,
+  "index_manifest_schema_version": 1,
+  "lifecycle_schema_version": 1,
+  "project_convenience_methods": [
+    "get_bmi_version"
+  ],
+  "schema_version": 1,
+  "spatial_interpretation": "one_dimensional_index_space_not_geospatial_grid",
+  "time_interpretation": "logical_step_not_physical_year"
+}

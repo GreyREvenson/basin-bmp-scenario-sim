@@ -476,3 +476,12 @@ as causal contributions or variance-based sensitivity indices. See
 no scientific calculation, random-draw sequence, BMI contract, CLI or
 existing result format is modified. Formal variance attribution will require
 controlled input-draw experiment designs in a later phase.
+
+
+## Phase 21 — Public BMI compatibility gate
+
+See [Phase 21 public contract and audit](phase21_public_bmi_contract_and_audit.md).
+The component interfaces are now frozen in a packaged versioned snapshot;
+black-box acceptance validates runtime BMI metadata and values without
+opening a component's private scientific context. This is a compatibility
+gate, not official BMI certification or a scientific-model change.
