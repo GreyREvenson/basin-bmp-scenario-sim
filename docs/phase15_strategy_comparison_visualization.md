@@ -180,3 +180,10 @@ cost-vs-benefit tradeoffs, mixed backends, mismatched manifests, corrupt
 sources, XML escaping, repeatability, CLI execution, source immutability, and
 report preservation on validation failure. The original numerical golden and
 Phase 2–14 regression tests remain authoritative for the scientific engine.
+
+## Follow-on analysis
+
+Phase 16 adds optional uncertainty-aware *pairwise* comparisons using
+independent or explicitly confirmed paired bootstrap designs. The Phase 15
+report and SVGs remain unchanged. See
+[Phase 16 — strategy uncertainty](phase16_strategy_uncertainty.md).

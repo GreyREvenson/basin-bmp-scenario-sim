@@ -121,6 +121,7 @@ See the docs below for complete examples and mode-specific requirements.
 - [BMP simulation](docs/bmp_simulation.md) — BMP selection, efficiencies, treatment fractions, failure, signed effects, and serial stacking
 - [Input and output reference](docs/input_output_reference.md) — input file roles, output files, and interpretation
 - [Reproducibility, testing, and limitations](docs/reproducibility_validation.md) — seeds, parallel execution, validation expectations, assumptions, and appropriate interpretation
+- [Uncertainty-aware BMP strategy comparison (Phase 16)](docs/phase16_strategy_uncertainty.md) — independent/paired bootstrap intervals for model-neutral ensemble comparisons
 
 ## Required inputs at a glance
 

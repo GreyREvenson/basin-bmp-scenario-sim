@@ -124,7 +124,11 @@ def _load_and_compare(config: StrategyComparisonConfig,
                    + manifest["outlet_oids"].index(target.outlet_oid))
             target_values[target.name] = removals[:, col].copy()
         records.append({"spec": spec, "manifest": manifest, "backend": ensemble["backend"],
-                        "analysis": analysis, "costs": costs, "target_values": target_values})
+                        "analysis": analysis, "costs": costs, "target_values": target_values,
+                        # Phase 16 uses these validated identities to distinguish
+                        # independently seeded runs from explicitly paired designs.
+                        "scenario_ids": tuple(r["scenario_id"] for r in ensemble["scenario_summaries"]),
+                        "worker_seeds": tuple(r["worker_seed"] for r in ensemble["scenario_summaries"])})
 
     base = records[0]
     pollutant_outlets = (base["manifest"]["pollutants"], base["manifest"]["outlet_oids"])
