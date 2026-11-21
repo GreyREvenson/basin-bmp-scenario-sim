@@ -53,6 +53,18 @@ def parse_args() -> argparse.Namespace:
         "--analysis-result", type=Path,
         help="Destination decision-support JSON; requires --analysis-config",
     )
+    parser.add_argument(
+        "--input-trace-result", type=Path,
+        help="Optional Phase 18 recorded BMP realization diagnostics; requires BMI ensemble",
+    )
+    parser.add_argument(
+        "--input-ledger-result", type=Path,
+        help="Optional detailed realized BMP values; requires --input-trace-result",
+    )
+    parser.add_argument(
+        "--confirm-external-independent-draws", action="store_true",
+        help="Affirm external BMI backend's independently sampled ensemble design for Phase 17",
+    )
     parser.add_argument("--outputs", help="Override the outputs directory from config")
     parser.add_argument("--seed", type=int, help="Override random seed from config")
     parser.add_argument("--quiet", action="store_true", help="Disable console logging")
@@ -150,14 +162,36 @@ def main() -> None:
                 raise ValueError("--backend-selection requires --coupled-result")
             if (args.analysis_config is None) != (args.analysis_result is None):
                 raise ValueError("--analysis-config and --analysis-result must be supplied together")
-            if args.analysis_config is not None:
+            if args.input_ledger_result is not None and args.input_trace_result is None:
+                raise ValueError("--input-ledger-result requires --input-trace-result")
+            if args.confirm_external_independent_draws and args.input_trace_result is None:
+                raise ValueError("--confirm-external-independent-draws requires --input-trace-result")
+            # Check output collisions before a potentially expensive ensemble
+            # run, rather than discovering one only during post-processing.
+            trace_paths = [p.expanduser().resolve() for p in
+                           (args.input_trace_result, args.input_ledger_result) if p is not None]
+            other_paths = [p.expanduser().resolve() for p in
+                           (args.coupled_result, args.backend_selection,
+                            args.analysis_config, args.analysis_result) if p is not None]
+            if len(set(trace_paths)) != len(trace_paths) or any(p in other_paths for p in trace_paths):
+                raise ValueError("BMI trace outputs must not overwrite any input or other output")
+            if args.analysis_config is not None or args.input_trace_result is not None:
                 from src.driver.backend_selection import BackendSelection
-                from src.driver.ensemble_analysis import DecisionSupportConfig
-                if BackendSelection.read(args.backend_selection).ensemble is None:
-                    raise ValueError("--analysis-config requires a selected BMI ensemble")
-                # Reject malformed target specs before spending time on models.
-                DecisionSupportConfig.read(args.analysis_config)
+                selection = BackendSelection.read(args.backend_selection)
+                if selection.ensemble is None:
+                    raise ValueError("Analysis or input trace requires a selected BMI ensemble")
+                if args.input_trace_result is not None and selection.backend == "external" and not args.confirm_external_independent_draws:
+                    raise ValueError("External traces require --confirm-external-independent-draws")
+                if args.analysis_config is not None:
+                    from src.driver.ensemble_analysis import DecisionSupportConfig
+                    # Reject malformed targets before spending time on models.
+                    DecisionSupportConfig.read(args.analysis_config)
             run_backend_selection(args.backend_selection, args.coupled_result)
+            if args.input_trace_result is not None:
+                from src.driver.realization_trace import write_realization_trace
+                write_realization_trace(args.coupled_result, args.input_trace_result,
+                                        ledger_file=args.input_ledger_result,
+                                        confirm_external_independence=args.confirm_external_independent_draws)
             if args.analysis_config is not None:
                 from src.driver.ensemble_analysis import write_ensemble_analysis
                 write_ensemble_analysis(args.coupled_result, args.analysis_config, args.analysis_result)
@@ -166,6 +200,9 @@ def main() -> None:
                 raise ValueError("--coupled-result requires --backend-selection")
             if args.analysis_config is not None or args.analysis_result is not None:
                 raise ValueError("--analysis-config and --analysis-result require --backend-selection")
+            if (args.input_trace_result is not None or args.input_ledger_result is not None or
+                    args.confirm_external_independent_draws):
+                raise ValueError("Input realization traces require a BMI ensemble backend selection")
             run_from_config(
                 args.config,
                 outputs=args.outputs,
