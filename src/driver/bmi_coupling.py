@@ -125,14 +125,44 @@ class AnnualBmiScenarioCoupler:
         )
         self.model = WatershedModelBmi(ctx, logger)
         self.initialized = False
+        self._startup_manifest = None
+
+    @classmethod
+    def from_manifest(cls, manifest_path):
+        """Build a file-initialized coupler with two independently prepared BMI owners.
+
+        Both adapters read their own validated source inputs during
+        initialize(); no driver Model, Python shared payload or mutable
+        generator/scientific context is handed between them.
+        """
+        from pathlib import Path
+        from src.interfaces.component_bootstrap import ComponentStartup
+        spec = ComponentStartup.read(manifest_path)
+        coupled = cls.__new__(cls)
+        coupled.ctx = None
+        coupled.cfg = None
+        coupled.logger = None
+        coupled.scenario_id = spec.scenario_id
+        coupled.seed = spec.worker_seed
+        coupled.generator_context = None
+        coupled.generator = LiveScenarioGeneratorBmi(require_domain_import=True)
+        coupled.model = WatershedModelBmi()
+        coupled.initialized = False
+        coupled._startup_manifest = str(Path(manifest_path).resolve())
+        return coupled
 
     def initialize(self):
         if self.initialized:
             raise RuntimeError("BMI scenario coupler already initialized")
         # Baseline simulation must use the worker RNG *before* the first
         # placement is sampled; initialize in precisely the original order.
-        self.model.initialize()
-        self.generator.initialize()
+        self.model.initialize(self._startup_manifest or "")
+        self.generator.initialize(self._startup_manifest or "")
+        if self._startup_manifest is not None:
+            self.ctx = self.model._ctx
+            self.cfg = self.ctx.cfg
+            self.logger = self.ctx.logger
+            self.generator_context = self.generator._ctx
         validate_bmi_index_contract(self.generator, self.model)
         # The generator receives its physical parcel geometry, upstream CSR
         # adjacency and selection universe from the model via BMI. This must

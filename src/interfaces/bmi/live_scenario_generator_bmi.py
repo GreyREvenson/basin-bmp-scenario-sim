@@ -28,12 +28,15 @@ class NoEligiblePlacements(RuntimeError):
 class LiveScenarioGeneratorBmi(BmiArrayComponent):
     """Expose sampled BMP placements without pre-generating complete scenarios."""
 
-    def __init__(self, ctx: Any, cfg: dict, *, scenario_id: int = 1,
+    def __init__(self, ctx: Any = None, cfg: dict | None = None, *, scenario_id: int = 1,
                  seed: int | None = None, replay=None, require_domain_import: bool = False):
         super().__init__(LIVE_GENERATOR_VARIABLES,
                          name="Basin BMP live stochastic scenario generator")
+        if (ctx is None) != (cfg is None):
+            raise ValueError("BMI generator context and configuration must be supplied together")
         self._ctx = ctx
         self._cfg = cfg
+        self._owns_context = False
         self._seed = seed
         self._scenario_id = int(scenario_id)
         self._replay = replay
@@ -46,10 +49,23 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         self._domain_ready = not self._require_domain_import
 
     def initialize(self, config_file: str = "") -> None:
-        if config_file:
-            raise ValueError("Live generator requires a prepared context, not a config file")
         if self._initialized:
             raise RuntimeError("BMI live generator is already initialized")
+        if self._ctx is None:
+            if not config_file:
+                raise ValueError("BMI generator requires a startup manifest path")
+            from src.interfaces.component_bootstrap import ComponentStartup, build_generator_context
+            from src.scenarios.stochastic_scenario_generator import BMPScenario
+            spec = ComponentStartup.read(config_file)
+            self._ctx = build_generator_context(spec)
+            self._cfg = self._ctx.cfg
+            self._scenario_id = spec.scenario_id
+            self._seed = spec.worker_seed
+            self._replay = BMPScenario.load(spec.replay_file) if spec.replay_file else None
+            self._require_domain_import = True
+            self._owns_context = True
+        elif config_file:
+            raise ValueError("A prepared-context BMI generator cannot accept a startup manifest")
         self._generator = StochasticScenarioGenerator(self._ctx, self._cfg,
                                                        replay=self._replay)
         # The generator's worker seed is controlled by its prepared context.
@@ -190,3 +206,7 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         self._generator = None
         self._domain_received.clear()
         self._domain_ready = not self._require_domain_import
+        if self._owns_context:
+            self._ctx = None
+            self._cfg = None
+            self._owns_context = False

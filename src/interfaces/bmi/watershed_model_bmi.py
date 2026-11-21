@@ -25,10 +25,11 @@ from src.models.assemblies.annual_model_realization import AnnualModelRealizatio
 class WatershedModelBmi(BmiArrayComponent):
     """Expose scientific baseline, treated loads, and delivered mass changes."""
 
-    def __init__(self, ctx: Any, logger: Any):
+    def __init__(self, ctx: Any = None, logger: Any = None):
         super().__init__(MODEL_VARIABLES, name="Basin BMP annual watershed model")
         self._ctx = ctx
         self._logger = logger
+        self._owns_context = False
         self._scientific: AnnualModelRealization | None = None
         self._queued = None
         self._pending = None
@@ -43,10 +44,18 @@ class WatershedModelBmi(BmiArrayComponent):
         return self._scientific
 
     def initialize(self, config_file: str = "") -> None:
-        if config_file:
-            raise ValueError("This prepared-context adapter takes no external config file")
         if self._initialized:
             raise RuntimeError("BMI watershed model is already initialized")
+        if self._ctx is None:
+            if not config_file:
+                raise ValueError("BMI watershed model requires a startup manifest path")
+            from src.interfaces.component_bootstrap import ComponentStartup, build_scientific_context
+            spec = ComponentStartup.read(config_file)
+            self._ctx = build_scientific_context(spec, logger=self._logger)
+            self._logger = self._ctx.logger
+            self._owns_context = True
+        elif config_file:
+            raise ValueError("A prepared-context BMI watershed model cannot accept a startup manifest")
         self._scientific = AnnualModelRealization.initialize(self._ctx, self._logger)
         self._initialized = True
         self._time = 0.0
@@ -182,3 +191,6 @@ class WatershedModelBmi(BmiArrayComponent):
         self._pending = None
         self._received_placement_fields.clear()
         self._cost_received = False
+        if self._owns_context:
+            self._ctx = None
+            self._owns_context = False

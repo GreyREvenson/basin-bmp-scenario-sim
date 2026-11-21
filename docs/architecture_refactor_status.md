@@ -349,3 +349,21 @@ This is not yet full independent file-based initialization or external BMI
 interoperability; both instances are still constructed from one driver-
 prepared input payload. The exact Phase 8 before/after seeded result capture
 matches, SHA-256 `1b63916915012a41120cf61a2e33ff76bc4372e5904a8a3d1f5d7a142cb7c208`.
+
+---
+
+## Phase 9: independent source-file BMI initialization
+
+See [phase9_independent_component_initialization.md](phase9_independent_component_initialization.md).
+Model input lookup/preparation and the per-worker payload now live in reusable
+`src/models/prepared_inputs.py` rather than inside the Monte Carlo driver.
+The existing driver inherits that preparation service unchanged. Scientific
+and generator BMI components can each separately load a versioned JSON
+startup manifest and validate/prepare project inputs from the model YAML,
+without receiving a native driver-prepared Python context. A convenience
+`AnnualBmiScenarioCoupler.from_manifest(...)` wires the resulting independently
+initialized adapters through the existing Phase 8 BMI index, domain, RNG,
+placement and cost protocols. The native driver API and numerical kernels are
+unchanged. Eight seeded before/after outputs compare identically; external
+model-independent source contracts and full third-party BMI interoperability
+remain outside this phase.
