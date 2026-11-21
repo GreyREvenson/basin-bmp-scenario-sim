@@ -7,9 +7,12 @@ received through watershed-model BMI ``set_value``.  Model-derived AFO gains
 then flow back to the generator through the same method pair, *before* the
 original cost RNG draw; realized cost travels back to the model afterward.
 
-Scientific model ownership, the shared read-only prepared domain context, and
-output-record/persistence orchestration are not yet generalized as independent
-CSDMS-executable processes.  No geospatial grid or physical time is invented.
+The watershed model and generator now own distinct contexts. The scientific
+model publishes ordered physical domain arrays, transferred through BMI into
+stochastic generation. Versioned RNG-state handoffs preserve the single legacy
+stream across both contexts. The driver still owns preparation of the shared
+input data, diagnostics and persistence; this is not yet independent process
+initialization or general third-party BMI model interoperability.
 """
 from __future__ import annotations
 
@@ -26,6 +29,8 @@ from src.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
 from src.interfaces.placement_exchange import PLACEMENT_FIELDS
 from src.interfaces.bmi.record_exchange import decode_bmp_record
 from src.interfaces.exchange_variables import EXCHANGE_SCHEMA_VERSION
+from src.interfaces.domain_exchange import DOMAIN_FIELDS
+from src.scenarios.generator_context import GeneratorModelContext
 
 
 def get_bmi_value(component, name: str) -> np.ndarray:
@@ -113,8 +118,10 @@ class AnnualBmiScenarioCoupler:
         self.logger = logger
         self.scenario_id = int(scenario_id)
         self.seed = int(seed)
+        self.generator_context = GeneratorModelContext(ctx, self.seed)
         self.generator = LiveScenarioGeneratorBmi(
-            ctx, cfg, scenario_id=self.scenario_id, seed=self.seed, replay=replay,
+            self.generator_context, cfg, scenario_id=self.scenario_id,
+            seed=self.seed, replay=replay, require_domain_import=True,
         )
         self.model = WatershedModelBmi(ctx, logger)
         self.initialized = False
@@ -127,12 +134,21 @@ class AnnualBmiScenarioCoupler:
         self.model.initialize()
         self.generator.initialize()
         validate_bmi_index_contract(self.generator, self.model)
+        # The generator receives its physical parcel geometry, upstream CSR
+        # adjacency and selection universe from the model via BMI. This must
+        # occur before the first placement/design draw.
+        for name in DOMAIN_FIELDS:
+            transfer_bmi_value(self.model, self.generator, name)
+        self.generator.accept_domain()
         self.model.set_value("scenario__identifier", np.array([self.scenario_id], dtype=np.int64))
         self.initialized = True
 
     def next_bmp(self) -> CompletedBMPResponse | None:
         if not self.initialized:
             raise RuntimeError("Initialize the BMI coupler before execution")
+        # Worker baseline may have consumed stochastic draws. Synchronize
+        # the generator's separate stream before any placement is sampled.
+        transfer_bmi_value(self.model, self.generator, "coupling__model_rng_state_utf8")
         try:
             self.generator.update()
         except NoEligiblePlacements:
@@ -144,13 +160,16 @@ class AnnualBmiScenarioCoupler:
         # catchments, grassed design, effectiveness and replay gains.
         for name in PLACEMENT_FIELDS:
             transfer_bmi_value(self.generator, self.model, name)
+        transfer_bmi_value(self.generator, self.model, "coupling__generator_rng_state_utf8")
         self.model.update()
 
         # Crucial RNG ordering: model AFO recovery -> generator cost draw ->
         # model mass accounting. Both exchanged values use standard BMI.
+        transfer_bmi_value(self.model, self.generator, "coupling__model_rng_state_utf8")
         transfer_bmi_value(self.model, self.generator, "placement__recovery_gains")
         self.generator.complete_pending()
         transfer_bmi_value(self.generator, self.model, "placement__cost")
+        transfer_bmi_value(self.generator, self.model, "coupling__generator_rng_state_utf8")
         self.model.complete_pending()
         bmp_record = decode_bmp_record(get_bmi_value(self.model, "model__last_bmp_record_utf8"))
         return CompletedBMPResponse(

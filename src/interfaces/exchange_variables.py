@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy as np
 
-EXCHANGE_SCHEMA_VERSION = 1
+EXCHANGE_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -126,7 +126,29 @@ DOMAIN_INDEX_VARIABLES = (
                      description="SHA-256 digest of the versioned index manifest"),
 )
 
-MODEL_VARIABLES = DOMAIN_INDEX_VARIABLES + (
+# Physical domain is published by the watershed component and installed by
+# the detached generator. CSR upstream arrays retain the original neighbor
+# ordering used in wetland geometry draws.
+DOMAIN_OUTPUT_VARIABLES = (
+    ExchangeVariable("domain__schema_version", "1", "int64", rank=0),
+    ExchangeVariable("domain__parcel_area_ha", "ha", "float64"),
+    ExchangeVariable("domain__parcel_perimeter_m", "m", "float64"),
+    ExchangeVariable("domain__upstream_offset", "1", "int64"),
+    ExchangeVariable("domain__upstream_index", "1", "int64"),
+    ExchangeVariable("domain__selection_source_index", "1", "int64"),
+    ExchangeVariable("domain__selection_probability", "1", "float64"),
+)
+DOMAIN_INPUT_VARIABLES = tuple(
+    ExchangeVariable(v.name, v.units, v.dtype, intent="input", rank=v.rank,
+                     description=v.description, resizable=(v.rank == 1))
+    for v in DOMAIN_OUTPUT_VARIABLES
+)
+
+MODEL_VARIABLES = DOMAIN_INDEX_VARIABLES + DOMAIN_OUTPUT_VARIABLES + (
+    ExchangeVariable("coupling__model_rng_state_utf8", "1", "uint8",
+                     description="Logical RNG state after watershed-model draws"),
+    ExchangeVariable("coupling__generator_rng_state_utf8", "1", "uint8",
+                     intent="input", resizable=True),
     ExchangeVariable("model__parcel_count", "1", "int64", rank=0),
     ExchangeVariable("model__pollutant_count", "1", "int64", rank=0),
     ExchangeVariable("model__parcel_baseline_load_rate", "kg ha-1 yr-1", "float64",
@@ -158,7 +180,11 @@ DRIVER_VARIABLES = DOMAIN_INDEX_VARIABLES + (
                      description="Row-major (pollutant,outlet) last scenario signed delivered change"),
 )
 
-LIVE_GENERATOR_VARIABLES = DOMAIN_INDEX_VARIABLES + PLACEMENT_OUTPUT_VARIABLES + (
+LIVE_GENERATOR_VARIABLES = DOMAIN_INDEX_VARIABLES + DOMAIN_INPUT_VARIABLES + PLACEMENT_OUTPUT_VARIABLES + (
+    ExchangeVariable("coupling__generator_rng_state_utf8", "1", "uint8",
+                     description="Logical RNG state after generator draws"),
+    ExchangeVariable("coupling__model_rng_state_utf8", "1", "uint8",
+                     intent="input", resizable=True),
     ExchangeVariable("placement__completed", "1", "int64", rank=0),
     ExchangeVariable("placement__cost", "USD", "float64", rank=0,
                      description="Zero until placement__completed becomes 1"),

@@ -15,6 +15,8 @@ import numpy as np
 from src.interfaces.bmi.array_component import BmiArrayComponent
 from src.interfaces.exchange_variables import MODEL_VARIABLES
 from src.interfaces.domain_index_contract import index_contract_values
+from src.interfaces.domain_exchange import export_placement_domain
+from src.interfaces.rng_exchange import encode_rng_state, decode_rng_state
 from src.interfaces.placement_exchange import PLACEMENT_FIELDS, placement_from_arrays
 from src.interfaces.bmi.record_exchange import encode_bmp_record
 from src.models.assemblies.annual_model_realization import AnnualModelRealization
@@ -54,6 +56,9 @@ class WatershedModelBmi(BmiArrayComponent):
         # Variable-width vectors may be resized by standard BMI set_value().
         self._publish({
             **index_contract_values(self._ctx),
+            **export_placement_domain(self._ctx),
+            "coupling__model_rng_state_utf8": encode_rng_state(self._ctx.rng),
+            "coupling__generator_rng_state_utf8": [],
             **{name: ([] if meta.rank == 1 else 0)
                for name, meta in self._metadata.items() if meta.intent == "input"},
             "placement__recovery_effect_scale": 1.0,
@@ -90,6 +95,8 @@ class WatershedModelBmi(BmiArrayComponent):
 
     def set_value(self, name: str, src: np.ndarray) -> None:
         """Accept BMI placement fields; reject partial/late state mutations."""
+        if name == "coupling__generator_rng_state_utf8":
+            decode_rng_state(src, self._ctx.rng)
         if name in PLACEMENT_FIELDS and (self._pending is not None or self._queued is not None):
             raise RuntimeError("Cannot overwrite a queued or pending BMI placement")
         if name == "placement__cost" and self._pending is None:
@@ -105,6 +112,8 @@ class WatershedModelBmi(BmiArrayComponent):
             self._received_placement_fields.add(name)
             if len(self._received_placement_fields) == len(PLACEMENT_FIELDS):
                 self._end_time = self._time + 1.0
+        if name == "coupling__generator_rng_state_utf8":
+            self._ctx.rng.bit_generator.state = decode_rng_state(src, self._ctx.rng)
         if name == "placement__cost":
             cost = float(self._read(name)[0])
             if not np.isfinite(cost) or cost < 0:
@@ -130,7 +139,10 @@ class WatershedModelBmi(BmiArrayComponent):
         self._cost_received = False
         self._time += 1.0
         self._publish_model_state()
-        self._publish({"placement__recovery_gains": self._pending.recovery_gains})
+        self._publish({
+            "placement__recovery_gains": self._pending.recovery_gains,
+            "coupling__model_rng_state_utf8": encode_rng_state(self._ctx.rng),
+        })
 
     @property
     def pending_recovery_gains(self) -> tuple[float, ...]:
@@ -159,6 +171,7 @@ class WatershedModelBmi(BmiArrayComponent):
         self._publish({
             "placement__recovery_gains": [],
             "model__last_bmp_record_utf8": encode_bmp_record(record),
+            "coupling__model_rng_state_utf8": encode_rng_state(self._ctx.rng),
         })
         return record
 

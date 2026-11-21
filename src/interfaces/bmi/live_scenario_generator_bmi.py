@@ -15,6 +15,8 @@ import numpy as np
 from src.interfaces.bmi.array_component import BmiArrayComponent
 from src.interfaces.exchange_variables import LIVE_GENERATOR_VARIABLES
 from src.interfaces.domain_index_contract import index_contract_values
+from src.interfaces.domain_exchange import DOMAIN_FIELDS, install_placement_domain
+from src.interfaces.rng_exchange import encode_rng_state, decode_rng_state
 from src.interfaces.placement_exchange import placement_arrays
 from src.scenarios.stochastic_scenario_generator import StochasticScenarioGenerator
 
@@ -27,7 +29,7 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
     """Expose sampled BMP placements without pre-generating complete scenarios."""
 
     def __init__(self, ctx: Any, cfg: dict, *, scenario_id: int = 1,
-                 seed: int | None = None, replay=None):
+                 seed: int | None = None, replay=None, require_domain_import: bool = False):
         super().__init__(LIVE_GENERATOR_VARIABLES,
                          name="Basin BMP live stochastic scenario generator")
         self._ctx = ctx
@@ -39,6 +41,9 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         self._pending = None
         self._completed = False
         self._recovery_received = False
+        self._require_domain_import = bool(require_domain_import)
+        self._domain_received: set[str] = set()
+        self._domain_ready = not self._require_domain_import
 
     def initialize(self, config_file: str = "") -> None:
         if config_file:
@@ -61,8 +66,14 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         self._completed = False
         self._recovery_received = False
         self._initialized = True
+        self._domain_received.clear()
+        self._domain_ready = not self._require_domain_import
         self._publish({
             **index_contract_values(self._ctx),
+            **{name: ([] if name != "domain__schema_version" else 0)
+               for name in DOMAIN_FIELDS},
+            "coupling__generator_rng_state_utf8": encode_rng_state(self._ctx.rng),
+            "coupling__model_rng_state_utf8": [],
             "placement__cps_code": 0,
             "placement__host_parcel_index": 0,
             "placement__affected_parcel_index": [],
@@ -95,6 +106,8 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
             raise RuntimeError("Call initialize() before update()")
         if self._pending is not None:
             raise RuntimeError("Complete the pending placement before the next update")
+        if not self._domain_ready:
+            raise RuntimeError("BMI parcel domain must be imported before sampling")
         if self._time >= self._end_time:
             raise NoEligiblePlacements("No remaining BMP placements")
         placement = self._generator.next_realization(self._ctx)
@@ -109,9 +122,23 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
             "placement__recovery_gains": [],
             "placement__completed": 0,
             "placement__cost": 0.0,
+            "coupling__generator_rng_state_utf8": encode_rng_state(self._ctx.rng),
         })
 
+    def accept_domain(self) -> None:
+        """Validate and install the complete transported physical domain at once."""
+        if not self._initialized or self._time or self._pending is not None:
+            raise RuntimeError("BMI parcel domain can only be installed before sampling")
+        if set(DOMAIN_FIELDS) != self._domain_received:
+            raise RuntimeError("Incomplete BMI parcel domain transfer")
+        install_placement_domain(self._ctx, {n: self._read(n) for n in DOMAIN_FIELDS})
+        self._domain_ready = True
+
     def set_value(self, name: str, src: np.ndarray) -> None:
+        if name in DOMAIN_FIELDS and (self._time or self._domain_ready and self._require_domain_import):
+            raise RuntimeError("BMI parcel domain inputs are only accepted before sampling")
+        if name == "coupling__model_rng_state_utf8":
+            decode_rng_state(src, self._ctx.rng)
         if name == "placement__recovery_gains" and self._pending is None:
             raise RuntimeError("Queue a placement before supplying AFO recovery gains")
         if name == "placement__recovery_gains":
@@ -121,6 +148,10 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         super().set_value(name, src)
         if name == "placement__recovery_gains":
             self._recovery_received = True
+        elif name in DOMAIN_FIELDS:
+            self._domain_received.add(name)
+        elif name == "coupling__model_rng_state_utf8":
+            self._ctx.rng.bit_generator.state = decode_rng_state(src, self._ctx.rng)
 
     def complete_pending(self, *, recovery_gains: tuple[float, ...] | None = None):
         """Complete after BMI recovery transfer; retain Phase 5 legacy override."""
@@ -139,6 +170,7 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
             "placement__cost": result.cost_usd,
             "scenario__bmp_count": self._generator.total_bmp,
             "scenario__cumulative_cost": self._generator.total_cost,
+            "coupling__generator_rng_state_utf8": encode_rng_state(self._ctx.rng),
         })
         return result
 
@@ -156,3 +188,5 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
             raise RuntimeError("Cannot finalize with pending BMP response")
         super().finalize()
         self._generator = None
+        self._domain_received.clear()
+        self._domain_ready = not self._require_domain_import

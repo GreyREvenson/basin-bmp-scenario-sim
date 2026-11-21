@@ -331,3 +331,21 @@ remain byte-identical. Official `bmipy` abstract-method introspection is
 optional and was unavailable in this development environment. Full external
 BMI conformance and independently transferred geospatial domains remain
 separate work.
+
+---
+
+## Phase 8: detached stochastic-generator context and physical parcel domain
+
+See [phase8_detached_domain_rng.md](phase8_detached_domain_rng.md) for the
+exchange contract, RNG order, limits, test results and migration notes.
+The annual watershed-model context and stochastic generator no longer share
+a Python RNG or mutable parcel/cost state; the model publishes area,
+perimeter, immediate upstream connectivity and selection-domain arrays via
+BMI. The generator accepts the validated transport packet before sampling.
+Two versioned BMI RNG byte-sidecars preserve the original serial draw order.
+`EXCHANGE_SCHEMA_VERSION` is incremented from 1 to 2. **Scientific methods,
+output schemas and replayable scenario definitions are unchanged.**
+This is not yet full independent file-based initialization or external BMI
+interoperability; both instances are still constructed from one driver-
+prepared input payload. The exact Phase 8 before/after seeded result capture
+matches, SHA-256 `1b63916915012a41120cf61a2e33ff76bc4372e5904a8a3d1f5d7a142cb7c208`.
