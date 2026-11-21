@@ -22,12 +22,15 @@ class ExchangeVariable:
     intent: str = "output"  # input or output
     description: str = ""
     rank: int = 1  # rank 0 scalar; rank 1 indexed vector
+    resizable: bool = False  # only explicit variable-width BMI inputs
 
     def __post_init__(self):
         if self.intent not in {"input", "output"}:
             raise ValueError(f"Invalid exchange-variable intent: {self.intent}")
         if self.rank not in (0, 1):
             raise ValueError("Only BMI scalars and 1-D index-space vectors are supported")
+        if self.resizable and (self.intent != "input" or self.rank == 0):
+            raise ValueError("Only vector BMI inputs may be resizable")
         if np.dtype(self.dtype).kind not in "iufb":
             raise ValueError("Exchange variables must be numeric")
 
@@ -89,6 +92,28 @@ SCENARIO_VARIABLES = (
     ExchangeVariable("bmp__affected_parcel_fraction", "1", "float64", description="Corresponding fractional treatment of affected parcel"),
 )
 
+# One shared, explicit numerical contract for each live BMP placement.
+# Values with family-specific meaning are zero on other practice families.
+# The scientific model reconstructs native BMPDesign only inside its adapter.
+PLACEMENT_OUTPUT_VARIABLES = (
+    ExchangeVariable("placement__cps_code", "1", "int64", rank=0),
+    ExchangeVariable("placement__host_parcel_index", "1", "int64", rank=0),
+    ExchangeVariable("placement__affected_parcel_index", "1", "int64"),
+    ExchangeVariable("placement__affected_parcel_fraction", "1", "float64"),
+    ExchangeVariable("placement__efficiency", "1", "float64",
+                     description="Row-major (pollutant,pathway) in approved formulation order"),
+    ExchangeVariable("placement__failed", "1", "int64", rank=0),
+    ExchangeVariable("placement__recovery_effect_scale", "1", "float64", rank=0),
+    ExchangeVariable("placement__cost_quantity_ha", "ha", "float64", rank=0),
+    ExchangeVariable("placement__wetland_area_ha", "ha", "float64", rank=0),
+    ExchangeVariable("placement__catchment_area_ratio", "1", "float64", rank=0),
+    ExchangeVariable("placement__buffer_length_m", "m", "float64", rank=0),
+    ExchangeVariable("placement__buffer_area_ha", "ha", "float64", rank=0),
+    ExchangeVariable("placement__portion_treated", "1", "float64", rank=0),
+    ExchangeVariable("placement__recorded_recovery_gains", "1", "float64",
+                     description="For replay: pre-recorded AFO gains; empty in live generation"),
+)
+
 MODEL_VARIABLES = (
     ExchangeVariable("model__parcel_count", "1", "int64", rank=0),
     ExchangeVariable("model__pollutant_count", "1", "int64", rank=0),
@@ -99,6 +124,17 @@ MODEL_VARIABLES = (
     ExchangeVariable("model__outlet_count", "1", "int64", rank=0),
     ExchangeVariable("model__outlet_removed_mass", "kg", "float64",
                      description="Row-major (pollutant,outlet) signed delivered mass change"),
+    ExchangeVariable("placement__recovery_gains", "1", "float64",
+                     description="Pending AFO recovery gains to send to generator before its cost draw"),
+    ExchangeVariable("model__last_bmp_record_utf8", "1", "uint8",
+                     description="UTF-8 JSON output record for driver-managed storage only"),
+) + tuple(
+    ExchangeVariable(v.name, v.units, v.dtype, intent="input", rank=v.rank,
+                     description=v.description, resizable=(v.rank == 1))
+    for v in PLACEMENT_OUTPUT_VARIABLES
+) + (
+    ExchangeVariable("placement__cost", "USD", "float64", intent="input", rank=0),
+    ExchangeVariable("scenario__identifier", "1", "int64", intent="input", rank=0),
 )
 
 DRIVER_VARIABLES = (
@@ -110,18 +146,13 @@ DRIVER_VARIABLES = (
                      description="Row-major (pollutant,outlet) last scenario signed delivered change"),
 )
 
-LIVE_GENERATOR_VARIABLES = (
-    ExchangeVariable("placement__cps_code", "1", "int64", rank=0),
-    ExchangeVariable("placement__host_parcel_index", "1", "int64", rank=0),
-    ExchangeVariable("placement__affected_parcel_index", "1", "int64"),
-    ExchangeVariable("placement__affected_parcel_fraction", "1", "float64"),
-    ExchangeVariable("placement__efficiency", "1", "float64",
-                     description="Row-major (pollutant,pathway) sampled BMP efficiency"),
-    ExchangeVariable("placement__failed", "1", "int64", rank=0),
-    ExchangeVariable("placement__recovery_effect_scale", "1", "float64", rank=0),
+LIVE_GENERATOR_VARIABLES = PLACEMENT_OUTPUT_VARIABLES + (
     ExchangeVariable("placement__completed", "1", "int64", rank=0),
     ExchangeVariable("placement__cost", "USD", "float64", rank=0,
                      description="Zero until placement__completed becomes 1"),
     ExchangeVariable("scenario__bmp_count", "1", "int64", rank=0),
     ExchangeVariable("scenario__cumulative_cost", "USD", "float64", rank=0),
+    ExchangeVariable("placement__recovery_gains", "1", "float64", intent="input",
+                     description="AFO recovery effects transferred from the model before cost sampling",
+                     resizable=True),
 )

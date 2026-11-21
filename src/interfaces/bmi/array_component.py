@@ -114,8 +114,13 @@ class BmiArrayComponent:
         old = self._read(name)
         new = numeric_vector(src, spec.dtype)
         if old.shape != new.shape:
-            raise ValueError("Cannot change BMI input array extent with set_value")
-        old[:] = new
+            if not spec.resizable:
+                raise ValueError("Cannot change BMI input array extent with set_value")
+            # BMI grid size is queried afresh after a variable-width transfer.
+            # This invalidates any previous pointer to that input vector.
+            self._values[name] = new
+        else:
+            old[:] = new
 
     def set_value_at_indices(self, name: str, inds: np.ndarray, src: np.ndarray) -> None:
         spec = self._meta(name)

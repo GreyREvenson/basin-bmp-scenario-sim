@@ -14,6 +14,8 @@ import numpy as np
 
 from src.interfaces.bmi.array_component import BmiArrayComponent
 from src.interfaces.exchange_variables import MODEL_VARIABLES
+from src.interfaces.placement_exchange import PLACEMENT_FIELDS, placement_from_arrays
+from src.interfaces.bmi.record_exchange import encode_bmp_record
 from src.models.assemblies.annual_model_realization import AnnualModelRealization
 
 
@@ -28,6 +30,8 @@ class WatershedModelBmi(BmiArrayComponent):
         self._queued = None
         self._pending = None
         self._scenario_id = 1
+        self._received_placement_fields: set[str] = set()
+        self._cost_received = False
 
     @property
     def native_model(self) -> AnnualModelRealization:
@@ -45,6 +49,17 @@ class WatershedModelBmi(BmiArrayComponent):
         self._time = 0.0
         self._end_time = 0.0
         self._publish_model_state()
+        # A fully numeric, self-describing input buffer for each new BMP.
+        # Variable-width vectors may be resized by standard BMI set_value().
+        self._publish({
+            **{name: ([] if meta.rank == 1 else 0)
+               for name, meta in self._metadata.items() if meta.intent == "input"},
+            "placement__recovery_effect_scale": 1.0,
+            "scenario__identifier": 1,
+            "placement__cost": 0.0,
+            "placement__recovery_gains": [],
+            "model__last_bmp_record_utf8": [],
+        })
 
     def _publish_model_state(self) -> None:
         model = self.native_model
@@ -71,15 +86,45 @@ class WatershedModelBmi(BmiArrayComponent):
         self._scenario_id = int(scenario_id)
         self._end_time = self._time + 1.0
 
+    def set_value(self, name: str, src: np.ndarray) -> None:
+        """Accept BMI placement fields; reject partial/late state mutations."""
+        if name in PLACEMENT_FIELDS and (self._pending is not None or self._queued is not None):
+            raise RuntimeError("Cannot overwrite a queued or pending BMI placement")
+        if name == "placement__cost" and self._pending is None:
+            raise RuntimeError("BMP cost must be supplied after scientific model update")
+        if name == "scenario__identifier" and (self._pending is not None or self._queued is not None):
+            raise RuntimeError("Cannot change scenario identifier during BMP response")
+        super().set_value(name, src)
+        if name in PLACEMENT_FIELDS:
+            self._received_placement_fields.add(name)
+            if len(self._received_placement_fields) == len(PLACEMENT_FIELDS):
+                self._end_time = self._time + 1.0
+        if name == "placement__cost":
+            cost = float(self._read(name)[0])
+            if not np.isfinite(cost) or cost < 0:
+                raise ValueError("BMI BMP cost must be finite and nonnegative")
+            self._cost_received = True
+
     def update(self) -> None:
         if not self._initialized:
             raise RuntimeError("Call initialize() before update()")
-        if self._queued is None or self._pending is not None:
+        if self._pending is not None:
             raise RuntimeError("Queue a placement and complete prior response before update")
+        if self._queued is None:
+            missing = set(PLACEMENT_FIELDS) - self._received_placement_fields
+            if missing:
+                raise RuntimeError(f"Queue a placement: BMI inputs are incomplete: {sorted(missing)}")
+            self._queued = placement_from_arrays(self._values, self._ctx)
+            self._scenario_id = int(self._read("scenario__identifier")[0])
+            if self._scenario_id < 1:
+                raise ValueError("BMI scenario identifier must be positive")
         self._pending = self.native_model.apply_placement(self._queued, self._scenario_id)
         self._queued = None
+        self._received_placement_fields.clear()
+        self._cost_received = False
         self._time += 1.0
         self._publish_model_state()
+        self._publish({"placement__recovery_gains": self._pending.recovery_gains})
 
     @property
     def pending_recovery_gains(self) -> tuple[float, ...]:
@@ -87,14 +132,28 @@ class WatershedModelBmi(BmiArrayComponent):
             raise RuntimeError("No pending BMP response")
         return self._pending.recovery_gains
 
-    def complete_pending(self, cost_usd: float) -> dict:
+    def complete_pending(self, cost_usd: float | None = None) -> dict:
+        """Finalize mass accounting after cost arrives through BMI set_value().
+
+        The Phase 5 positional cost argument remains temporarily supported for
+        native callers. The Phase 6 driver transfers cost only through BMI.
+        """
         if self._pending is None:
             raise RuntimeError("No pending BMP response to complete")
+        if cost_usd is None:
+            if not self._cost_received:
+                raise RuntimeError("Supply placement__cost via BMI before completing response")
+            cost_usd = float(self._read("placement__cost")[0])
         if not np.isfinite(cost_usd) or cost_usd < 0:
             raise ValueError("Cost must be finite and nonnegative")
         record = self.native_model.complete_placement(self._pending, float(cost_usd))
         self._pending = None
+        self._cost_received = False
         self._publish_model_state()
+        self._publish({
+            "placement__recovery_gains": [],
+            "model__last_bmp_record_utf8": encode_bmp_record(record),
+        })
         return record
 
     def finalize(self) -> None:
@@ -102,3 +161,5 @@ class WatershedModelBmi(BmiArrayComponent):
         self._scientific = None
         self._queued = None
         self._pending = None
+        self._received_placement_fields.clear()
+        self._cost_received = False

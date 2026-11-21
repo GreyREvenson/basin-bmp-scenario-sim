@@ -48,6 +48,7 @@ from src.parcel import (
 )
 from src.sampling import _piecewise_quantile_sample, _sample_from_stats, _trunc_normal
 from src.driver.results.bmp_summary import BMPSummaryCollector
+from src.driver.bmi_coupling import AnnualBmiScenarioCoupler, get_bmi_value
 from src.driver.results.trajectory_output_manager import collect_and_write_trajectories
 from src.models.model_context import ModelContextServices, ScenarioModelContext
 from src.models.assemblies.annual_model_realization import AnnualModelRealization
@@ -496,9 +497,17 @@ def _run_one_scenario(
     with log_scope(label=f"scenario {sid}", logger=logger, level=logging.INFO):
         logger.info(f"=== scenario {sid} start ===")
 
-        scientific_model = AnnualModelRealization.initialize(ctx, logger)
-        baseline_load_rates = scientific_model.baseline_load_rates
-        load_rates = scientific_model.load_rates
+        # Phase 6: scientific inputs/outputs exchange through BMI numerical
+        # buffers. The native model object remains available only for the
+        # existing scientific diagnostic/output-record writers.
+        coupler = AnnualBmiScenarioCoupler(
+            ctx, cfg, logger, scenario_id=sid, seed=seed, replay=scenario_definition,
+        )
+        coupler.initialize()
+        scientific_model = coupler.model.native_model
+        baseline_load_rates = get_bmi_value(
+            coupler.model, "model__parcel_baseline_load_rate"
+        ).reshape(len(ctx.parcel_ids), len(ctx.pollutants))
         load_state = scientific_model.load_state
         afo_assignments = scientific_model.afo_assignments
         manure_mass_ledger = scientific_model.manure_mass_ledger
@@ -529,9 +538,9 @@ def _run_one_scenario(
         # Initialize summary collector once per scenario
         collector = BMPSummaryCollector(ctx.pollutants, scenario_id=sid)
 
-        # The selection generator owns eligibility and stochastic placement policy.
-        scenario_generator = StochasticScenarioGenerator(ctx, cfg, replay=scenario_definition)
-        scenario_generator.validate_replay(ctx, sid, seed)
+        # The generator has already checked replay eligibility during BMI
+        # initialization. Its placement values cross the model boundary only
+        # through named, checked numerical BMI arrays.
 
         # Main loop: a parcel is sampled only while at least one CPS is selectable.
         while True:
@@ -542,58 +551,43 @@ def _run_one_scenario(
                 logger.info("BMP placement stopped: count limit reached.")
                 break
 
-            placement_plan = scenario_generator.next_realization(ctx)
-            if placement_plan is None:
+            completed = coupler.next_bmp()
+            if completed is None:
                 logger.info("BMP placement stopped: no selectable parcel/CPS combinations remain.")
                 break
-            parcel_idx, pid, cps = (
-                placement_plan.choice.parcel_index,
-                placement_plan.choice.pid,
-                placement_plan.choice.cps,
-            )
-            # Scope each BMP placement for deeper indentation
+            parcel_idx = completed.parcel_index
+            pid = str(ctx.parcel_ids[parcel_idx])
+            cps = completed.cps
             with log_scope(label=f"apply bmp cps={cps} pid={pid}", logger=logger):
-                # Stochastic parameters and physical designs are supplied by
-                # the scenario generator, never sampled inside model response.
-                eff_maps = placement_plan.efficiency_maps()
-                failed_flag = placement_plan.failed
-                recovery_effect_scale = placement_plan.recovery_effect_scale
-
-                # The scientific model owns treatment, AFO response and accounting.
-                pending = scientific_model.apply_placement(placement_plan, sid)
-                # AFO recovery has to precede stochastic cost sampling to retain
-                # the existing deterministic random stream and exact replay.
-                placement_plan = scenario_generator.complete_placement(
-                    ctx, placement_plan, recovery_gains=pending.recovery_gains,
-                )
-                cost_this = float(placement_plan.cost_usd)
-                total_bmp = scenario_generator.total_bmp
-                total_cost = scenario_generator.total_cost
-                bmp_rec = scientific_model.complete_placement(pending, cost_this)
+                # AFO gains, physical designs and implementation cost have
+                # already crossed the BMI boundary in the scientifically
+                # required order.  Collection remains driver-owned.
+                total_bmp = completed.completed_count
+                total_cost = completed.total_cost_usd
+                bmp_rec = completed.bmp_record
                 scenario_bmps.append(bmp_rec)
                 collector.add_bmp_record(bmp_rec)
-                cumul = scientific_model.delivered_reductions
-                # Record current cumulative for each axis choice
-                for pol in ctx.pollutants:
-                    for oid in ctx.outlet_oids:
+                cumul = completed.delivered_reductions
+                for pol_idx, pol in enumerate(ctx.pollutants):
+                    for oid_idx, oid in enumerate(ctx.outlet_oids):
                         for xax in x_axes:
                             for yax in y_axes:
                                 xval = total_bmp if xax == XAXIS_COUNT else total_cost
                                 if yax == YAXIS_TOTAL:
-                                    yval = cumul[pol][oid]
+                                    yval = cumul[pol_idx, oid_idx]
                                 elif yax == YAXIS_TARGET:
                                     tgt = ctx.outlet_target_map.get((str(oid), pol))
-                                    yval = (cumul[pol][oid] / tgt * 100.0) if tgt is not None and tgt > 0 else 0.0
+                                    yval = (cumul[pol_idx, oid_idx] / tgt * 100.0) if tgt is not None and tgt > 0 else 0.0
                                 elif yax == YAXIS_MEAN:
                                     mu = ctx.outlet_mean_map.get((str(oid), pol))
-                                    yval = (cumul[pol][oid] / mu * 100.0) if mu is not None and mu > 0 else 0.0
+                                    yval = (cumul[pol_idx, oid_idx] / mu * 100.0) if mu is not None and mu > 0 else 0.0
                                 else:
                                     yval = 0.0
                                 records[(pol, oid, xax, yax)].append((sid, xval, yval))
 
         # The fully realized scenario is a model-independent, replayable artifact.
         # Writing the JSON never samples RNGs or modifies modeled loads.
-        scenario_generator.complete_scenario(ctx, sid, seed).save(
+        coupler.completed_scenario().save(
             outputs_dir / "scenario_definitions" / f"s{sid}.json"
         )
 
@@ -631,6 +625,12 @@ def _run_one_scenario(
             component_dir.mkdir(parents=True, exist_ok=True)
             _write_parquet_atomic(pd.DataFrame(component_rows), component_dir / f"s{sid}.parquet", logger=logger)
 
+        # Parcel-level outputs use the same published BMI snapshots as the
+        # public watershed-model adapter; never reach into mutable model
+        # arrays to get current scientific values.
+        load_rates = get_bmi_value(
+            coupler.model, "model__parcel_current_load_rate"
+        ).reshape(len(ctx.parcel_ids), len(ctx.pollutants))
         # Parcel-level before/after
         for parcel_idx, pid_i in enumerate(ctx.parcel_ids):
             row = dict(scenario=sid, pid=str(pid_i))

@@ -303,3 +303,17 @@ a purely BMI-coupled live workflow; the Phase 2 generator's interleaved
 sampling and the scientific model's rich placement objects remain native.
 See `docs/phase5_bmi_exchange_contracts.md` for full contracts, limitations,
 validation commands, and the exact before/after numerical evidence.
+
+---
+
+# Phase 6: BMI-mediated live execution
+
+The active `src/driver/monte_carlo_driver.py` worker now invokes
+`src/driver/bmi_coupling.py`, a BMI-mediated placement/response mediator.
+Generator-to-model designs/efficiencies, model-to-generator AFO recovery gains,
+and generator-to-model costs are copied through named BMI arrays. Delivered
+outlet reductions, parcel load rates, and the serialized BMP record are
+collected through model BMI outputs. The approved formulations and baseline
+scientific methods are unchanged. See
+`docs/phase6_live_bmi_coupling.md` for the variable contract, regression
+checks and remaining adapter/diagnostic limitations.

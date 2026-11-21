@@ -14,7 +14,12 @@ import numpy as np
 
 from src.interfaces.bmi.array_component import BmiArrayComponent
 from src.interfaces.exchange_variables import LIVE_GENERATOR_VARIABLES
+from src.interfaces.placement_exchange import placement_arrays
 from src.scenarios.stochastic_scenario_generator import StochasticScenarioGenerator
+
+
+class NoEligiblePlacements(RuntimeError):
+    """The approved generator has exhausted its parcel/CPS candidates."""
 
 
 class LiveScenarioGeneratorBmi(BmiArrayComponent):
@@ -32,6 +37,7 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         self._generator: StochasticScenarioGenerator | None = None
         self._pending = None
         self._completed = False
+        self._recovery_received = False
 
     def initialize(self, config_file: str = "") -> None:
         if config_file:
@@ -52,6 +58,7 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         self._end_time = float(len(self._ctx.parcel_selection_ids) * len(self._ctx.bmp_cps))
         self._pending = None
         self._completed = False
+        self._recovery_received = False
         self._initialized = True
         self._publish({
             "placement__cps_code": 0,
@@ -61,6 +68,14 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
             "placement__efficiency": [],
             "placement__failed": 0,
             "placement__recovery_effect_scale": 1.0,
+            "placement__cost_quantity_ha": 0.0,
+            "placement__wetland_area_ha": 0.0,
+            "placement__catchment_area_ratio": 0.0,
+            "placement__buffer_length_m": 0.0,
+            "placement__buffer_area_ha": 0.0,
+            "placement__portion_treated": 0.0,
+            "placement__recorded_recovery_gains": [],
+            "placement__recovery_gains": [],
             "placement__completed": 0,
             "placement__cost": 0.0,
             "scenario__bmp_count": 0,
@@ -79,31 +94,41 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         if self._pending is not None:
             raise RuntimeError("Complete the pending placement before the next update")
         if self._time >= self._end_time:
-            raise RuntimeError("No remaining BMP placements")
+            raise NoEligiblePlacements("No remaining BMP placements")
         placement = self._generator.next_realization(self._ctx)
         if placement is None:
             self._end_time = self._time
-            raise RuntimeError("No eligible BMP placements remain")
+            raise NoEligiblePlacements("No eligible BMP placements remain")
         self._pending = placement
         self._time += 1.0
+        self._recovery_received = False
         self._publish({
-            "placement__cps_code": placement.choice.cps,
-            "placement__host_parcel_index": placement.choice.parcel_index,
-            "placement__affected_parcel_index": [i for i, f in placement.design.treated],
-            "placement__affected_parcel_fraction": [f for i, f in placement.design.treated],
-            "placement__efficiency": [float(v) for pol in placement.efficiency_by_pollutant
-                                      for _, v in pol],
-            "placement__failed": int(placement.failed),
-            "placement__recovery_effect_scale": placement.recovery_effect_scale,
+            **placement_arrays(placement, self._ctx),
+            "placement__recovery_gains": [],
             "placement__completed": 0,
             "placement__cost": 0.0,
         })
 
-    def complete_pending(self, *, recovery_gains: tuple[float, ...] = ()):
+    def set_value(self, name: str, src: np.ndarray) -> None:
+        if name == "placement__recovery_gains" and self._pending is None:
+            raise RuntimeError("Queue a placement before supplying AFO recovery gains")
+        super().set_value(name, src)
+        if name == "placement__recovery_gains":
+            gains = self._read(name)
+            if np.any(gains < 0) or np.any(gains > 1):
+                raise ValueError("BMI AFO recovery gains must lie in [0, 1]")
+            self._recovery_received = True
+
+    def complete_pending(self, *, recovery_gains: tuple[float, ...] | None = None):
+        """Complete after BMI recovery transfer; retain Phase 5 legacy override."""
         if self._pending is None:
             raise RuntimeError("No pending BMP placement")
+        if recovery_gains is None:
+            if not self._recovery_received:
+                raise RuntimeError("Supply placement__recovery_gains before completing a BMI placement")
+            recovery_gains = tuple(float(v) for v in self._read("placement__recovery_gains"))
         result = self._generator.complete_placement(
-            self._ctx, self._pending, recovery_gains=recovery_gains,
+            self._ctx, self._pending, recovery_gains=tuple(recovery_gains),
         )
         self._pending = None
         self._publish({
