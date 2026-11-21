@@ -431,3 +431,18 @@ existing schemas 1–2 and the native scientific CLI are unchanged. Numeric
 statistics still require cross-scenario arrays in memory, while full BMP
 histories are not accumulated in RAM. User-controlled external data files and
 plugin versions must remain unchanged across resume attempts.
+
+---
+
+## Phase 14: optional model-neutral ensemble decision support
+
+See [phase14_ensemble_decision_support.md](phase14_ensemble_decision_support.md).
+The completed Phase 12/13 BMI ensemble JSON can be analyzed with a separate,
+strictly validated target-and-budget configuration. Signed annual outlet
+mass-removal targets, empirical Monte Carlo attainment probabilities, joint
+budget-and-target events, cost distributions and implementation USD per
+positive annual kg removed are reported in independent atomic JSON output.
+This layer does not modify scientific calculations, scenario replays, seed
+schedules, checkpoint files, or existing native/model-neutral results.
+No claim of absolute water-quality-standard attainment, model calibration,
+model-to-model scientific equivalence, or discounted lifecycle cost is made.

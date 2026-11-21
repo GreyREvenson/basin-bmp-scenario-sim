@@ -45,6 +45,14 @@ def parse_args() -> argparse.Namespace:
         "--coupled-result", type=Path,
         help="Destination JSON file for --backend-selection (not native Parquet output)",
     )
+    parser.add_argument(
+        "--analysis-config", type=Path,
+        help="Optional Phase 14 targets/budget JSON; requires BMI ensemble selection",
+    )
+    parser.add_argument(
+        "--analysis-result", type=Path,
+        help="Destination decision-support JSON; requires --analysis-config",
+    )
     parser.add_argument("--outputs", help="Override the outputs directory from config")
     parser.add_argument("--seed", type=int, help="Override random seed from config")
     parser.add_argument("--quiet", action="store_true", help="Disable console logging")
@@ -140,10 +148,24 @@ def main() -> None:
                 )
             if args.coupled_result is None:
                 raise ValueError("--backend-selection requires --coupled-result")
+            if (args.analysis_config is None) != (args.analysis_result is None):
+                raise ValueError("--analysis-config and --analysis-result must be supplied together")
+            if args.analysis_config is not None:
+                from src.driver.backend_selection import BackendSelection
+                from src.driver.ensemble_analysis import DecisionSupportConfig
+                if BackendSelection.read(args.backend_selection).ensemble is None:
+                    raise ValueError("--analysis-config requires a selected BMI ensemble")
+                # Reject malformed target specs before spending time on models.
+                DecisionSupportConfig.read(args.analysis_config)
             run_backend_selection(args.backend_selection, args.coupled_result)
+            if args.analysis_config is not None:
+                from src.driver.ensemble_analysis import write_ensemble_analysis
+                write_ensemble_analysis(args.coupled_result, args.analysis_config, args.analysis_result)
         else:
             if args.coupled_result is not None:
                 raise ValueError("--coupled-result requires --backend-selection")
+            if args.analysis_config is not None or args.analysis_result is not None:
+                raise ValueError("--analysis-config and --analysis-result require --backend-selection")
             run_from_config(
                 args.config,
                 outputs=args.outputs,
