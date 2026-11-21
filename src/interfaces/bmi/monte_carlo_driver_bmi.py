@@ -16,6 +16,7 @@ from numpy.random import SeedSequence
 from src.constants import DATA_N_SCENARIOS, CFG_OUTPUTS, XAXIS_COUNT, YAXIS_TOTAL
 from src.interfaces.bmi.array_component import BmiArrayComponent
 from src.interfaces.exchange_variables import DRIVER_VARIABLES
+from src.interfaces.domain_index_contract import index_contract_values
 from src.scenarios.stochastic_scenario_generator import BMPScenario
 
 
@@ -71,6 +72,7 @@ class MonteCarloDriverBmi(BmiArrayComponent):
         self._initialized = True
         self._results = []
         self._publish({
+            **index_contract_values(model),
             "ensemble__completed_scenario_count": 0,
             "ensemble__requested_scenario_count": n_scenarios,
             "scenario__bmp_count": 0,

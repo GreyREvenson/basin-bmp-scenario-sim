@@ -14,6 +14,7 @@ import numpy as np
 
 from src.interfaces.bmi.array_component import BmiArrayComponent
 from src.interfaces.exchange_variables import MODEL_VARIABLES
+from src.interfaces.domain_index_contract import index_contract_values
 from src.interfaces.placement_exchange import PLACEMENT_FIELDS, placement_from_arrays
 from src.interfaces.bmi.record_exchange import encode_bmp_record
 from src.models.assemblies.annual_model_realization import AnnualModelRealization
@@ -52,6 +53,7 @@ class WatershedModelBmi(BmiArrayComponent):
         # A fully numeric, self-describing input buffer for each new BMP.
         # Variable-width vectors may be resized by standard BMI set_value().
         self._publish({
+            **index_contract_values(self._ctx),
             **{name: ([] if meta.rank == 1 else 0)
                for name, meta in self._metadata.items() if meta.intent == "input"},
             "placement__recovery_effect_scale": 1.0,
@@ -94,6 +96,10 @@ class WatershedModelBmi(BmiArrayComponent):
             raise RuntimeError("BMP cost must be supplied after scientific model update")
         if name == "scenario__identifier" and (self._pending is not None or self._queued is not None):
             raise RuntimeError("Cannot change scenario identifier during BMP response")
+        if name == "placement__cost":
+            cost_value = self._source(src, "float64")
+            if cost_value.size != 1 or cost_value[0] < 0:
+                raise ValueError("BMI BMP cost must be finite and nonnegative")
         super().set_value(name, src)
         if name in PLACEMENT_FIELDS:
             self._received_placement_fields.add(name)

@@ -317,3 +317,17 @@ collected through model BMI outputs. The approved formulations and baseline
 scientific methods are unchanged. See
 `docs/phase6_live_bmi_coupling.md` for the variable contract, regression
 checks and remaining adapter/diagnostic limitations.
+
+---
+
+# Phase 7: BMI contracts and index-domain handshake
+
+See [`docs/phase7_bmi_contract_hardening.md`](phase7_bmi_contract_hardening.md).
+All required BMI 2.0 method names are now implemented; the adapters reject
+unsafe numerical array exchange and publish a versioned index-domain manifest.
+The live coupler verifies matching parcel/outlet/pollutant/pathway/BMP index
+ordering before executing a BMP. Eight seeded before/after result captures
+remain byte-identical. Official `bmipy` abstract-method introspection is
+optional and was unavailable in this development environment. Full external
+BMI conformance and independently transferred geospatial domains remain
+separate work.

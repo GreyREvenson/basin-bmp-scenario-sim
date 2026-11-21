@@ -46,6 +46,14 @@ class BmiArrayComponent:
     def get_output_var_names(self) -> tuple[str, ...]:
         return tuple(k for k, v in self._metadata.items() if v.intent == "output")
 
+    def get_input_item_count(self) -> int:
+        """Return the number of advertised BMI input exchange variables."""
+        return len(self.get_input_var_names())
+
+    def get_output_item_count(self) -> int:
+        """Return the number of advertised BMI output exchange variables."""
+        return len(self.get_output_var_names())
+
     def _meta(self, name: str) -> ExchangeVariable:
         try:
             return self._metadata[name]
@@ -94,31 +102,61 @@ class BmiArrayComponent:
     def get_value_ptr(self, name: str) -> np.ndarray:
         return self._read(name)
 
+    @staticmethod
+    def _destination(dest: np.ndarray, expected: np.ndarray) -> np.ndarray:
+        """Require an actual, writable, contiguous BMI destination buffer.
+
+        ``reshape(-1)`` on a noncontiguous destination can allocate a copy;
+        writing to that temporary previously appeared to succeed while
+        leaving the caller's original buffer unchanged.
+        """
+        if (not isinstance(dest, np.ndarray) or dest.ndim != 1
+                or dest.dtype != expected.dtype or dest.size != expected.size
+                or not dest.flags.c_contiguous or not dest.flags.writeable):
+            raise ValueError("BMI destination must be a writable contiguous 1-D array "
+                             "with the advertised size and dtype")
+        return dest
+
+    @staticmethod
+    def _source(src: np.ndarray, dtype: str) -> np.ndarray:
+        """Reject silent integer truncation, wrapping, and dtype coercion."""
+        arr = np.asarray(src)
+        if arr.ndim != 1 or arr.dtype != np.dtype(dtype):
+            raise ValueError(f"BMI source must be a 1-D array of dtype {np.dtype(dtype)}")
+        if arr.dtype.kind == "f" and not np.all(np.isfinite(arr)):
+            raise ValueError("BMI source values must be finite")
+        return np.ascontiguousarray(arr)
+
+    @staticmethod
+    def _indices(inds: np.ndarray, upper: int, *, unique: bool = False) -> np.ndarray:
+        index = np.asarray(inds)
+        if (index.ndim != 1 or index.dtype.kind not in "iu"
+                or np.any(index < 0) or np.any(index >= upper)):
+            raise ValueError("BMI indices must be a 1-D integer array within variable bounds")
+        if unique and len(np.unique(index)) != len(index):
+            raise ValueError("BMI indices must not contain duplicates")
+        return index
+
     def get_value(self, name: str, dest: np.ndarray) -> None:
         value = self._read(name)
-        if dest.size != value.size or dest.dtype != value.dtype:
-            raise ValueError(f"BMI destination must have shape {value.shape} and dtype {value.dtype}")
-        np.copyto(dest.reshape(-1), value)
+        np.copyto(self._destination(dest, value), value)
 
     def get_value_at_indices(self, name: str, dest: np.ndarray, inds: np.ndarray) -> None:
         value = self._read(name)
-        selected = value[np.asarray(inds, dtype=np.int64)]
-        if dest.size != selected.size:
-            raise ValueError("BMI indexed destination size mismatch")
-        np.copyto(dest.reshape(-1), selected)
+        selected = value[self._indices(inds, len(value))]
+        np.copyto(self._destination(dest, selected), selected)
 
     def set_value(self, name: str, src: np.ndarray) -> None:
         spec = self._meta(name)
         if spec.intent != "input":
             raise ValueError(f"BMI variable is read-only: {name}")
         old = self._read(name)
-        new = numeric_vector(src, spec.dtype)
+        new = self._source(src, spec.dtype)
         if old.shape != new.shape:
             if not spec.resizable:
                 raise ValueError("Cannot change BMI input array extent with set_value")
-            # BMI grid size is queried afresh after a variable-width transfer.
-            # This invalidates any previous pointer to that input vector.
-            self._values[name] = new
+            # Query the new BMI grid size; any earlier pointer is invalid.
+            self._values[name] = new.copy()
         else:
             old[:] = new
 
@@ -127,11 +165,15 @@ class BmiArrayComponent:
         if spec.intent != "input":
             raise ValueError(f"BMI variable is read-only: {name}")
         arr = self._read(name)
-        inds = np.asarray(inds, dtype=np.int64)
-        vals = numeric_vector(src, spec.dtype)
-        if len(inds) != len(vals):
+        index = self._indices(inds, len(arr), unique=True)
+        vals = self._source(src, spec.dtype)
+        if len(index) != len(vals):
             raise ValueError("BMI indexed setter length mismatch")
-        arr[inds] = vals
+        proposed = arr.copy()
+        proposed[index] = vals
+        # Dispatch through the public setter: component-specific scientific
+        # and lifecycle validation must not be bypassed by indexed writes.
+        self.set_value(name, proposed)
 
     def get_start_time(self) -> float:
         return 0.0
@@ -217,6 +259,9 @@ class BmiArrayComponent:
 
     def get_grid_face_nodes(self, grid: int, face_nodes: np.ndarray) -> None:
         raise NotImplementedError("Index-space arrays do not encode grid faces")
+
+    def get_grid_face_edges(self, grid: int, face_edges: np.ndarray) -> None:
+        raise NotImplementedError("Index-space arrays do not encode grid face edges")
 
     def get_grid_nodes_per_face(self, grid: int, nodes_per_face: np.ndarray) -> None:
         raise NotImplementedError("Index-space arrays do not encode grid faces")

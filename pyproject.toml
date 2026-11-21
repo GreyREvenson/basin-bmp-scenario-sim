@@ -33,6 +33,8 @@ dependencies = [
 [project.optional-dependencies]
 # For the WhiteboxTools D8 parcel-connectivity builder.
 hydrology = ["whitebox>=2.3"]
+# Optional BMI specification introspection; no runtime dependency on bmipy.
+bmi = ["bmipy>=2.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -14,6 +14,7 @@ import numpy as np
 
 from src.interfaces.bmi.array_component import BmiArrayComponent
 from src.interfaces.exchange_variables import LIVE_GENERATOR_VARIABLES
+from src.interfaces.domain_index_contract import index_contract_values
 from src.interfaces.placement_exchange import placement_arrays
 from src.scenarios.stochastic_scenario_generator import StochasticScenarioGenerator
 
@@ -61,6 +62,7 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         self._recovery_received = False
         self._initialized = True
         self._publish({
+            **index_contract_values(self._ctx),
             "placement__cps_code": 0,
             "placement__host_parcel_index": 0,
             "placement__affected_parcel_index": [],
@@ -112,11 +114,12 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
     def set_value(self, name: str, src: np.ndarray) -> None:
         if name == "placement__recovery_gains" and self._pending is None:
             raise RuntimeError("Queue a placement before supplying AFO recovery gains")
-        super().set_value(name, src)
         if name == "placement__recovery_gains":
-            gains = self._read(name)
+            gains = self._source(src, "float64")
             if np.any(gains < 0) or np.any(gains > 1):
                 raise ValueError("BMI AFO recovery gains must lie in [0, 1]")
+        super().set_value(name, src)
+        if name == "placement__recovery_gains":
             self._recovery_received = True
 
     def complete_pending(self, *, recovery_gains: tuple[float, ...] | None = None):

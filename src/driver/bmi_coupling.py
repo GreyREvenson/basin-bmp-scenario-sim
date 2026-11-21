@@ -14,6 +14,8 @@ CSDMS-executable processes.  No geospatial grid or physical time is invented.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 
 import numpy as np
 
@@ -23,6 +25,7 @@ from src.interfaces.bmi.live_scenario_generator_bmi import (
 from src.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
 from src.interfaces.placement_exchange import PLACEMENT_FIELDS
 from src.interfaces.bmi.record_exchange import decode_bmp_record
+from src.interfaces.exchange_variables import EXCHANGE_SCHEMA_VERSION
 
 
 def get_bmi_value(component, name: str) -> np.ndarray:
@@ -47,6 +50,46 @@ def transfer_bmi_value(source, target, name: str) -> None:
     if source.get_grid_rank(source.get_var_grid(name)) != target.get_grid_rank(target.get_var_grid(name)):
         raise ValueError(f"BMI rank mismatch for {name}")
     target.set_value(name, get_bmi_value(source, name))
+
+
+def validate_bmi_index_contract(generator, model) -> None:
+    """Fail before any BMP is simulated if BMI index domains are incompatible.
+
+    Index equality is necessary but not sufficient for scientific-model
+    compatibility; approved formulations and preflight checks remain required.
+    """
+    for component in (generator, model):
+        version = get_bmi_value(component, "coupling__exchange_schema_version")
+        if version.size != 1 or int(version[0]) != EXCHANGE_SCHEMA_VERSION:
+            raise ValueError("Unsupported BMI exchange schema version")
+        fingerprint = get_bmi_value(component, "coupling__index_fingerprint")
+        if fingerprint.dtype != np.uint8 or fingerprint.size != 32:
+            raise ValueError("BMI index fingerprint must contain 32 SHA-256 bytes")
+        manifest = get_bmi_value(component, "coupling__index_manifest_utf8")
+        if manifest.dtype != np.uint8:
+            raise ValueError("BMI index manifest must contain UTF-8 bytes")
+        if not np.array_equal(np.frombuffer(hashlib.sha256(manifest.tobytes()).digest(),
+                                            dtype=np.uint8), fingerprint):
+            raise ValueError("BMI index fingerprint does not match its published manifest")
+        try:
+            parsed = json.loads(manifest.tobytes().decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("Invalid BMI index manifest JSON") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("BMI index manifest must be a JSON object")
+        if parsed.get("exchange_schema_version") != EXCHANGE_SCHEMA_VERSION:
+            raise ValueError("BMI manifest exchange schema version mismatch")
+    if not np.array_equal(
+        get_bmi_value(generator, "coupling__index_fingerprint"),
+        get_bmi_value(model, "coupling__index_fingerprint"),
+    ):
+        raise ValueError("BMI index-domain mismatch: parcel/outlet/pollutant/pathway/CPS ordering differs")
+    # Digests are transport checks; retain a complete, inspectable manifest.
+    if not np.array_equal(
+        get_bmi_value(generator, "coupling__index_manifest_utf8"),
+        get_bmi_value(model, "coupling__index_manifest_utf8"),
+    ):
+        raise ValueError("BMI index-domain manifest mismatch")
 
 
 @dataclass(frozen=True)
@@ -83,6 +126,7 @@ class AnnualBmiScenarioCoupler:
         # placement is sampled; initialize in precisely the original order.
         self.model.initialize()
         self.generator.initialize()
+        validate_bmi_index_contract(self.generator, self.model)
         self.model.set_value("scenario__identifier", np.array([self.scenario_id], dtype=np.int64))
         self.initialized = True
 

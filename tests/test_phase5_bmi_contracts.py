@@ -20,6 +20,7 @@ from test_phase2_scenario_generation import _case, _capture
 
 BMI_METHODS = (
     "initialize", "update", "update_until", "finalize", "get_component_name", "get_bmi_version",
+    "get_input_item_count", "get_output_item_count",
     "get_input_var_names", "get_output_var_names", "get_var_grid", "get_var_type",
     "get_var_units", "get_var_itemsize", "get_var_nbytes", "get_var_location",
     "get_current_time", "get_start_time", "get_end_time", "get_time_units", "get_time_step",
@@ -27,7 +28,7 @@ BMI_METHODS = (
     "get_grid_rank", "get_grid_size", "get_grid_type", "get_grid_shape", "get_grid_spacing",
     "get_grid_origin", "get_grid_x", "get_grid_y", "get_grid_z", "get_grid_node_count",
     "get_grid_edge_count", "get_grid_face_count", "get_grid_edge_nodes",
-    "get_grid_face_nodes", "get_grid_nodes_per_face",
+    "get_grid_face_nodes", "get_grid_face_edges", "get_grid_nodes_per_face",
 )
 
 

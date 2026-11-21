@@ -114,7 +114,19 @@ PLACEMENT_OUTPUT_VARIABLES = (
                      description="For replay: pre-recorded AFO gains; empty in live generation"),
 )
 
-MODEL_VARIABLES = (
+# Shared, read-only BMI metadata for validating ordered index domains.
+# The manifest provides stable parcel/outlet identifiers, pollutant/pathway
+# positions and available BMP CPS codes. It does not encode parcel geometry,
+# routing topology, or approve arbitrary scientific formulations.
+DOMAIN_INDEX_VARIABLES = (
+    ExchangeVariable("coupling__exchange_schema_version", "1", "int64", rank=0),
+    ExchangeVariable("coupling__index_manifest_utf8", "1", "uint8",
+                     description="Versioned UTF-8 JSON of index-domain identities"),
+    ExchangeVariable("coupling__index_fingerprint", "1", "uint8",
+                     description="SHA-256 digest of the versioned index manifest"),
+)
+
+MODEL_VARIABLES = DOMAIN_INDEX_VARIABLES + (
     ExchangeVariable("model__parcel_count", "1", "int64", rank=0),
     ExchangeVariable("model__pollutant_count", "1", "int64", rank=0),
     ExchangeVariable("model__parcel_baseline_load_rate", "kg ha-1 yr-1", "float64",
@@ -137,7 +149,7 @@ MODEL_VARIABLES = (
     ExchangeVariable("scenario__identifier", "1", "int64", intent="input", rank=0),
 )
 
-DRIVER_VARIABLES = (
+DRIVER_VARIABLES = DOMAIN_INDEX_VARIABLES + (
     ExchangeVariable("ensemble__completed_scenario_count", "1", "int64", rank=0),
     ExchangeVariable("ensemble__requested_scenario_count", "1", "int64", rank=0),
     ExchangeVariable("scenario__bmp_count", "1", "int64", rank=0),
@@ -146,7 +158,7 @@ DRIVER_VARIABLES = (
                      description="Row-major (pollutant,outlet) last scenario signed delivered change"),
 )
 
-LIVE_GENERATOR_VARIABLES = PLACEMENT_OUTPUT_VARIABLES + (
+LIVE_GENERATOR_VARIABLES = DOMAIN_INDEX_VARIABLES + PLACEMENT_OUTPUT_VARIABLES + (
     ExchangeVariable("placement__completed", "1", "int64", rank=0),
     ExchangeVariable("placement__cost", "USD", "float64", rank=0,
                      description="Zero until placement__completed becomes 1"),
