@@ -367,3 +367,20 @@ placement and cost protocols. The native driver API and numerical kernels are
 unchanged. Eight seeded before/after outputs compare identically; external
 model-independent source contracts and full third-party BMI interoperability
 remain outside this phase.
+
+---
+
+## Phase 10: model-neutral annual scientific exchange
+
+See [phase10_model_neutral_annual_contract.md](phase10_model_neutral_annual_contract.md).
+An independently implemented annual watershed backend can now connect to the
+existing stochastic BMP generator without receiving a PLET/RUSLE model
+context. The new protocol defines ordered physical domain identities, annual
+parcel load-rate and outlet mass-change snapshots, validated placement
+requests, and the backend's response/cost lifecycle. A generic BMI adapter
+publishes the **unchanged Phase 8** exchange variables; the coupler can inject
+independently built components and validates scientific variables and index
+layouts before sampling. Native science, CLI, output schema, RNG order and
+replay are unchanged. The eight seeded result captures remain byte-identical.
+This is a tested extension point, **not** authorization of a new model or
+complete cross-model BMI interoperability.

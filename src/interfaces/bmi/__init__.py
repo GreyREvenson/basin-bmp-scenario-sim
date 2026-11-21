@@ -2,7 +2,8 @@
 
 from .stochastic_scenario_bmi import StochasticScenarioBmi
 from .watershed_model_bmi import WatershedModelBmi
+from .external_watershed_model_bmi import ExternalWatershedModelBmi
 from .live_scenario_generator_bmi import LiveScenarioGeneratorBmi
 from .monte_carlo_driver_bmi import MonteCarloDriverBmi
 
-__all__ = ["StochasticScenarioBmi", "LiveScenarioGeneratorBmi", "WatershedModelBmi", "MonteCarloDriverBmi"]
+__all__ = ["StochasticScenarioBmi", "LiveScenarioGeneratorBmi", "WatershedModelBmi", "ExternalWatershedModelBmi", "MonteCarloDriverBmi"]

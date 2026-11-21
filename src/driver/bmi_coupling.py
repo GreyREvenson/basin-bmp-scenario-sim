@@ -28,7 +28,7 @@ from src.interfaces.bmi.live_scenario_generator_bmi import (
 from src.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
 from src.interfaces.placement_exchange import PLACEMENT_FIELDS
 from src.interfaces.bmi.record_exchange import decode_bmp_record
-from src.interfaces.exchange_variables import EXCHANGE_SCHEMA_VERSION
+from src.interfaces.exchange_variables import EXCHANGE_SCHEMA_VERSION, MODEL_VARIABLES
 from src.interfaces.domain_exchange import DOMAIN_FIELDS
 from src.scenarios.generator_context import GeneratorModelContext
 
@@ -97,6 +97,46 @@ def validate_bmi_index_contract(generator, model) -> None:
         raise ValueError("BMI index-domain manifest mismatch")
 
 
+def validate_annual_model_bmi(model) -> None:
+    """Preflight the complete *model-neutral* annual BMI input/output surface.
+
+    Only public BMI methods are used; an alternative model need not expose a
+    PLET context or inherit from the bundled watershed adapter. The checks
+    prevent silent pollutant/outlet reshaping or unit reinterpretation.
+    """
+    inputs = set(model.get_input_var_names())
+    outputs = set(model.get_output_var_names())
+    for var in MODEL_VARIABLES:
+        if var.name not in (inputs if var.intent == "input" else outputs):
+            raise ValueError(f"Annual BMI model missing {var.intent} variable {var.name}")
+        if model.get_var_type(var.name) != str(np.dtype(var.dtype)):
+            raise ValueError(f"Annual BMI model dtype mismatch for {var.name}")
+        if model.get_var_units(var.name) != var.units:
+            raise ValueError(f"Annual BMI model unit mismatch for {var.name}")
+        if model.get_grid_rank(model.get_var_grid(var.name)) != var.rank:
+            raise ValueError(f"Annual BMI model rank mismatch for {var.name}")
+    sizes = [int(get_bmi_value(model, name)[0]) for name in (
+        "model__parcel_count", "model__pollutant_count", "model__outlet_count"
+    )]
+    if any(n < 1 for n in sizes):
+        raise ValueError("Annual BMI parcel/pollutant/outlet counts must be positive")
+    parcels, pollutants, outlets = sizes
+    for name, expected in (
+        ("model__parcel_baseline_load_rate", parcels * pollutants),
+        ("model__parcel_current_load_rate", parcels * pollutants),
+        ("model__outlet_removed_mass", pollutants * outlets),
+    ):
+        value = get_bmi_value(model, name)
+        if value.size != expected or not np.isfinite(value).all():
+            raise ValueError(f"Annual BMI model has invalid layout or values for {name}")
+    # Verify actual manifest identities, not merely numeric counts.
+    manifest = json.loads(get_bmi_value(model, "coupling__index_manifest_utf8").tobytes().decode("utf-8"))
+    for key, expected in (("parcel_ids", parcels), ("pollutants", pollutants),
+                          ("outlet_oids", outlets)):
+        if len(manifest[key]) != expected:
+            raise ValueError(f"Annual BMI model {key} manifest disagrees with load layout")
+
+
 @dataclass(frozen=True)
 class CompletedBMPResponse:
     """Driver-facing record and standardized numeric diagnostics."""
@@ -126,6 +166,8 @@ class AnnualBmiScenarioCoupler:
         self.model = WatershedModelBmi(ctx, logger)
         self.initialized = False
         self._startup_manifest = None
+        self._generator_config_file = ""
+        self._model_config_file = ""
 
     @classmethod
     def from_manifest(cls, manifest_path):
@@ -149,6 +191,32 @@ class AnnualBmiScenarioCoupler:
         coupled.model = WatershedModelBmi()
         coupled.initialized = False
         coupled._startup_manifest = str(Path(manifest_path).resolve())
+        coupled._generator_config_file = ""
+        coupled._model_config_file = ""
+        return coupled
+
+    @classmethod
+    def from_components(cls, generator, model, *, seed: int, scenario_id: int = 1,
+                        generator_config_file: str = "", model_config_file: str = ""):
+        """Couple two independently created BMI components through public variables.
+
+        This does not instantiate the native driver or assume either component
+        has a project-specific Python context. Components must publish exactly
+        matching ordered index manifests and support annual contract variables.
+        """
+        coupled = cls.__new__(cls)
+        coupled.ctx = None
+        coupled.cfg = None
+        coupled.logger = None
+        coupled.scenario_id = int(scenario_id)
+        coupled.seed = int(seed)
+        coupled.generator_context = None
+        coupled.generator = generator
+        coupled.model = model
+        coupled.initialized = False
+        coupled._startup_manifest = None
+        coupled._generator_config_file = str(generator_config_file)
+        coupled._model_config_file = str(model_config_file)
         return coupled
 
     def initialize(self):
@@ -156,14 +224,15 @@ class AnnualBmiScenarioCoupler:
             raise RuntimeError("BMI scenario coupler already initialized")
         # Baseline simulation must use the worker RNG *before* the first
         # placement is sampled; initialize in precisely the original order.
-        self.model.initialize(self._startup_manifest or "")
-        self.generator.initialize(self._startup_manifest or "")
+        self.model.initialize(self._model_config_file or self._startup_manifest or "")
+        self.generator.initialize(self._generator_config_file or self._startup_manifest or "")
         if self._startup_manifest is not None:
             self.ctx = self.model._ctx
             self.cfg = self.ctx.cfg
             self.logger = self.ctx.logger
             self.generator_context = self.generator._ctx
         validate_bmi_index_contract(self.generator, self.model)
+        validate_annual_model_bmi(self.model)
         # The generator receives its physical parcel geometry, upstream CSR
         # adjacency and selection universe from the model via BMI. This must
         # occur before the first placement/design draw.
@@ -209,7 +278,8 @@ class AnnualBmiScenarioCoupler:
             completed_count=int(get_bmi_value(self.generator, "scenario__bmp_count")[0]),
             total_cost_usd=float(get_bmi_value(self.generator, "scenario__cumulative_cost")[0]),
             delivered_reductions=get_bmi_value(self.model, "model__outlet_removed_mass").reshape(
-                len(self.ctx.pollutants), len(self.ctx.outlet_oids)
+                int(get_bmi_value(self.model, "model__pollutant_count")[0]),
+                int(get_bmi_value(self.model, "model__outlet_count")[0]),
             ),
             bmp_record=bmp_record,
         )
