@@ -446,3 +446,18 @@ This layer does not modify scientific calculations, scenario replays, seed
 schedules, checkpoint files, or existing native/model-neutral results.
 No claim of absolute water-quality-standard attainment, model calibration,
 model-to-model scientific equivalence, or discounted lifecycle cost is made.
+
+---
+
+## Phase 15: model-neutral strategy comparison and visualization
+
+See [phase15_strategy_comparison_visualization.md](phase15_strategy_comparison_visualization.md).
+Completed Phase 12/13 BMI ensembles can now be compared as independently
+sampled management strategies using one shared Phase 14 annual-removal target
+configuration. Outputs are a validated JSON comparison report and optional
+standalone SVG cost–reduction and attainment-curve charts. Per-strategy signed
+reductions, costs, probabilities and immutable source-file hashes are retained.
+Scientific comparability must be explicitly asserted to enable strategy-mean
+Pareto frontiers; mixed backend types and mismatched full domain manifests
+cannot be ranked. The native and model-neutral scientific execution paths,
+RNG, replay, checkpoints, output schemas and calculations are unchanged.
