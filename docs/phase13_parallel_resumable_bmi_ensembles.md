@@ -94,17 +94,18 @@ all checkpoints and summary statistics have passed validation. Errors can
 leave temporary checkpoint-write files; restart ignores these incomplete
 files and checks only committed records.
 
-Resume fingerprint covers the backend/factory identifier, selected scientific
-options, base seed, first scenario ID, scenario count, absolute YAML path and
-**SHA-256 of the YAML file**. It intentionally omits `n_jobs` and `resume`.
-**Important scientific limit:** auxiliary input files referenced by the YAML
-(e.g., GeoPackages, CSV data), installed external backend source code and
-library versions cannot be fingerprinted generically. The user must keep
-these immutable for the duration of a checkpointed ensemble. Otherwise old
-and new scenarios may have different scientific inputs despite a matching
-fingerprint. Change `checkpoint_dir` and start fresh after changing any such
-input. No automatic retry, distributed scheduler, remote storage or
-exactly-once external backend side-effect guarantee is implied.
+**Updated by Phase 23:** Resume identity now also includes SHA-256 hashes of the
+native scientific files named in the model YAML, shapefile component files,
+and (when applicable) the bundled default AFO excretion-factor table. The
+optional `ensemble.additional_input_files` list covers external plugin files
+and other assets not described by the native YAML schema. The runner checks
+input content again before publishing. See
+`docs/phase23_scientific_input_provenance.md` for coverage, migration, and
+scientific limitations.
+
+Phase 13 checkpoint directories predate this stronger identity and **cannot
+be safely resumed** after Phase 23. Start a new checkpoint directory; normal
+Phase 12/13 ensemble results and seed schedules are unchanged.
 
 ## Verification
 

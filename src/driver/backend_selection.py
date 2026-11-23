@@ -38,6 +38,7 @@ class EnsemblePlan:
     n_jobs: int = 1
     checkpoint_dir: Path | None = None
     resume: bool = False
+    additional_input_files: tuple[Path, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.n_scenarios) is not int or self.n_scenarios < 1:
@@ -48,6 +49,9 @@ class EnsemblePlan:
             raise ValueError("Ensemble resume must be a boolean")
         if self.resume and self.checkpoint_dir is None:
             raise ValueError("Ensemble resume requires checkpoint_dir")
+        if not isinstance(self.additional_input_files, tuple) or any(
+                not isinstance(path, Path) for path in self.additional_input_files):
+            raise ValueError("Ensemble additional_input_files must contain paths")
 
 
 @dataclass(frozen=True)
@@ -85,7 +89,8 @@ class BackendSelection:
                     raise ValueError("Version 2 requires ensemble with only n_scenarios")
                 ensemble = EnsemblePlan(ensemble_data["n_scenarios"])
             else:
-                allowed = {"n_scenarios", "n_jobs", "checkpoint_dir", "resume"}
+                allowed = {"n_scenarios", "n_jobs", "checkpoint_dir", "resume",
+                           "additional_input_files"}
                 if (not isinstance(ensemble_data, dict) or
                         set(ensemble_data) - allowed or
                         not {"n_scenarios", "checkpoint_dir"} <= set(ensemble_data)):
@@ -93,11 +98,17 @@ class BackendSelection:
                 directory = ensemble_data["checkpoint_dir"]
                 if not isinstance(directory, str) or not directory.strip():
                     raise ValueError("Ensemble checkpoint_dir must be a nonempty path")
+                extra = ensemble_data.get("additional_input_files", [])
+                if (not isinstance(extra, list) or
+                        any(not isinstance(item, str) or not item.strip() for item in extra) or
+                        len(extra) != len(set(extra))):
+                    raise ValueError("Ensemble additional_input_files must be a list of distinct nonempty paths")
                 ensemble = EnsemblePlan(
                     ensemble_data["n_scenarios"],
                     n_jobs=ensemble_data.get("n_jobs", 1),
                     checkpoint_dir=(path.parent / directory).resolve(),
                     resume=ensemble_data.get("resume", False),
+                    additional_input_files=tuple((path.parent / entry).resolve() for entry in extra),
                 )
         else:
             ensemble = None

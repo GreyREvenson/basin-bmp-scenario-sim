@@ -104,10 +104,12 @@ than the lightweight unit tests; supply a representative small configuration.
   virtual 1-D index grids, not physical-year or geospatial grid semantics.
 - External-backend scientific validity, mass-balance appropriateness, and
   support for each BMP/AFO feature still require separate domain review.
-- Only the startup manifest, model YAML and selection file are hashed in this
-  report. As already documented for Phase 13, arbitrary externally referenced
-  data files and installed backend source revisions are not fingerprinted
-  automatically. Freeze those for defensible scientific resume/reproducibility.
+- The portability report hashes its startup manifest, model YAML and selection
+  file. **Separately**, the Phase 23 checkpoint runner hashes native YAML-
+  referenced scientific input files and any explicitly declared additional
+  backend assets before allowing resume. Unlisted plugin data, installed
+  backend source revisions, and dependency versions are not automatically
+  covered. Freeze or declare them for defensible repeatability.
 - Native diagnostic Parquet tables remain available only through the original
   native driver. The model-neutral CLI continues to publish neutral JSON and
   does **not** assume native diagnostic schema. A regression test protects

@@ -19,8 +19,9 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Any
 
 from src.interfaces.component_bootstrap import ComponentStartup
+from src.driver.input_provenance import scientific_input_manifest
 
-CHECKPOINT_SCHEMA_VERSION = 1
+CHECKPOINT_SCHEMA_VERSION = 2
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -47,20 +48,21 @@ def _run_one_worker(selection, model_config: str, index: int, seed: int,
 
 
 def _fingerprint_input(selection, root: ComponentStartup) -> dict[str, Any]:
-    """Bind checkpoints to the source YAML and selected scientific interface.
+    """Bind checkpoints to YAML, referenced native data and declared extras.
 
-    Auxiliary data referenced by the YAML, external plugin code, and their
-    versions cannot be fingerprinted generically; users must freeze them for
-    scientifically valid resume. A changed YAML is detected here.
+    External plugin source, dependency versions and undeclared backend-specific
+    assets still require external provenance/immutability controls.
     """
     return {
-        "algorithm": "phase13-checkpoints-v1",
+        "algorithm": "phase23-scientific-inputs-v2",
         "backend": selection.backend,
         "external_factory": selection.external_factory,
         "backend_options": dict(selection.backend_options or {}),
         "required_features": sorted(selection.required_features),
         "model_config": str(root.model_config),
         "model_config_sha256": sha256(root.model_config.read_bytes()).hexdigest(),
+        "scientific_input_manifest": scientific_input_manifest(
+            root.model_config, selection.ensemble.additional_input_files),
         "seed_policy": "numpy-seedsequence-spawn-uint64-v1",
         "base_seed": root.worker_seed,
         "first_scenario_id": root.scenario_id,
@@ -317,6 +319,11 @@ def _run_locked(selection, result_file, root, seeds, directory, fingerprint, met
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError("Invalid ensemble checkpoint run.json") from exc
         if existing != metadata:
+            if (isinstance(existing, dict) and
+                    existing.get("checkpoint_schema_version") != CHECKPOINT_SCHEMA_VERSION):
+                raise ValueError(
+                    "Ensemble checkpoint schema predates scientific-input provenance; "
+                    "start a new checkpoint directory rather than resuming legacy records")
             raise ValueError("Ensemble checkpoint run identity/fingerprint mismatch")
     else:
         if any(path.name != ".runner.lock" for path in directory.iterdir()):
@@ -339,6 +346,10 @@ def _run_locked(selection, result_file, root, seeds, directory, fingerprint, met
         else:
             missing.append(index)
     _parallel_missing(selection, root, seeds, missing, directory, fingerprint)
+    # Check again before publication; changed input bytes during execution
+    # must never silently result in a mixed-science final ensemble.
+    if _digest(_fingerprint_input(selection, root)) != fingerprint:
+        raise ValueError("Scientific input files changed during ensemble execution; result not published")
     summary = summarize_ensemble(records, backend=selection.backend,
                                  base_seed=root.worker_seed,
                                  first_scenario_id=root.scenario_id,
