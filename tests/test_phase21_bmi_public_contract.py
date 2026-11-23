@@ -1,7 +1,7 @@
 """Phase 21: frozen BMI public API and black-box runtime conformance.
 
 No test samples an extra random value, changes scientific methods, or writes
-project examples. The official bmipy abstract-method comparison remains an
+repo sample inputs. The official bmipy abstract-method comparison remains an
 independently optional test in test_phase7_bmipy_optional.py.
 """
 from __future__ import annotations
