@@ -22,12 +22,15 @@ def _identity():
         "startup_sha256": "b" * 64,
         "model_config_sha256": "c" * 64,
         "public_contract_sha256": public_contract_sha256(),
+        "scientific_inputs_sha256": "d" * 64,
+        "external_backend_source_sha256": "e" * 64,
+        "additional_scientific_input_count": 1,
     }
 
 
 def _acceptance():
     return {
-        "acceptance_schema_version": 1,
+        "acceptance_schema_version": 2,
         "scope": "project_annual_bmi_black_box_not_csdms_certification",
         "backend": "external",
         "external_factory": "independent_backend.model:factory",
@@ -42,7 +45,7 @@ def _acceptance():
 
 def _portability(system):
     return {
-        "portability_schema_version": 1,
+        "portability_schema_version": 2,
         "scope": "project_annual_bmi_serial_parallel_spawn_and_resume_not_csdms_certification",
         "backend": "external",
         "external_factory": "independent_backend.model:factory",
@@ -116,6 +119,9 @@ def test_one_missing_platform_cannot_be_declared_ready(tmp_path):
     ("external_factory", "", "External-backend acceptance"),
     ("public_contract_sha256", "f" * 64, "different public BMI contract"),
     ("selection_sha256", "not_sha", "valid versioned source"),
+    ("scientific_inputs_sha256", "not_sha", "valid versioned source"),
+    ("external_backend_source_sha256", "not_sha", "valid versioned source"),
+    ("additional_scientific_input_count", 0, "valid versioned source"),
 ])
 def test_reject_invalid_acceptance(tmp_path, field, value, error):
     report = _acceptance()
@@ -192,3 +198,24 @@ def test_real_external_acceptance_is_bound_to_source_file_hashes(tmp_path, monke
     assert report["selection_sha256"] == sha256_file(selection)
     assert report["public_contract_sha256"] == public_contract_sha256()
     assert report["external_factory"] == "reference_backend.annual_linear:make_backend"
+
+
+def test_legacy_evidence_cannot_pass_new_release_gate(tmp_path):
+    report = _acceptance()
+    report["acceptance_schema_version"] = 1
+    with pytest.raises(ValueError, match="incomplete or incompatible"):
+        release_gate.evaluate_release_gate(acceptance=_write(tmp_path, "legacy.json", report))
+
+
+def test_scientific_data_and_backend_hashes_must_match_across_reports(tmp_path):
+    paths = _evidence(tmp_path)
+    report = _portability("Linux")
+    report["scientific_inputs_sha256"] = "7" * 64
+    paths["linux"] = _write(tmp_path, "scientific.json", report)
+    with pytest.raises(ValueError, match="different selection, startup"):
+        release_gate.evaluate_release_gate(**paths)
+    report["scientific_inputs_sha256"] = _identity()["scientific_inputs_sha256"]
+    report["external_backend_source_sha256"] = "8" * 64
+    paths["linux"] = _write(tmp_path, "backend.json", report)
+    with pytest.raises(ValueError, match="different selection, startup"):
+        release_gate.evaluate_release_gate(**paths)

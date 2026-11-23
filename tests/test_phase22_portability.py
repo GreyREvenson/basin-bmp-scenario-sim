@@ -17,7 +17,7 @@ from src.interfaces.bmi import portability
 
 def _selection(tmp_path: Path) -> Path:
     config = tmp_path / "watershed.yaml"
-    config.write_text("not actually loaded by the mocked runner\n", encoding="utf-8")
+    config.write_text("stub: yes\n", encoding="utf-8")
     manifest = tmp_path / "startup.json"
     manifest.write_text(json.dumps({
         "schema_version": 1, "model_config": config.name,

@@ -103,7 +103,8 @@ def _run_probe(selection: BackendSelection) -> dict[str, Any]:
             coupler.finalize()
 
 
-def accept_backend(selection_file: str | Path) -> dict[str, Any]:
+def accept_backend(selection_file: str | Path, *,
+                   additional_files: tuple[str | Path, ...] = ()) -> dict[str, Any]:
     """Twice execute one startup, verify deterministic public-interface behavior.
 
     Only schema v1 single-scenario selection is accepted to keep the probe
@@ -113,17 +114,22 @@ def accept_backend(selection_file: str | Path) -> dict[str, Any]:
     selection = BackendSelection.read(selection_path)
     if selection.ensemble is not None:
         raise ValueError("BMI acceptance requires single-scenario backend selection")
+    identity = source_identity(selection_path, selection.component_manifest,
+                               additional_files=additional_files)
     first = _run_probe(selection)
     second = _run_probe(selection)
     if first != second:
         raise ValueError("BMI backend repeated-startup determinism or metadata mismatch")
+    if source_identity(selection_path, selection.component_manifest,
+                       additional_files=additional_files) != identity:
+        raise ValueError("Release evidence scientific inputs changed during acceptance")
     return {
-        "acceptance_schema_version": 1,
+        "acceptance_schema_version": 2,
         "scope": "project_annual_bmi_black_box_not_csdms_certification",
         "backend": selection.backend,
         "external_factory": selection.external_factory,
         "deterministic_repeat": True,
-        **source_identity(selection_path, selection.component_manifest),
+        **identity,
         **first,
     }
 
@@ -132,8 +138,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Probe public annual BMI adapter methods and repeatability")
     parser.add_argument("selection_json", type=Path)
     parser.add_argument("report_json", type=Path)
+    parser.add_argument("--input-file", action="append", default=[],
+                        help="Additional scientific asset (repeatable; selection-relative)")
     args = parser.parse_args()
-    report = accept_backend(args.selection_json)
+    report = accept_backend(args.selection_json, additional_files=tuple(args.input_file))
     target = args.report_json.resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(target.name + ".tmp")

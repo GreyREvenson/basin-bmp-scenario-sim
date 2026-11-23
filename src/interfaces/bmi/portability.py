@@ -28,7 +28,7 @@ from src.interfaces.bmi.release_evidence import source_identity
 from src.interfaces.component_bootstrap import ComponentStartup
 
 
-PORTABILITY_REPORT_SCHEMA_VERSION = 1
+PORTABILITY_REPORT_SCHEMA_VERSION = 2
 
 
 def check_official_bmipy() -> dict[str, Any]:
@@ -95,7 +95,8 @@ def _atomic_report(path: Path, report: dict[str, Any]) -> None:
 
 
 def certify_portability(selection_file: str | Path, *, n_scenarios: int = 2,
-                        n_jobs: int = 2, require_bmipy: bool = True) -> dict[str, Any]:
+                        n_jobs: int = 2, require_bmipy: bool = True,
+                        additional_files: tuple[str | Path, ...] = ()) -> dict[str, Any]:
     """Compare real serial and spawned-process ensembles and resume by bytes.
 
     The Phase 13 seed schedule and normal results are used for both sides.
@@ -115,14 +116,20 @@ def certify_portability(selection_file: str | Path, *, n_scenarios: int = 2,
         raise ValueError("Portability certification cannot use a replay startup")
     verify_public_contract()
     official = check_official_bmipy() if require_bmipy else None
+    identity = source_identity(selection_path, selection.component_manifest,
+                               additional_files=additional_files)
 
     with TemporaryDirectory(prefix="basin-bmp-bmi-portability-") as temp_dir:
         work = Path(temp_dir)
+        declared_assets = (selection.ensemble.additional_input_files
+                           if selection.ensemble is not None else ())
         serial_plan = EnsemblePlan(
             n_scenarios=n_scenarios, n_jobs=1, checkpoint_dir=work / "serial",
+            additional_input_files=declared_assets,
         )
         parallel_plan = EnsemblePlan(
             n_scenarios=n_scenarios, n_jobs=n_jobs, checkpoint_dir=work / "parallel",
+            additional_input_files=declared_assets,
         )
         serial = work / "serial.json"
         parallel = work / "parallel.json"
@@ -148,6 +155,9 @@ def certify_portability(selection_file: str | Path, *, n_scenarios: int = 2,
             raise ValueError("Parallel ensemble result has an incorrect scenario count")
         result_hash = sha256(expected).hexdigest()
 
+    if source_identity(selection_path, selection.component_manifest,
+                       additional_files=additional_files) != identity:
+        raise ValueError("Release evidence scientific inputs changed during portability run")
     return {
         "portability_schema_version": PORTABILITY_REPORT_SCHEMA_VERSION,
         "scope": "project_annual_bmi_serial_parallel_spawn_and_resume_not_csdms_certification",
@@ -163,7 +173,7 @@ def certify_portability(selection_file: str | Path, *, n_scenarios: int = 2,
         "serial_parallel_byte_identical": True,
         "resume_byte_identical": True,
         "result_sha256": result_hash,
-        **source_identity(selection_path, selection.component_manifest),
+        **identity,
         "official_bmipy": official if official is not None else "not_checked",
     }
 
@@ -178,10 +188,13 @@ def main() -> None:
     parser.add_argument("--n-jobs", type=int, default=2)
     parser.add_argument("--without-bmipy", action="store_true",
                         help="Run process checks only; report official BMI as unchecked")
+    parser.add_argument("--input-file", action="append", default=[],
+                        help="Additional scientific asset (repeatable; selection-relative)")
     args = parser.parse_args()
     report = certify_portability(
         args.selection_json, n_scenarios=args.n_scenarios,
         n_jobs=args.n_jobs, require_bmipy=not args.without_bmipy,
+        additional_files=tuple(args.input_file),
     )
     target = args.report_json.expanduser().resolve()
     _atomic_report(target, report)

@@ -18,10 +18,11 @@ from src.interfaces.bmi.public_contract import verify_public_contract
 from src.interfaces.bmi.release_evidence import public_contract_sha256
 from src.interfaces.bmi.portability import _atomic_report
 
-GATE_SCHEMA_VERSION = 1
+GATE_SCHEMA_VERSION = 2
 _IDENTITY_FIELDS = (
     "selection_sha256", "startup_sha256", "model_config_sha256",
-    "public_contract_sha256",
+    "public_contract_sha256", "scientific_inputs_sha256",
+    "external_backend_source_sha256", "additional_scientific_input_count",
 )
 _PUBLIC_REFERENCE_IMPORTS = frozenset({
     "src.interfaces.annual_model_contract",
@@ -75,7 +76,8 @@ def _sha(value: Any) -> bool:
 
 def _validate_identity(data: dict[str, Any], label: str) -> tuple[str, ...]:
     identity = tuple(data.get(field) for field in _IDENTITY_FIELDS)
-    if not all(_sha(value) for value in identity):
+    if not all(_sha(value) for value in identity[:-1]) or (
+            type(identity[-1]) is not int or identity[-1] < 1):
         raise ValueError(f"{label} lacks valid versioned source and contract hashes")
     if data["public_contract_sha256"] != public_contract_sha256():
         raise ValueError(f"{label} was generated for a different public BMI contract")
@@ -83,7 +85,7 @@ def _validate_identity(data: dict[str, Any], label: str) -> tuple[str, ...]:
 
 
 def _validate_acceptance(data: dict[str, Any]) -> tuple[str, ...]:
-    if (data.get("acceptance_schema_version") != 1 or
+    if (data.get("acceptance_schema_version") != 2 or
             data.get("scope") != "project_annual_bmi_black_box_not_csdms_certification" or
             data.get("backend") != "external" or
             not isinstance(data.get("external_factory"), str) or
@@ -105,7 +107,7 @@ def _validate_portability(data: dict[str, Any], operating_system: str) -> tuple[
         "ExternalWatershedModelBmi", "LiveScenarioGeneratorBmi",
         "WatershedModelBmi", "MonteCarloDriverBmi", "StochasticScenarioBmi",
     }
-    if (data.get("portability_schema_version") != 1 or
+    if (data.get("portability_schema_version") != 2 or
             data.get("scope") != "project_annual_bmi_serial_parallel_spawn_and_resume_not_csdms_certification" or
             data.get("backend") != "external" or
             not isinstance(data.get("external_factory"), str) or
@@ -175,7 +177,7 @@ def evaluate_release_gate(*, acceptance: str | Path | None = None,
         "limitations": [
             "Evidence reports are local unsigned JSON; confirm CI provenance independently.",
             "This does not certify CSDMS compliance or scientific correctness of any backend.",
-            "Undeclared scientific inputs, dependency versions and native-only diagnostics remain outside this gate.",
+            "Undeclared scientific inputs, transitive backend source files, dependency versions and native-only diagnostics remain outside this gate.",
         ],
     }
 
