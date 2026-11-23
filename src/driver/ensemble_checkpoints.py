@@ -11,11 +11,13 @@ from contextlib import contextmanager
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import replace
 from hashlib import sha256
+import filecmp
 import json
 import multiprocessing
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from time import sleep
 from typing import Any
 
 from src.interfaces.component_bootstrap import ComponentStartup
@@ -70,6 +72,35 @@ def _fingerprint_input(selection, root: ComponentStartup) -> dict[str, Any]:
     }
 
 
+def _replace_with_windows_retry(source: Path, destination: Path) -> None:
+    """Atomically publish, retrying bounded Windows sharing/access conflicts.
+
+    Windows may transiently deny replacement while another process scans or
+    reads the destination. Never delete the old file to force replacement:
+    that would sacrifice atomic publication. Other OS errors are propagated.
+    """
+    for attempt in range(7):
+        try:
+            source.replace(destination)
+            return
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) not in (5, 32) or attempt == 6:
+                raise
+            sleep(0.05 * 2 ** attempt)
+
+
+def _publish_result(source: Path, destination: Path) -> None:
+    """Avoid replacing an already identical result during a completed resume."""
+    try:
+        if destination.is_file() and filecmp.cmp(source, destination, shallow=False):
+            return
+    except OSError:
+        # An exclusively opened destination may itself prevent comparison;
+        # attempt normal atomic publication, with bounded Windows retries.
+        pass
+    _replace_with_windows_retry(source, destination)
+
+
 def _atomic_json(path: Path, value: Any) -> None:
     """Write a complete JSON file by atomic same-directory replacement."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,7 +113,7 @@ def _atomic_json(path: Path, value: Any) -> None:
             file.write("\n")
             file.flush()
             os.fsync(file.fileno())
-        temporary.replace(path)
+        _replace_with_windows_retry(temporary, path)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -208,7 +239,7 @@ def _write_streamed_result(destination: str | Path, summary: dict[str, Any],
             file.write("\n  ]\n}\n")
             file.flush()
             os.fsync(file.fileno())
-        temporary.replace(dest)
+        _publish_result(temporary, dest)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
