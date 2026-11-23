@@ -57,6 +57,8 @@ def test_serial_parallel_resume_gate_and_report_provenance(monkeypatch, tmp_path
     assert report["resume_byte_identical"]
     assert report["official_bmipy"] == {"verified": True}
     assert len(report["model_config_sha256"]) == 64
+    assert len(report["public_contract_sha256"]) == 64
+    assert report["operating_system"] in ("Linux", "Windows", "Darwin")
     assert report["process_start_method"] == "spawn"
     assert report["scope"].endswith("not_csdms_certification")
 

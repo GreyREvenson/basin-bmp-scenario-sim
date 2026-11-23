@@ -485,3 +485,16 @@ The component interfaces are now frozen in a packaged versioned snapshot;
 black-box acceptance validates runtime BMI metadata and values without
 opening a component's private scientific context. This is a compatibility
 gate, not official BMI certification or a scientific-model change.
+
+
+## Phase 24 — Architecture release-evidence gate
+
+See [Phase 24 architecture release readiness](phase24_architecture_release_readiness.md).
+The published annual BMI contract, independent-backend acceptance, and real
+Windows/Linux spawned-process portability evidence are evaluated together
+through a deterministic release-gate CLI. Reports are linked to the same
+backend-selection, startup, model configuration, and frozen contract hashes.
+Missing or incompatible evidence **never** produces a successful readiness
+status. This phase does not alter scientific computation or simulation output;
+release approval and any official third-party certifications require separate
+operator verification of the recorded CI evidence and scientific validity.

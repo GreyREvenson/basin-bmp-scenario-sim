@@ -17,6 +17,7 @@ import numpy as np
 from src.driver.backend_selection import BackendSelection, build_selected_coupler
 from src.driver.bmi_coupling import get_bmi_value, validate_annual_model_bmi
 from src.interfaces.bmi.public_contract import verify_component, verify_public_contract
+from src.interfaces.bmi.release_evidence import source_identity
 
 
 def probe_component(component) -> dict[str, Any]:
@@ -108,7 +109,8 @@ def accept_backend(selection_file: str | Path) -> dict[str, Any]:
     Only schema v1 single-scenario selection is accepted to keep the probe
     small and unambiguous; ensemble scheduling has its own integration tests.
     """
-    selection = BackendSelection.read(selection_file)
+    selection_path = Path(selection_file).expanduser().resolve(strict=True)
+    selection = BackendSelection.read(selection_path)
     if selection.ensemble is not None:
         raise ValueError("BMI acceptance requires single-scenario backend selection")
     first = _run_probe(selection)
@@ -119,7 +121,9 @@ def accept_backend(selection_file: str | Path) -> dict[str, Any]:
         "acceptance_schema_version": 1,
         "scope": "project_annual_bmi_black_box_not_csdms_certification",
         "backend": selection.backend,
+        "external_factory": selection.external_factory,
         "deterministic_repeat": True,
+        **source_identity(selection_path, selection.component_manifest),
         **first,
     }
 

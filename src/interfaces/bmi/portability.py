@@ -24,6 +24,7 @@ import numpy as np
 from src.driver.backend_selection import BackendSelection, EnsemblePlan
 from src.driver.ensemble_runner import run_backend_ensemble
 from src.interfaces.bmi.public_contract import verify_public_contract
+from src.interfaces.bmi.release_evidence import source_identity
 from src.interfaces.component_bootstrap import ComponentStartup
 
 
@@ -151,7 +152,9 @@ def certify_portability(selection_file: str | Path, *, n_scenarios: int = 2,
         "portability_schema_version": PORTABILITY_REPORT_SCHEMA_VERSION,
         "scope": "project_annual_bmi_serial_parallel_spawn_and_resume_not_csdms_certification",
         "backend": selection.backend,
+        "external_factory": selection.external_factory,
         "platform": platform.platform(),
+        "operating_system": platform.system(),
         "python_version": platform.python_version(),
         "numpy_version": np.__version__,
         "process_start_method": "spawn",
@@ -160,9 +163,7 @@ def certify_portability(selection_file: str | Path, *, n_scenarios: int = 2,
         "serial_parallel_byte_identical": True,
         "resume_byte_identical": True,
         "result_sha256": result_hash,
-        "selection_sha256": _file_hash(selection_path),
-        "startup_sha256": _file_hash(selection.component_manifest),
-        "model_config_sha256": _file_hash(root.model_config),
+        **source_identity(selection_path, selection.component_manifest),
         "official_bmipy": official if official is not None else "not_checked",
     }
 
