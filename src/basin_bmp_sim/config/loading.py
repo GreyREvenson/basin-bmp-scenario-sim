@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from basin_bmp_sim.science.plet_rows import _rows_for_pid
+
 from pathlib import Path
 from typing import Any, Dict, List
 import numpy as np
@@ -48,7 +50,6 @@ from basin_bmp_sim.config.table_sources import (
     _assemble_parcel_parameter_source,
     _assemble_plet_hydrology_source,
     _assemble_plet_concentration_source,
-    _rows_for_pid,
 )
 from basin_bmp_sim.config.plet_loading import (
     _effective_plet_classification_pairs,

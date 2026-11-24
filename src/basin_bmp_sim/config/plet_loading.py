@@ -1,6 +1,8 @@
 """PLET/RUSLE hydrology, concentration, and HUC12 input preparation."""
 
 from __future__ import annotations
+
+from basin_bmp_sim.science.plet_rows import _rows_for_pid
 from basin_bmp_sim.science.plet_classification import normalize_plet_hsg, normalize_plet_land_cover
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union, Tuple
@@ -30,7 +32,7 @@ from basin_bmp_sim.common.io import (
     read_geodataframe,
 )
 from basin_bmp_sim.common.utils import ci_get, normalize_columns
-from basin_bmp_sim.config.distributions import statistic_columns, stats_from_row
+from basin_bmp_sim.common.distributions import statistic_columns, stats_from_row
 from basin_bmp_sim.domain.constants import FRACTION_DOMAIN
 from basin_bmp_sim.config.validation.statistics import (
     require_columns,
@@ -38,7 +40,7 @@ from basin_bmp_sim.config.validation.statistics import (
     validate_stats_rows,
     validate_unique_rows,
 )
-from basin_bmp_sim.config.validation.domains import validate_numeric_columns_in_domain
+from basin_bmp_sim.domain.parameter_validation import validate_numeric_columns_in_domain
 from basin_bmp_sim.config.validation.plet import validate_plet_input_table
 from basin_bmp_sim.config.table_sources import (
     _load_table_source,
@@ -47,7 +49,6 @@ from basin_bmp_sim.config.table_sources import (
     _normalize_pathway_column,
     _normalize_pollutant_column,
     _read_gpkg_input_table,
-    _rows_for_pid,
     _validate_explicit_references,
 )
 

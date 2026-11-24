@@ -16,7 +16,7 @@ def test_removed_monoliths_have_no_compatibility_stubs() -> None:
 
     # Validate canonical imports rather than relying on old re-export modules.
     names = (
-        "config.validation.domains",
+        "domain.parameter_validation",
         "config.validation.statistics",
         "config.validation.configuration",
         "config.validation.plet",

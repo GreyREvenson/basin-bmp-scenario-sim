@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Tuple
 import numpy as np
 from basin_bmp_sim.science.afo.manure import mass_afo_realization
-from basin_bmp_sim.config.distributions import sample_group_key
+from basin_bmp_sim.common.distributions import sample_group_key
 
 
 def initialize_statistical_baseline(ctx, n_pol, logger):

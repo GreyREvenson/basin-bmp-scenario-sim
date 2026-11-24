@@ -9,7 +9,7 @@ This is a **clean-break internal API change**. No legacy module aliases or re-ex
 | `config.table_sources` | File/table access, identifier normalization, CSV/GeoPackage table assembly and generic row selection |
 | `config.plet_loading` | PLET hydrology lookups, pollutant concentration tables, HUC12 forcing and inheritance |
 | `config.loading` | Top-level loading orchestration, remaining spatial/BMP/statistical loading, validated input-bundle construction |
-| `config.validation.domains` | Physical domains, numeric value validation and sampling domains |
+| `domain.parameter_validation` | Physical domains, numeric value validation and sampling domains |
 | `config.validation.statistics` | Distribution statistics, bounds, row uniqueness and column requirements |
 | `config.validation.selection` | BMP-selection and trajectory-table validation |
 | `config.validation.plet` | PLET input and runtime coverage validation |

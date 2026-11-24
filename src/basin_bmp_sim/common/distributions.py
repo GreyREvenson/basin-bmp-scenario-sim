@@ -9,13 +9,15 @@ intentionally required.
 
 from __future__ import annotations
 
+from basin_bmp_sim.common.utils import is_nonblank
+
 import re
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-from basin_bmp_sim.config.units import convert_row_statistics, row_unit
+from basin_bmp_sim.common.units import convert_row_statistics, row_unit
 from basin_bmp_sim.domain.constants import (
     COL_SAMPLE_GROUP as SAMPLE_GROUP,
     DISTRIBUTION_NAMED_STATS as _CANONICAL_NAMED_STATS,
@@ -190,21 +192,6 @@ def stats_from_row(row: Mapping[str, Any], exclude: Iterable[str] = ()) -> Dict[
     return convert_row_statistics(conversion_row, out, expected_kind=expected_kind)
 
 
-def _nonblank(value: Any) -> bool:
-    """Return whether a value contains nonblank input.
-
-        Parameters
-        ----------
-        value : Any
-            Input value to normalize or evaluate.
-
-        Returns
-        -------
-        bool
-            ``True`` when the value is nonblank; otherwise ``False``.
-        
-    """
-    return value is not None and not pd.isna(value) and str(value).strip() != ""
 
 
 def sample_group_key(row: Mapping[str, Any], *, pid: str, variable: str) -> Tuple[str, str]:
@@ -229,7 +216,7 @@ def sample_group_key(row: Mapping[str, Any], *, pid: str, variable: str) -> Tupl
         
     """
     raw = row.get(SAMPLE_GROUP)
-    if _nonblank(raw):
+    if is_nonblank(raw):
         return variable, f"group:{str(raw).strip()}"
     return variable, f"pid:{pid}"
 

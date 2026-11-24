@@ -8,14 +8,12 @@ respecting optional bounds for loads and preserving signed BMP effects.
 from __future__ import annotations
 
 import numpy as np
-from typing import Dict, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, Optional, Tuple
 
-from basin_bmp_sim.config.units import convert_sampling_mapping
+from basin_bmp_sim.common.units import convert_sampling_mapping
 from basin_bmp_sim.domain.constants import PhysicalDomain
-from basin_bmp_sim.config.validation.domains import physical_domain_for_sampling_kind, validate_scalar_in_domain
+from basin_bmp_sim.domain.parameter_validation import physical_domain_for_sampling_kind, validate_scalar_in_domain
 
-if TYPE_CHECKING:
-    from basin_bmp_sim.execution.monte_carlo_driver import Model
 
 def _first_present(mapping: Dict[str, float], names: Tuple[str, ...]) -> float:
     """Return the first present alias from a validated statistics mapping.
@@ -37,7 +35,7 @@ def _first_present(mapping: Dict[str, float], names: Tuple[str, ...]) -> float:
 
 
 def _trunc_normal(
-    self: "Model",
+    self: Any,
     mean: float,
     sd: float,
     low: Optional[float] = None,
@@ -141,7 +139,7 @@ def _trunc_normal(
 
 
 def _piecewise_quantile_sample(
-    self: "Model",
+    self: Any,
     stats: Dict[str, float],
     size: int = 1,
 ) -> np.ndarray:
@@ -202,7 +200,7 @@ def _piecewise_quantile_sample(
     return samples
 
 def _sample_from_stats(
-    self: "Model",
+    self: Any,
     stats: Dict[str, float],
     kind: Optional[str] = None,
 ) -> float:

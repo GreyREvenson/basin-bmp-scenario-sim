@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Tuple
 from basin_bmp_sim.science.plet_defaults import apply_plet_parameter_defaults
 from basin_bmp_sim.domain.constants import NONNEGATIVE_DOMAIN
-from basin_bmp_sim.config.validation.domains import validate_parameter_value, validate_scalar_in_domain
+from basin_bmp_sim.domain.parameter_validation import validate_parameter_value, validate_scalar_in_domain
 
 
 def _plet_event_runoff_depth_in(

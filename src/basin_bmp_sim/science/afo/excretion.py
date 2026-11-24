@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 import pandas as pd
-from basin_bmp_sim.config.distributions import sample_group_key, stats_from_row
+from basin_bmp_sim.common.distributions import sample_group_key, stats_from_row
 from basin_bmp_sim.config.validation.statistics import validate_named_parameter_stats, validate_stats_rows, validate_unique_rows
 from basin_bmp_sim.common.io import read_csv_table
 from basin_bmp_sim.common.utils import normalize_columns

@@ -8,10 +8,8 @@ from __future__ import annotations
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Sequence, Union, TYPE_CHECKING
+from typing import Any, Dict, List, Sequence, Union
 
-if TYPE_CHECKING:
-    from basin_bmp_sim.execution.monte_carlo_driver import Model
 
 from basin_bmp_sim.domain.constants import (
     COL_AREA_HA,
@@ -24,7 +22,7 @@ from basin_bmp_sim.domain.constants import (
 )
 
 
-def _sample_load_rate(self: "Model", parcel_idx: int, pol_idx: int) -> float:
+def _sample_load_rate(self: Any, parcel_idx: int, pol_idx: int) -> float:
     """Sample a baseline areal pollutant load rate for one parcel/pollutant.
 
         In the current annual model the returned value has units of kg/ha/yr.
@@ -61,7 +59,7 @@ def _sample_load_rate(self: "Model", parcel_idx: int, pol_idx: int) -> float:
 
 
 def _sample_parcel_index(
-    self: "Model", eligible_indices: Sequence[int] | None = None,
+    self: Any, eligible_indices: Sequence[int] | None = None,
 ) -> int:
     """Choose a BMP-placement parcel, excluding any exhausted selection indices.
 
@@ -104,7 +102,7 @@ def _sample_parcel_index(
     self.logger.verbose(f"selected parcel idx={idx} with pid={self.parcel_selection_ids[idx]}")
     return int(idx)
 
-def _get_parcel_metadata(self: "Model", pid: Union[int, str]) -> pd.Series:
+def _get_parcel_metadata(self: Any, pid: Union[int, str]) -> pd.Series:
     """Return metadata for one parcel.
 
         Parameters
@@ -133,7 +131,7 @@ def _get_parcel_metadata(self: "Model", pid: Union[int, str]) -> pd.Series:
     return match.iloc[0]
 
 
-def _get_parcel_up_list(self: "Model", pid: Union[int, str]) -> List[str]:
+def _get_parcel_up_list(self: Any, pid: Union[int, str]) -> List[str]:
     """Return upstream parcel IDs for one parcel.
 
         Parameters
@@ -151,7 +149,7 @@ def _get_parcel_up_list(self: "Model", pid: Union[int, str]) -> List[str]:
     return [self.parcel_ids[index] for index in self.parcel_up_idxs[self.pid_to_index[str(pid)]]]
 
 
-def _get_parcel_out_oids(self: "Model", parcel_idx: int) -> List[str]:
+def _get_parcel_out_oids(self: Any, parcel_idx: int) -> List[str]:
     """Return outlet IDs connected to one parcel.
 
         Parameters
@@ -168,7 +166,7 @@ def _get_parcel_out_oids(self: "Model", parcel_idx: int) -> List[str]:
     return list(self.parcel_out_oids[parcel_idx])
 
 
-def _get_delivery_coeffs(self: "Model", pid: Union[int, str], oid: Union[int, str]) -> Dict[str, float]:
+def _get_delivery_coeffs(self: Any, pid: Union[int, str], oid: Union[int, str]) -> Dict[str, float]:
     """Return delivery coefficients for a parcel-to-outlet path.
 
         Parameters

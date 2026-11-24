@@ -12,6 +12,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Mapping
 
+import pandas as pd
+
+
+def is_nonblank(value: Any) -> bool:
+    """Return whether a scalar input-cell value is present and nonblank."""
+    return value is not None and not pd.isna(value) and str(value).strip() != ""
+
 
 def ci_get(d: Mapping[str, Any], key: str) -> Any:
     """Return a value from a mapping using a case-insensitive key lookup.

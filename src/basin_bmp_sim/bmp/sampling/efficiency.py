@@ -10,41 +10,14 @@ simulation outputs.
 from __future__ import annotations
 
 import pandas as pd
-import numpy as np
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Union
 
-if TYPE_CHECKING:
-    from basin_bmp_sim.execution.monte_carlo_driver import Model
 
-from basin_bmp_sim.domain.constants import (
-    FT_TO_M,
-    CFG_BUFFER_DEPTH_FT,
-    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
-    BMP_CPS_NAME_MAP,
-    COL_CPS,
-    COL_PROBABILITY,
-    OUTPUT_BUFFER_AREA,
-    OUTPUT_CATCHMENT_RATIO,
-    OUTPUT_IMPACTED_PIDS,
-    OUTPUT_LINEAR_LENGTH,
-    OUTPUT_PORTION_TREATED,
-    OUTPUT_REMOVED,
-    OUTPUT_TREATED,
-    OUTPUT_WETLAND_AREA,
-    DATA_BMP_COST,
-    DATA_CPS,
-    PATHWAY_VALUES,
-)
-from basin_bmp_sim.common.logging import log_scope
-from basin_bmp_sim.domain.parcel_graph import iter_full_upstream_by_distance
-from basin_bmp_sim.config.bmp_loading import load_bmp_selection_probabilities
 
-ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
-ParcelUpListFn = Callable[[Union[int, str]], List[str]]
 
 from basin_bmp_sim.bmp.pathways.plet_pathway_efficiency import _active_pathways
 
-def _sample_efficiency_map(self: "Model", cps: Union[int, str], pol_idx: int) -> Dict[str, float]:
+def _sample_efficiency_map(self: Any, cps: Union[int, str], pol_idx: int) -> Dict[str, float]:
     """Sample one BMP efficiency for every active pathway.
 
         Input validation guarantees complete coverage. In PLET/RUSLE mode this

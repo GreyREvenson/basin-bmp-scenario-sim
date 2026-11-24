@@ -1,6 +1,8 @@
 """Domains for the configuration."""
 
 from __future__ import annotations
+
+from basin_bmp_sim.common.utils import is_nonblank
 from typing import Any, Dict, Mapping, Optional, Sequence
 import numpy as np
 import pandas as pd
@@ -11,7 +13,7 @@ from basin_bmp_sim.domain.constants import (
     _SAMPLING_KIND_PHYSICAL_DOMAINS,
     _TABLE_PHYSICAL_DOMAINS,
 )
-from basin_bmp_sim.config.distributions import stats_from_row
+from basin_bmp_sim.common.distributions import stats_from_row
 
 
 
@@ -128,12 +130,12 @@ def validate_physical_distribution_rows(df: pd.DataFrame, label: str) -> None:
     for index, row in df.iterrows():
         domain = table_domain
         parameter = None
-        if "parameter" in row.index and _nonblank(row.get("parameter")):
+        if "parameter" in row.index and is_nonblank(row.get("parameter")):
             parameter = str(row.get("parameter")).strip().lower()
             domain = physical_parameter_domain(parameter) or domain
         if domain is None:
             continue
-        stats = _row_stats_raw(row)
+        stats = stats_from_row(row)
         for statistic, value in stats.items():
             if statistic == "sd":
                 continue
@@ -141,37 +143,3 @@ def validate_physical_distribution_rows(df: pd.DataFrame, label: str) -> None:
             validate_scalar_in_domain(
                 value, domain, f"{label} row {index} {item}"
             )
-
-
-def _nonblank(value: Any) -> bool:
-    """Return whether an input cell contains a nonblank value.
-
-        Parameters
-        ----------
-        value : Any
-            Input value to normalize or evaluate.
-
-        Returns
-        -------
-        bool
-            ``True`` when the value is nonblank; otherwise ``False``.
-
-    """
-    return value is not None and not pd.isna(value) and str(value).strip() != ""
-
-
-def _row_stats_raw(row: Mapping[str, Any]) -> Dict[str, float]:
-    """Return normalized numeric statistics from an input row.
-
-        Parameters
-        ----------
-        row : Mapping[str, Any]
-            Input table row.
-
-        Returns
-        -------
-        Dict[str, float]
-            Normalized numeric statistics extracted from the row.
-
-    """
-    return stats_from_row(row)

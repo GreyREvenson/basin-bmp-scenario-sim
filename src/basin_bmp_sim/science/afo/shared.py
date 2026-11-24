@@ -5,7 +5,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 from basin_bmp_sim.domain.constants import AFO_SPECIES_ALIASES as _SPECIES_ALIAS, AFO_SPECIES
-from basin_bmp_sim.config.distributions import stats_from_row, sample_stats_bounded
+from basin_bmp_sim.common.distributions import stats_from_row, sample_stats_bounded
 from basin_bmp_sim.config.validation.statistics import validate_named_parameter_stats
 
 def _animal_species(value: Any) -> str:

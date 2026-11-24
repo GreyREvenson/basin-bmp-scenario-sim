@@ -8,10 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Optional, Union, TYPE_CHECKING
+from typing import Any, Dict, Optional, Union
 
-if TYPE_CHECKING:
-    from basin_bmp_sim.execution.monte_carlo_driver import Model
 
 from basin_bmp_sim.domain.constants import (
     COL_CPS,
@@ -29,7 +27,8 @@ from basin_bmp_sim.domain.constants import (
     PROB_EST_WETLAND_MAX_AREA_HA,
 )
 from basin_bmp_sim.common.logging import log_scope
-from basin_bmp_sim.config.distributions import row_unit, stats_from_row
+from basin_bmp_sim.common.distributions import stats_from_row
+from basin_bmp_sim.common.units import row_unit
 
 def _finite_numeric_row_values(row: pd.Series) -> Dict[str, float]:
     """Return finite numeric row values keyed by normalized column name.
@@ -113,7 +112,7 @@ def _canonical_cost_unit(unit: object) -> str:
     return label
 
 
-def _sample_cost_rate(self: "Model", row: pd.Series, cps: Union[int, str]) -> float:
+def _sample_cost_rate(self: Any, row: pd.Series, cps: Union[int, str]) -> float:
     """Sample one unit-aware BMP cost rate from a cost row.
 
     Parameters
@@ -147,7 +146,7 @@ def _sample_cost_rate(self: "Model", row: pd.Series, cps: Union[int, str]) -> fl
     return rate_value
 
 
-def _representative_cost_rate(self: "Model", row: pd.Series, cps: Optional[Union[int, str]] = None) -> float:
+def _representative_cost_rate(self: Any, row: pd.Series, cps: Optional[Union[int, str]] = None) -> float:
     """Select a representative unit-aware cost rate from one cost row.
 
     Parameters
@@ -197,7 +196,7 @@ def _representative_cost_rate(self: "Model", row: pd.Series, cps: Optional[Union
 
 
 def _scale_cost_rate_to_total(
-    self: "Model",
+    self: Any,
     cps: Union[int, str],
     rate_value: float,
     unit: str,
@@ -265,7 +264,7 @@ def _scale_cost_rate_to_total(
 
 
 def _get_bmp_cost(
-    self: "Model",
+    self: Any,
     cps: Union[int, str],
     quantity: float,
     *,
@@ -339,7 +338,7 @@ def _get_bmp_cost(
 
 
 def _select_cost_rate_median(
-    self: "Model",
+    self: Any,
     row: pd.Series,
     cps: Optional[Union[int, str]] = None,
 ) -> float:
@@ -362,7 +361,7 @@ def _select_cost_rate_median(
     return _representative_cost_rate(self, row=row, cps=cps)
 
 
-def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
+def _estimate_costs_for_probabilities(self: Any) -> pd.DataFrame:
     """Estimate BMP selection probabilities from cost heuristics.
 
     The function computes a representative total cost for every configured BMP

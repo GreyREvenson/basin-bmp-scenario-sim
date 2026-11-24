@@ -11,40 +11,16 @@ from __future__ import annotations
 
 import pandas as pd
 import numpy as np
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union, TYPE_CHECKING
+from typing import Any, Callable, List, Optional, Union
 
-if TYPE_CHECKING:
-    from basin_bmp_sim.execution.monte_carlo_driver import Model
 
-from basin_bmp_sim.domain.constants import (
-    FT_TO_M,
-    CFG_BUFFER_DEPTH_FT,
-    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
-    BMP_CPS_NAME_MAP,
-    COL_CPS,
-    COL_PROBABILITY,
-    OUTPUT_BUFFER_AREA,
-    OUTPUT_CATCHMENT_RATIO,
-    OUTPUT_IMPACTED_PIDS,
-    OUTPUT_LINEAR_LENGTH,
-    OUTPUT_PORTION_TREATED,
-    OUTPUT_REMOVED,
-    OUTPUT_TREATED,
-    OUTPUT_WETLAND_AREA,
-    DATA_BMP_COST,
-    DATA_CPS,
-    PATHWAY_VALUES,
-)
-from basin_bmp_sim.common.logging import log_scope
-from basin_bmp_sim.domain.parcel_graph import iter_full_upstream_by_distance
+from basin_bmp_sim.domain.constants import BMP_CPS_NAME_MAP, COL_CPS, COL_PROBABILITY, DATA_BMP_COST, DATA_CPS
 from basin_bmp_sim.config.bmp_loading import load_bmp_selection_probabilities
 
-ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
-ParcelUpListFn = Callable[[Union[int, str]], List[str]]
 
 
 
-def _select_bmp_type(self: "Model") -> int:
+def _select_bmp_type(self: Any) -> int:
     """Randomly choose the next BMP CPS code.
 
     The selection is made from the probability table produced by
@@ -62,7 +38,7 @@ def _select_bmp_type(self: "Model") -> int:
     return cps
 
 
-def _get_bmp_name(self: "Model", cps: Union[int, str]) -> str:
+def _get_bmp_name(self: Any, cps: Union[int, str]) -> str:
     """Return a human-readable BMP name for a CPS code.
 
     Parameters
@@ -81,7 +57,7 @@ def _get_bmp_name(self: "Model", cps: Union[int, str]) -> str:
     return BMP_CPS_NAME_MAP[key] if key in BMP_CPS_NAME_MAP else f"CPS {key}"
 
 
-def _get_bmp_selection_probs(self: "Model", bmp_sel_path: Optional[str]) -> pd.DataFrame:
+def _get_bmp_selection_probs(self: Any, bmp_sel_path: Optional[str]) -> pd.DataFrame:
     """Build the BMP selection probability table.
 
     The function first attempts to read an explicit probability CSV. If no

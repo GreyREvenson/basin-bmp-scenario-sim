@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from basin_bmp_sim.config.units import canonical_cost_unit, convert_cost_value
+from basin_bmp_sim.common.units import canonical_cost_unit, convert_cost_value
 
 
 def test_cost_project_unit_aliases_share_canonical_form() -> None:

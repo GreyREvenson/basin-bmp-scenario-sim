@@ -13,6 +13,8 @@ systems because those factors are coupled in the RUSLE equation.
 
 from __future__ import annotations
 
+from basin_bmp_sim.common.utils import is_nonblank
+
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
@@ -39,14 +41,12 @@ from basin_bmp_sim.domain.constants import (
 )
 
 
-def _nonblank(value: Any) -> bool:
-    return value is not None and not pd.isna(value) and str(value).strip() != ""
 
 
 def row_unit(row: Mapping[str, Any]) -> Optional[Any]:
     """Return a supplied ``units``/``unit`` value, if any."""
     for column in ("units", "unit"):
-        if column in row and _nonblank(row.get(column)):
+        if column in row and is_nonblank(row.get(column)):
             return row.get(column)
     return None
 
@@ -80,7 +80,7 @@ def infer_unit_kind(
     """Infer an expected unit kind from model-row metadata when possible."""
     if expected_kind is not None:
         return expected_kind
-    if "parameter" in row and _nonblank(row.get("parameter")):
+    if "parameter" in row and is_nonblank(row.get("parameter")):
         return parameter_unit_kind(row.get("parameter"))
     if "cps" in row and "pollutant" in row:
         return "fraction"
@@ -99,7 +99,7 @@ def convert_statistics(
 ) -> Tuple[Dict[str, float], str]:
     """Convert numeric statistics from ``unit`` to a canonical model unit."""
     numeric = {str(key).strip().lower(): float(value) for key, value in stats.items()}
-    if not _nonblank(unit):
+    if not is_nonblank(unit):
         return numeric, ""
     if expected_kind is not None:
         if expected_kind not in _KIND_SPECS:

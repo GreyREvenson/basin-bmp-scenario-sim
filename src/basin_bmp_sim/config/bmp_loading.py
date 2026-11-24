@@ -23,7 +23,6 @@ from basin_bmp_sim.common.utils import ci_get, normalize_columns
 from basin_bmp_sim.config.validation.statistics import (
     require_columns,
     validate_stats_rows,
-    validate_stats_table,
     validate_unique_rows,
 )
 from basin_bmp_sim.config.validation.selection import validate_bmp_selection_table
@@ -485,7 +484,7 @@ def _load_bmp_cost(cfg: Dict[str, Any], cps: List[int], logger: Any) -> Optional
         )
     df = df.reset_index(drop=True)
     df = _normalize_cps_column(df, CFG_BMP_COST)
-    validate_stats_table(df, CFG_BMP_COST)
+    validate_stats_rows(df, CFG_BMP_COST)
     df = df[df[COL_CPS].isin(cps)].copy()
     if df.empty:
         logger.warning("bmp_cost has no records for specified cps; proceeding without costing")

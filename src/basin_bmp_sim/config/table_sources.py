@@ -1,6 +1,8 @@
 """GeoPackage/CSV input-table preparation and normalization."""
 
 from __future__ import annotations
+
+from basin_bmp_sim.common.utils import is_nonblank
 from pathlib import Path
 import difflib
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
@@ -33,9 +35,9 @@ from basin_bmp_sim.common.io import (
     read_geopackage_table_info,
 )
 from basin_bmp_sim.common.utils import ci_get, normalize_columns, normalize_pollutant_label
-from basin_bmp_sim.config.distributions import statistic_columns, stats_from_row
+from basin_bmp_sim.common.distributions import statistic_columns, stats_from_row
 from basin_bmp_sim.config.validation.statistics import require_columns, validate_unique_rows
-from basin_bmp_sim.config.validation.domains import validate_numeric_columns_in_domain
+from basin_bmp_sim.domain.parameter_validation import validate_numeric_columns_in_domain
 from basin_bmp_sim.config.schema import (
     INPUT_SCHEMA_TABLE,
     INPUT_SCHEMA_VERSION,
@@ -606,36 +608,8 @@ def _normalize_pollutant_column(df: pd.DataFrame, col: str, label: str, logger: 
     return df
 
 
-def _nonblank(value: Any) -> bool:
-    """Return whether an input cell contains a nonblank value.
-
-    Parameters
-    ----------
-    value : Any
-        Input value to normalize or evaluate.
-
-    Returns
-    -------
-    bool
-        ``True`` when the value is nonblank; otherwise ``False``.
-    """
-    return value is not None and not pd.isna(value) and str(value).strip() != ""
 
 
-def _row_stats_raw(row: Mapping[str, Any]) -> Dict[str, float]:
-    """Return normalized numeric statistics from an input row.
-
-    Parameters
-    ----------
-    row : Mapping[str, Any]
-        Input table row.
-
-    Returns
-    -------
-    Dict[str, float]
-        Normalized numeric statistics extracted from the row.
-    """
-    return stats_from_row(row)
 
 
 def _ensure_projected(gdf: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
@@ -681,28 +655,3 @@ def _normalize_huc12(value: Any, *, label: str) -> str:
             "(for example '050902021001')"
         )
     return text
-
-
-def _rows_for_pid(table: Optional[pd.DataFrame], pid: Union[int, str]) -> List[pd.Series]:
-    """Resolve NULL default rows plus parcel-specific overrides for one parcel."""
-    if table is None or table.empty:
-        return []
-    from basin_bmp_sim.science.plet_classification import canonical_parameter_name
-
-    default_rows = table[table[COL_PID].isna()]
-    try:
-        target_pid = int(pid)
-        numeric_pids = pd.to_numeric(table[COL_PID], errors="coerce")
-        exact_rows = table[table[COL_PID].notna() & (numeric_pids == target_pid)]
-    except (TypeError, ValueError):
-        exact_rows = table[
-            table[COL_PID].notna() & (table[COL_PID].astype(str) == str(pid))
-        ]
-    combined = pd.concat([default_rows, exact_rows], ignore_index=True)
-    if combined.empty:
-        return []
-    combined = combined.assign(
-        _canonical_parameter=combined["parameter"].map(canonical_parameter_name)
-    )
-    combined = combined.drop_duplicates(subset=["_canonical_parameter"], keep="last")
-    return [row for _, row in combined.iterrows()]

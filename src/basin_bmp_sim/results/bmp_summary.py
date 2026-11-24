@@ -9,6 +9,8 @@ pollutant loads.
 
 from __future__ import annotations
 
+from basin_bmp_sim.common.numerics import _safe_mass_ratio
+
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -83,31 +85,6 @@ def _compute_statistics(values: np.ndarray) -> Dict[str, float]:
     }
 
 
-def _safe_mass_ratio(numerator: float, denominator: float) -> Optional[float]:
-    """Return a dimensionless mass ratio, or ``None`` if undefined.
-
-        Ratios are intentionally not clipped. Signed BMP effectiveness is supported,
-        so removed mass and the resulting realized/overall reduction ratios may be
-        negative when a BMP increases load.
-
-        Parameters
-        ----------
-        numerator : float
-            Numerator of the dimensionless ratio.
-        denominator : float
-            Denominator of the dimensionless ratio.
-
-        Returns
-        -------
-        Optional[float]
-            Dimensionless ratio, or ``None`` when the denominator is not positive or finite.
-        
-    """
-    numerator = float(numerator)
-    denominator = float(denominator)
-    if not np.isfinite(numerator) or not np.isfinite(denominator) or denominator <= 0.0:
-        return None
-    return numerator / denominator
 
 
 def _mass_col(prefix: str, pollutant: str) -> str:

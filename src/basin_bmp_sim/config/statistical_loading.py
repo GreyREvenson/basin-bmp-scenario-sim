@@ -18,7 +18,6 @@ from basin_bmp_sim.domain.constants import (
 from basin_bmp_sim.common.utils import ci_get
 from basin_bmp_sim.config.validation.statistics import (
     validate_stats_rows,
-    validate_stats_table,
     validate_unique_rows,
 )
 from basin_bmp_sim.config.table_sources import (
@@ -120,7 +119,7 @@ def _load_pollutant_load_rate(
     )
     df = _normalize_pollutant_column(df, COL_POLLUTANT, CFG_POLLUTANT_LOAD_RATE, logger)
     df = _normalize_pathway_column(df, CFG_POLLUTANT_LOAD_RATE, logger)
-    validate_stats_table(df, CFG_POLLUTANT_LOAD_RATE)
+    validate_stats_rows(df, CFG_POLLUTANT_LOAD_RATE)
     df = _normalize_identifier_columns(df, [COL_PID], CFG_POLLUTANT_LOAD_RATE, allow_null_pid=True)
     parcel_ids = [int(pid) for pid in parcels[COL_PID].tolist()]
     _validate_explicit_references(

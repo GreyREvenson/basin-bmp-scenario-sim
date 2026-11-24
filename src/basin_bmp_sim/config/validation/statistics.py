@@ -4,10 +4,9 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
-from basin_bmp_sim.config.distributions import stats_from_row
-from basin_bmp_sim.config.validation.domains import (
-    _nonblank,
-    _row_stats_raw,
+from basin_bmp_sim.common.distributions import stats_from_row
+from basin_bmp_sim.common.utils import is_nonblank
+from basin_bmp_sim.domain.parameter_validation import (
     validate_physical_distribution_rows,
 )
 
@@ -65,9 +64,9 @@ def validate_named_parameter_stats(
     prefix = name + "_"
     supplied = {
         key[len(prefix):]: value for key, value in columns.items()
-        if key.startswith(prefix) and _nonblank(value)
+        if key.startswith(prefix) and is_nonblank(value)
     }
-    if _nonblank(base):
+    if is_nonblank(base):
         if supplied:
             raise ValueError(
                 f"{label}: {name} mixes fixed value with distribution statistics "
@@ -121,7 +120,7 @@ def validate_numeric_distribution_rows(df: pd.DataFrame, label: str) -> None:
     if df is None or df.empty:
         return
     for index, row in df.iterrows():
-        stats = _row_stats_raw(row)
+        stats = stats_from_row(row)
         if not stats:
             raise ValueError(f"{label} row {index} has no fixed value or distribution statistics")
         has_value = "value" in stats
@@ -204,7 +203,7 @@ def validate_distribution_bounds(
         if parameter not in bounds:
             continue
         low, high = bounds[parameter]
-        stats = _row_stats_raw(row)
+        stats = stats_from_row(row)
         for name, value in stats.items():
             if name == "sd":
                 continue
@@ -215,19 +214,6 @@ def validate_distribution_bounds(
                 raise ValueError(f"{label} row {index} {parameter}.{name}={numeric} exceeds maximum {high}")
 
 
-def validate_stats_table(df: pd.DataFrame, label: str) -> None:
-    """Validate a table using the shared numeric input-distribution schema.
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Input table to process.
-        label : str
-            Context label used in diagnostics and validation errors.
-
-    """
-    validate_numeric_distribution_rows(df, label)
-    validate_physical_distribution_rows(df, label)
 
 
 def validate_stats_rows(df: pd.DataFrame, label: str) -> None:

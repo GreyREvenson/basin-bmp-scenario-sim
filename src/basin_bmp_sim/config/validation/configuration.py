@@ -19,7 +19,7 @@ from basin_bmp_sim.domain.constants import (
     POSITIVE_DOMAIN,
 )
 from basin_bmp_sim.common.utils import ci_get
-from basin_bmp_sim.config.validation.domains import validate_scalar_in_domain
+from basin_bmp_sim.domain.parameter_validation import validate_scalar_in_domain
 
 
 def validate_config(cfg: Dict[str, Any]) -> None:

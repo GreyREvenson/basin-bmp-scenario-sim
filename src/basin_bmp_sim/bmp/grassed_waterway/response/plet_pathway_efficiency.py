@@ -11,41 +11,17 @@ from __future__ import annotations
 
 import pandas as pd
 import numpy as np
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Sequence, Union
 
-if TYPE_CHECKING:
-    from basin_bmp_sim.execution.monte_carlo_driver import Model
 
-from basin_bmp_sim.domain.constants import (
-    FT_TO_M,
-    CFG_BUFFER_DEPTH_FT,
-    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
-    BMP_CPS_NAME_MAP,
-    COL_CPS,
-    COL_PROBABILITY,
-    OUTPUT_BUFFER_AREA,
-    OUTPUT_CATCHMENT_RATIO,
-    OUTPUT_IMPACTED_PIDS,
-    OUTPUT_LINEAR_LENGTH,
-    OUTPUT_PORTION_TREATED,
-    OUTPUT_REMOVED,
-    OUTPUT_TREATED,
-    OUTPUT_WETLAND_AREA,
-    DATA_BMP_COST,
-    DATA_CPS,
-    PATHWAY_VALUES,
-)
+from basin_bmp_sim.domain.constants import OUTPUT_REMOVED, OUTPUT_TREATED
 from basin_bmp_sim.common.logging import log_scope
-from basin_bmp_sim.domain.parcel_graph import iter_full_upstream_by_distance
-from basin_bmp_sim.config.bmp_loading import load_bmp_selection_probabilities
 
-ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
-ParcelUpListFn = Callable[[Union[int, str]], List[str]]
 
 from basin_bmp_sim.bmp.pathways.plet_pathway_efficiency import _active_pathways
 
 def _simulate_grassed(
-    self: "Model",
+    self: Any,
     parcel_idx: int,
     eff_maps: Sequence[Dict[str, float]],
     load_rates: np.ndarray,

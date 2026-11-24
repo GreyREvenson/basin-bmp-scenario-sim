@@ -4,32 +4,13 @@ No RNG, output serialization, or driver-level orchestration belongs here.
 All computations preserve the historical kg/timestep convention.
 """
 from __future__ import annotations
+
+from basin_bmp_sim.common.numerics import _safe_mass_ratio
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from basin_bmp_sim.domain.constants import CURRENT_TIMESTEP_YEARS as _CURRENT_TIMESTEP_YEARS
 from basin_bmp_sim.domain.constants import OUTPUT_IMPACTED_PIDS
 
-def _safe_mass_ratio(numerator: float, denominator: float) -> Optional[float]:
-    """Return a dimensionless mass ratio, or ``None`` when undefined.
-
-        Parameters
-        ----------
-        numerator : float
-            Numerator of the dimensionless ratio.
-        denominator : float
-            Denominator of the dimensionless ratio.
-
-        Returns
-        -------
-        Optional[float]
-            Dimensionless ratio, or ``None`` when the denominator is not positive or finite.
-
-    """
-    numerator = float(numerator)
-    denominator = float(denominator)
-    if not np.isfinite(numerator) or not np.isfinite(denominator) or denominator <= 0.0:
-        return None
-    return numerator / denominator
 
 
 def _bmp_impacted_parcel_indices(ctx: Any, parcel_idx: int, bmp_rec: Dict[str, Any]) -> List[int]:

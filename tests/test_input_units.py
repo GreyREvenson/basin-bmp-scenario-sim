@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from basin_bmp_sim.config.distributions import stats_from_row
-from basin_bmp_sim.config.units import canonical_cost_unit, convert_cost_value
+from basin_bmp_sim.common.distributions import stats_from_row
+from basin_bmp_sim.common.units import canonical_cost_unit, convert_cost_value
 from basin_bmp_sim.scenarios.sampling import _sample_from_stats
 
 

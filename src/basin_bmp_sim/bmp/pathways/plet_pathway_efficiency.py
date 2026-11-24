@@ -11,40 +11,15 @@ from __future__ import annotations
 
 import pandas as pd
 import numpy as np
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Union
 
-if TYPE_CHECKING:
-    from basin_bmp_sim.execution.monte_carlo_driver import Model
 
-from basin_bmp_sim.domain.constants import (
-    FT_TO_M,
-    CFG_BUFFER_DEPTH_FT,
-    CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
-    BMP_CPS_NAME_MAP,
-    COL_CPS,
-    COL_PROBABILITY,
-    OUTPUT_BUFFER_AREA,
-    OUTPUT_CATCHMENT_RATIO,
-    OUTPUT_IMPACTED_PIDS,
-    OUTPUT_LINEAR_LENGTH,
-    OUTPUT_PORTION_TREATED,
-    OUTPUT_REMOVED,
-    OUTPUT_TREATED,
-    OUTPUT_WETLAND_AREA,
-    DATA_BMP_COST,
-    DATA_CPS,
-    PATHWAY_VALUES,
-)
-from basin_bmp_sim.common.logging import log_scope
-from basin_bmp_sim.domain.parcel_graph import iter_full_upstream_by_distance
-from basin_bmp_sim.config.bmp_loading import load_bmp_selection_probabilities
-
-ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
-ParcelUpListFn = Callable[[Union[int, str]], List[str]]
+from basin_bmp_sim.domain.constants import PATHWAY_VALUES
 
 
 
-def _active_pathways(self: "Model") -> List[str]:
+
+def _active_pathways(self: Any) -> List[str]:
     """Return the model's active pathways, using the configured pathways or the standard three-path default.
 
         Returns
@@ -57,7 +32,7 @@ def _active_pathways(self: "Model") -> List[str]:
     return list(configured) if configured else list(PATHWAY_VALUES)
 
 
-def _get_pathway_load_rates(self: "Model", parcel_idx: int, pol_idx: int, total_load_rate: float) -> Dict[str, float]:
+def _get_pathway_load_rates(self: Any, parcel_idx: int, pol_idx: int, total_load_rate: float) -> Dict[str, float]:
     """Return current parcel areal load rate contributions by active pathway.
 
         Parameters
@@ -103,7 +78,7 @@ def _get_pathway_load_rates(self: "Model", parcel_idx: int, pol_idx: int, total_
 
 
 def _get_current_total_load_rate(
-    self: "Model", parcel_idx: int, pol_idx: int, fallback_load_rate: float
+    self: Any, parcel_idx: int, pol_idx: int, fallback_load_rate: float
 ) -> float:
     """Return the current total across tracked pathways.
 
@@ -133,7 +108,7 @@ def _get_current_total_load_rate(
 
 
 def _apply_pathway_reduction(
-    self: "Model",
+    self: Any,
     parcel_idx: int,
     pol_idx: int,
     treatment_fraction: float,

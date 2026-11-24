@@ -4,31 +4,10 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Sequence
 import pandas as pd
 from basin_bmp_sim.domain.constants import COL_PID, COL_POLLUTANT
+from basin_bmp_sim.science.plet_rows import _rows_for_pid
 
 
 
-def _rows_for_pid(table: Optional[pd.DataFrame], pid: object) -> List[pd.Series]:
-    """Resolve NULL default parameter rows plus parcel-specific overrides."""
-    if table is None or table.empty:
-        return []
-    from basin_bmp_sim.science.plet_classification import canonical_parameter_name
-    defaults = table[table[COL_PID].isna()]
-    try:
-        target_pid = int(pid)
-        pid_values = pd.to_numeric(table[COL_PID], errors="coerce")
-        exact = table[table[COL_PID].notna() & (pid_values == target_pid)]
-    except (TypeError, ValueError):
-        exact = table[
-            table[COL_PID].notna() & (table[COL_PID].astype(str) == str(pid))
-        ]
-    combined = pd.concat([defaults, exact], ignore_index=True)
-    if combined.empty:
-        return []
-    combined = combined.assign(
-        _canonical_parameter=combined["parameter"].map(canonical_parameter_name)
-    )
-    combined = combined.drop_duplicates(subset=["_canonical_parameter"], keep="last")
-    return [row for _, row in combined.iterrows()]
 
 
 def validate_plet_input_table(table: pd.DataFrame, parcel_ids: Sequence[str]) -> pd.DataFrame:

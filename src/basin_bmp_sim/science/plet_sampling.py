@@ -7,9 +7,9 @@ from basin_bmp_sim.domain.constants import (
     PLET_CLASSIFICATION_PARAMETERS,
     PLET_DERIVED_PARAMETERS as _PLET_DERIVED_PARAMETERS,
 )
-from basin_bmp_sim.config.distributions import sample_group_key, stats_from_row
-from basin_bmp_sim.config.table_sources import _rows_for_pid
-from basin_bmp_sim.config.validation.domains import sampling_kind_for_parameter
+from basin_bmp_sim.common.distributions import sample_group_key, stats_from_row
+from basin_bmp_sim.science.plet_rows import _rows_for_pid
+from basin_bmp_sim.domain.parameter_validation import sampling_kind_for_parameter
 from basin_bmp_sim.science.plet_classification import (
     canonical_parameter_name,
     normalize_plet_hsg,
