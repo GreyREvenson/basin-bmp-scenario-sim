@@ -1,5 +1,6 @@
 from __future__ import annotations
 from basin_bmp_sim.config.settings import apply_config_defaults
+from basin_bmp_sim.config import spatial_loading
 
 import pandas as pd
 import pytest
@@ -59,14 +60,14 @@ def test_build_parcel_down_map_trims_normalized_edge_ids() -> None:
             {"pid": " 10 ", "pid_down": " 1 "},
         ]
     )
-    result = input_config._build_parcel_down_map(upstream, ["1", "2", "3", "10"])
+    result = spatial_loading._build_parcel_down_map(upstream, ["1", "2", "3", "10"])
     assert result["10"] == "1"
 
 
 def test_build_parcel_down_map_unknown_upstream_pid_raises() -> None:
     upstream = pd.DataFrame([{"pid": "10", "pid_down": "999"}])
     with pytest.raises(ValueError, match="999"):
-        input_config._build_parcel_down_map(upstream, ["1", "10"])
+        spatial_loading._build_parcel_down_map(upstream, ["1", "10"])
 
 
 
@@ -86,11 +87,11 @@ def test_load_and_validate_all_rejects_non_mapping_load_generation(monkeypatch, 
     monkeypatch.setattr(input_config, "normalize_config", lambda cfg: cfg)
     monkeypatch.setattr(input_config, "validate_config", lambda cfg: None)
     monkeypatch.setattr(input_config, "log_scope", lambda logger=None: _NullScope())
-    monkeypatch.setattr(input_config, "_load_domain", lambda cfg, logger: object())
-    monkeypatch.setattr(input_config, "_load_parcels", lambda cfg, domain, logger: pd.DataFrame({"pid": [1]}))
-    monkeypatch.setattr(input_config, "_load_parcel_graph", lambda cfg, logger: pd.DataFrame(columns=["pid", "pid_down"]))
-    monkeypatch.setattr(input_config, "_load_parcel_outlets", lambda cfg, logger: pd.DataFrame({"pid": [1], "oid": ["O1"]}))
-    monkeypatch.setattr(input_config, "_load_parcel_selection", lambda cfg, parcels, logger: pd.DataFrame({"pid": [1], "probability": [1.0]}))
+    monkeypatch.setattr(spatial_loading, "_load_domain", lambda cfg, logger: object())
+    monkeypatch.setattr(spatial_loading, "_load_parcels", lambda cfg, domain, logger: pd.DataFrame({"pid": [1]}))
+    monkeypatch.setattr(spatial_loading, "_load_parcel_graph", lambda cfg, logger: pd.DataFrame(columns=["pid", "pid_down"]))
+    monkeypatch.setattr(spatial_loading, "_load_parcel_outlets", lambda cfg, logger: pd.DataFrame({"pid": [1], "oid": ["O1"]}))
+    monkeypatch.setattr(spatial_loading, "_load_parcel_selection", lambda cfg, parcels, logger: pd.DataFrame({"pid": [1], "probability": [1.0]}))
     monkeypatch.setattr(input_config, "_load_pollutants", lambda cfg: ["TN"])
     monkeypatch.setattr(input_config, "_load_cps", lambda cfg: [329])
 
@@ -112,11 +113,11 @@ def test_load_and_validate_all_rejects_unsupported_load_generation_mode(monkeypa
     monkeypatch.setattr(input_config, "normalize_config", lambda cfg: cfg)
     monkeypatch.setattr(input_config, "validate_config", lambda cfg: None)
     monkeypatch.setattr(input_config, "log_scope", lambda logger=None: _NullScope())
-    monkeypatch.setattr(input_config, "_load_domain", lambda cfg, logger: object())
-    monkeypatch.setattr(input_config, "_load_parcels", lambda cfg, domain, logger: pd.DataFrame({"pid": [1]}))
-    monkeypatch.setattr(input_config, "_load_parcel_graph", lambda cfg, logger: pd.DataFrame(columns=["pid", "pid_down"]))
-    monkeypatch.setattr(input_config, "_load_parcel_outlets", lambda cfg, logger: pd.DataFrame({"pid": [1], "oid": ["O1"]}))
-    monkeypatch.setattr(input_config, "_load_parcel_selection", lambda cfg, parcels, logger: pd.DataFrame({"pid": [1], "probability": [1.0]}))
+    monkeypatch.setattr(spatial_loading, "_load_domain", lambda cfg, logger: object())
+    monkeypatch.setattr(spatial_loading, "_load_parcels", lambda cfg, domain, logger: pd.DataFrame({"pid": [1]}))
+    monkeypatch.setattr(spatial_loading, "_load_parcel_graph", lambda cfg, logger: pd.DataFrame(columns=["pid", "pid_down"]))
+    monkeypatch.setattr(spatial_loading, "_load_parcel_outlets", lambda cfg, logger: pd.DataFrame({"pid": [1], "oid": ["O1"]}))
+    monkeypatch.setattr(spatial_loading, "_load_parcel_selection", lambda cfg, parcels, logger: pd.DataFrame({"pid": [1], "probability": [1.0]}))
     monkeypatch.setattr(input_config, "_load_pollutants", lambda cfg: ["TN"])
     monkeypatch.setattr(input_config, "_load_cps", lambda cfg: [329])
 
@@ -139,19 +140,19 @@ def test_load_and_validate_all_accepts_mixed_case_plet_mode_and_builds_maps(monk
     monkeypatch.setattr(input_config, "normalize_config", lambda cfg: cfg)
     monkeypatch.setattr(input_config, "validate_config", lambda cfg: None)
     monkeypatch.setattr(input_config, "log_scope", lambda logger=None: _NullScope())
-    monkeypatch.setattr(input_config, "_load_domain", lambda cfg, logger: object())
+    monkeypatch.setattr(spatial_loading, "_load_domain", lambda cfg, logger: object())
     monkeypatch.setattr(
-        input_config,
+        spatial_loading,
         "_load_parcels",
         lambda cfg, domain, logger: pd.DataFrame({"pid": [1, 2]}),
     )
     monkeypatch.setattr(
-        input_config,
+        spatial_loading,
         "_load_parcel_graph",
         lambda cfg, logger: pd.DataFrame({"pid": [2], "pid_down": [1]}),
     )
     monkeypatch.setattr(
-        input_config,
+        spatial_loading,
         "_load_parcel_outlets",
         lambda cfg, logger: pd.DataFrame(
             {
@@ -161,14 +162,14 @@ def test_load_and_validate_all_accepts_mixed_case_plet_mode_and_builds_maps(monk
         ),
     )
     monkeypatch.setattr(
-        input_config,
+        spatial_loading,
         "_load_parcel_selection",
         lambda cfg, parcels, logger: pd.DataFrame({"pid": [1, 2], "probability": [0.5, 0.5]}),
     )
     monkeypatch.setattr(input_config, "_load_pollutants", lambda cfg: ["TN"])
     monkeypatch.setattr(input_config, "_load_cps", lambda cfg: [329])
     monkeypatch.setattr(
-        input_config,
+        spatial_loading,
         "_load_outlet_loc",
         lambda cfg, domain, logger: (_ for _ in ()).throw(RuntimeError("stop after outlet_loc")),
     )
@@ -182,7 +183,7 @@ def test_load_and_validate_all_accepts_mixed_case_plet_mode_and_builds_maps(monk
     assert any("Loading and validating input datasets" in msg for msg in logger.infos)
 
     upstream = pd.DataFrame({"pid": [2], "pid_down": [1]})
-    parcel_down_map = input_config._build_parcel_down_map(upstream, [1, 2])
+    parcel_down_map = spatial_loading._build_parcel_down_map(upstream, [1, 2])
     assert parcel_down_map["1"] is None
     assert parcel_down_map["2"] == "1"
 

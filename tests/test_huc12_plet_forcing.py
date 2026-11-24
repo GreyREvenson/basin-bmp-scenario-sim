@@ -1,5 +1,7 @@
 from __future__ import annotations
 from basin_bmp_sim.config.settings import resolve_config_paths
+from basin_bmp_sim.config import plet_loading
+from basin_bmp_sim.config import table_sources
 
 import sqlite3
 from pathlib import Path
@@ -55,7 +57,7 @@ def test_low_parcel_huc12_overlap_is_logged_without_console_warning(
         ]).to_sql("parcel_huc12", con, index=False)
     logger, log_path = make_logger(tmp_path / "outputs", verbose=verbose, console=True)
 
-    result = input_config._load_parcel_huc12(
+    result = plet_loading._load_parcel_huc12(
         {"parcels": str(parcels)}, [1, 2], [1, 2], logger
     )
     logger.warning("ordinary warning stays on console")
@@ -94,7 +96,7 @@ def test_huc12_parameter_precedence_is_exact_then_huc_then_default() -> None:
         ]
     )
 
-    merged = input_config._merge_huc12_plet_parameters(
+    merged = plet_loading._merge_huc12_plet_parameters(
         parcel_source, parcel_huc12, huc_source, [1, 2]
     )
 
@@ -128,7 +130,7 @@ def test_huc12_hsg_and_land_cover_specific_rusle_respect_parcel_overrides() -> N
         {"huc12": "050902021001", "parameter": "k", "land_cover": "forest", "value": 0.3},
     ])
 
-    out = input_config._merge_huc12_plet_parameters(parcel_source, mapping, huc_source, [1, 2])
+    out = plet_loading._merge_huc12_plet_parameters(parcel_source, mapping, huc_source, [1, 2])
 
     assert out[(out.pid == 1) & (out.parameter == "hsg")].iloc[0]["value"] == "B"
     assert out[(out.pid == 1) & (out.parameter == "r")].iloc[0]["value"] == 10.0
@@ -168,7 +170,7 @@ def test_huc12_concentrations_respect_parcel_overrides(tmp_path: Path) -> None:
         {"pid": 2, "parameter": "land_cover", "value": "cropland"},
         {"pid": 3, "parameter": "land_cover", "value": "forest"},
     ])
-    out = input_config._merge_huc12_plet_concentrations(
+    out = plet_loading._merge_huc12_plet_concentrations(
         {"plet_forcing": str(path)}, parcel_source, mapping, plet, [1, 2, 3], Logger()
     )
     surface = out[out.pathway == "surface"].set_index("pid")
@@ -193,8 +195,8 @@ def test_huc12_hsg_and_rusle_tables_load_with_expected_keys(tmp_path: Path) -> N
             {"huc12": "050902021001", "land_cover": "forest", "mean": 100.0, "sd": 3.0},
         ]),
     })
-    layer = input_config._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
-    rows = input_config._assemble_huc12_plet_parameter_source(
+    layer = plet_loading._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
+    rows = plet_loading._assemble_huc12_plet_parameter_source(
         {"plet_forcing": str(path)}, layer, Logger()
     )
     assert rows[rows.parameter == "hsg"].iloc[0]["value"] == "C"
@@ -212,9 +214,9 @@ def test_huc12_hsg_rejects_distributions(tmp_path: Path) -> None:
     wbd.write_huc12_package(path, hucs, {
         "hsg": pd.DataFrame([{"huc12": "050902021001", "value": "B", "sd": 0.2}]),
     })
-    layer = input_config._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
+    layer = plet_loading._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
     with pytest.raises(ValueError, match="fixed HSG values"):
-        input_config._assemble_huc12_plet_parameter_source(
+        plet_loading._assemble_huc12_plet_parameter_source(
             {"plet_forcing": str(path)}, layer, Logger()
         )
 
@@ -241,7 +243,7 @@ def test_huc12_distribution_is_sampled_once_per_huc12_per_scenario() -> None:
             {"huc12": "050902021002", "parameter": "avg_rain_in", "mean": 0.70, "sd": 0.05},
         ]
     )
-    merged = input_config._merge_huc12_plet_parameters(
+    merged = plet_loading._merge_huc12_plet_parameters(
         parcel_source, parcel_huc12, huc_source, [1, 2, 3]
     )
     rows = merged[(merged["parameter"] == "avg_rain_in") & merged["pid"].notna()]
@@ -260,8 +262,8 @@ def test_plet_huc12_loader_requires_spatial_huc12_layer(tmp_path: Path) -> None:
         pd.DataFrame([{"huc12": "050902021001", "value": 0.598}]).to_sql(
             "input_avg_rain_in", con, index=False
         )
-    with pytest.raises(input_config.MissingInputTableError, match="spatial layer 'huc12'"):
-        input_config._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
+    with pytest.raises(table_sources.MissingInputTableError, match="spatial layer 'huc12'"):
+        plet_loading._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
 
 
 def _write_polygon_gpkg(path: Path, layer: str, schema: dict, features: list[dict]) -> None:
@@ -341,8 +343,8 @@ def test_huc12_input_tables_are_loaded_separately_from_spatial_layer(tmp_path: P
     }
     wbd.write_huc12_package(path, hucs, tables)
 
-    layer = input_config._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
-    loaded = input_config._assemble_huc12_plet_parameter_source(
+    layer = plet_loading._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
+    loaded = plet_loading._assemble_huc12_plet_parameter_source(
         {"plet_forcing": str(path)}, layer, Logger()
     )
     assert "avg_rain_in" not in layer.columns
@@ -371,8 +373,8 @@ def test_huc12_fraction_units_are_validated_with_parameter_context(tmp_path: Pat
     }
     wbd.write_huc12_package(path, hucs, tables)
 
-    layer = input_config._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
-    loaded = input_config._assemble_huc12_plet_parameter_source(
+    layer = plet_loading._load_plet_huc12_layer({"plet_forcing": str(path)}, Logger())
+    loaded = plet_loading._assemble_huc12_plet_parameter_source(
         {"plet_forcing": str(path)}, layer, Logger()
     )
 

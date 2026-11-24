@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from basin_bmp_sim.config import spatial_loading
 import pandas as pd
 import pytest
 
@@ -14,7 +15,7 @@ from basin_bmp_sim.domain.constants import (
     COL_SDR_S_TO_O,
 )
 import basin_bmp_sim.config.loading as input_config
-from basin_bmp_sim.config.loading import _build_parcel_down_map, _complete_delivery_ratio_defaults
+from basin_bmp_sim.config.spatial_loading import _build_parcel_down_map, _complete_delivery_ratio_defaults
 
 
 class RecordingLogger:
@@ -31,16 +32,16 @@ class RecordingLogger:
 def test_selection_weight_table_is_normalized(monkeypatch) -> None:
     parcels = pd.DataFrame({COL_PID: [1, 2, 3]})
     weights = pd.DataFrame({COL_PID: [1, 2, 3], "value": [1.0, 2.0, 1.0]})
-    monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
-    loaded = input_config._load_parcel_selection({}, parcels, RecordingLogger())
+    monkeypatch.setattr(spatial_loading, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
+    loaded = spatial_loading._load_parcel_selection({}, parcels, RecordingLogger())
     assert loaded[COL_PID].tolist() == [1, 2, 3]
     assert loaded[COL_PROBABILITY].tolist() == pytest.approx([0.25, 0.50, 0.25])
 
 
 def test_missing_selection_weight_means_equal_weights(monkeypatch) -> None:
     parcels = pd.DataFrame({COL_PID: [1, 2, 3]})
-    monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: None)
-    loaded = input_config._load_parcel_selection({}, parcels, RecordingLogger())
+    monkeypatch.setattr(spatial_loading, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: None)
+    loaded = spatial_loading._load_parcel_selection({}, parcels, RecordingLogger())
     assert loaded[COL_PROBABILITY].tolist() == pytest.approx([1 / 3, 1 / 3, 1 / 3])
 
 

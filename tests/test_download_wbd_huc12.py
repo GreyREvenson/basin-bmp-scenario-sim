@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from basin_bmp_sim.config import plet_loading
 import sqlite3
 from pathlib import Path
 
@@ -178,8 +179,8 @@ def test_refresh_preserves_distribution_rows_from_geopackage(tmp_path: Path, mon
     rain = tables["rain_days"].set_index("huc12")
     assert rain.loc["050902021002", "value"] == pytest.approx(161.0)
 
-    layer = input_config._load_plet_huc12_layer({"plet_forcing": str(forcing)}, Logger())
-    loaded = input_config._assemble_huc12_plet_parameter_source(
+    layer = plet_loading._load_plet_huc12_layer({"plet_forcing": str(forcing)}, Logger())
+    loaded = plet_loading._assemble_huc12_plet_parameter_source(
         {"plet_forcing": str(forcing)}, layer, Logger()
     )
     row = loaded[

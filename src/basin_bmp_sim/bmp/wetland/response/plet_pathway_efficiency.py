@@ -37,7 +37,7 @@ from basin_bmp_sim.domain.constants import (
 )
 from basin_bmp_sim.common.logging import log_scope
 from basin_bmp_sim.domain.parcel_graph import iter_full_upstream_by_distance
-from basin_bmp_sim.config.loading import load_bmp_selection_probabilities
+from basin_bmp_sim.config.bmp_loading import load_bmp_selection_probabilities
 
 ParcelRecordFn = Callable[[Union[int, str]], pd.Series]
 ParcelUpListFn = Callable[[Union[int, str]], List[str]]

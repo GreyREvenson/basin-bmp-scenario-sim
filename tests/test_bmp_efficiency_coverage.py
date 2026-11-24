@@ -7,7 +7,7 @@ import pytest
 
 from basin_bmp_sim.bmp.sampling.efficiency import _sample_efficiency_map
 from basin_bmp_sim.domain.constants import CFG_BMP_EFFICIENCY, PATHWAY_VALUES
-from basin_bmp_sim.config.loading import _load_bmp_efficiency
+from basin_bmp_sim.config.bmp_loading import _load_bmp_efficiency
 
 
 class RecordingLogger:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from basin_bmp_sim.config import plet_loading
+from basin_bmp_sim.config import table_sources
 import logging
 import os
 import sqlite3
@@ -638,29 +640,29 @@ def test_offline_end_to_end_preserves_existing_overrides(
 
     logger = Logger()
     config = {"parcels": str(parcel_out), "plet_forcing": str(forcing)}
-    layer = input_config._load_plet_huc12_layer(config, logger)
-    huc_parameters = input_config._assemble_huc12_plet_parameter_source(config, layer, logger)
-    parcel_parameters = input_config._assemble_parcel_parameter_source(config, logger)
-    assignments = input_config._load_parcel_huc12(config, [1, 2], [1, 2], logger)
-    merged = input_config._merge_huc12_plet_parameters(
+    layer = plet_loading._load_plet_huc12_layer(config, logger)
+    huc_parameters = plet_loading._assemble_huc12_plet_parameter_source(config, layer, logger)
+    parcel_parameters = table_sources._assemble_parcel_parameter_source(config, logger)
+    assignments = plet_loading._load_parcel_huc12(config, [1, 2], [1, 2], logger)
+    merged = plet_loading._merge_huc12_plet_parameters(
         parcel_parameters, assignments, huc_parameters, [1, 2]
     )
-    resolved = input_config._load_plet_parameter_table(
+    resolved = plet_loading._load_plet_parameter_table(
         merged.loc[~merged.parameter.isin(("r", "k", "ls", "c", "p",
                                            "sediment_n_pct", "sediment_p_pct"))],
         [1, 2], logger,
     )
     assert set(resolved.loc[resolved.parameter == "hsg", "value"]) == {"B", "C"}
     assert len(merged.loc[merged.parameter == "sediment_n_pct"]) == 2
-    concentration_source = input_config._merge_huc12_plet_concentrations(
-        config, input_config._assemble_plet_concentration_source(config, logger),
+    concentration_source = plet_loading._merge_huc12_plet_concentrations(
+        config, table_sources._assemble_plet_concentration_source(config, logger),
         assignments, resolved, [1, 2], logger,
     )
     assert concentration_source.loc[
         (concentration_source.pid == 1) & (concentration_source.pollutant == "TSS"),
         "value",
     ].tolist() == [12.5]
-    concentrations = input_config._load_pollutant_concentrations(
+    concentrations = plet_loading._load_pollutant_concentrations(
         concentration_source, ["TN", "TP", "TSS"], logger, parcel_ids=[1, 2]
     )
     assert concentrations.loc[

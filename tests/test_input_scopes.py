@@ -1,5 +1,8 @@
 from __future__ import annotations
 from basin_bmp_sim.config.settings import normalize_config, resolve_config_paths
+from basin_bmp_sim.config import plet_loading
+from basin_bmp_sim.config import spatial_loading
+from basin_bmp_sim.config import table_sources
 
 import logging
 import sqlite3
@@ -89,7 +92,7 @@ def inputs(tmp_path):
 
 
 def resolve(cfg, parcels):
-    return load_scoped_input_tables(cfg, parcels, Logger(), input_config._read_gpkg_input_table)
+    return load_scoped_input_tables(cfg, parcels, Logger(), table_sources._read_gpkg_input_table)
 
 
 def test_precedence_is_per_parameter_and_preserves_distributions(inputs):
@@ -286,7 +289,7 @@ def test_selection_and_delivery_tables_obey_scope_precedence(inputs):
     )
     tables = resolve(cfg, parcels)
     assert tables["input_selection_weight"].set_index("pid").value.to_dict() == {1: 4, 2: 3, 3: 2, 4: 2, 5: 2}
-    delivery = input_config._load_delivery_ratios(cfg, Logger(), input_tables=tables)
+    delivery = spatial_loading._load_delivery_ratios(cfg, Logger(), input_tables=tables)
     assert delivery.set_index("pid").sdr_f_to_s.to_dict() == {1: 0.4, 2: 0.3, 3: 0.2, 4: 0.2, 5: 0.2}
 
 
@@ -322,10 +325,10 @@ def test_legacy_huc12_alias_and_mapping_preserve_parameter_values(inputs):
         parcel_huc12=[{"pid": pid, "huc12": hucs.huc12.iloc[0 if pid <= 2 else 1]} for pid in parcels.pid],
         input_avg_rain_in=[{"pid": None, "value": 0.5}, {"pid": 1, "value": 0.9}],
     )
-    old_parcel = input_config._assemble_parcel_parameter_source(cfg, Logger())
-    old_hucs = input_config._assemble_huc12_plet_parameter_source(cfg, hucs, Logger())
-    mapping = input_config._load_parcel_huc12(cfg, parcels.pid, parcels.pid, Logger())
-    previous = input_config._merge_huc12_plet_parameters(old_parcel, mapping, old_hucs, parcels.pid)
+    old_parcel = table_sources._assemble_parcel_parameter_source(cfg, Logger())
+    old_hucs = plet_loading._assemble_huc12_plet_parameter_source(cfg, hucs, Logger())
+    mapping = plet_loading._load_parcel_huc12(cfg, parcels.pid, parcels.pid, Logger())
+    previous = plet_loading._merge_huc12_plet_parameters(old_parcel, mapping, old_hucs, parcels.pid)
     previous = previous[previous.pid.notna()].set_index("pid").value.to_dict()
     current = resolve(cfg, parcels)["input_avg_rain_in"].set_index("pid").value.to_dict()
     assert current == previous
@@ -340,7 +343,7 @@ def test_explicit_sample_group_and_unit_conversion_survive_inheritance(inputs):
     ])
     tables = resolve(cfg, parcels)
     assert set(tables["input_avg_rain_in"].sample_group) == {"regional-rain"}
-    source = input_config._assemble_parcel_parameter_source(cfg, Logger(), input_tables=tables)
+    source = table_sources._assemble_parcel_parameter_source(cfg, Logger(), input_tables=tables)
     values = _sample_parameter_table(Ctx(), source, list(map(str, parcels.pid)), cache_prefix="plet")
     assert all(value["avg_rain_in"] == pytest.approx(1) for value in values)
 
@@ -392,7 +395,7 @@ def test_low_overlap_warning_is_file_only(inputs):
         def warning(self, message, **kwargs):
             warnings.append((message, kwargs))
 
-    load_scoped_input_tables(cfg, parcels, RecordingLogger(), input_config._read_gpkg_input_table)
+    load_scoped_input_tables(cfg, parcels, RecordingLogger(), table_sources._read_gpkg_input_table)
     assert len(warnings) == 1
     assert "less than 75%" in warnings[0][0]
     assert warnings[0][1] == {"extra": {"file_only": True}}

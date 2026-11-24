@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from basin_bmp_sim.config import spatial_loading
 from types import SimpleNamespace
 
 import pandas as pd
@@ -8,7 +9,7 @@ import pytest
 from basin_bmp_sim.bmp.sampling.selection import _get_bmp_selection_probs
 from basin_bmp_sim.domain.constants import DATA_CPS, DATA_PARCELS
 import basin_bmp_sim.config.loading as input_config
-from basin_bmp_sim.config.loading import _build_parcel_down_map
+from basin_bmp_sim.config.spatial_loading import _build_parcel_down_map
 from basin_bmp_sim.execution.monte_carlo_driver import Model
 
 
@@ -27,14 +28,14 @@ class DummyLogger:
 
 def test_load_parcel_selection_rejects_empty_parcels() -> None:
     with pytest.raises(ValueError, match="No parcels available"):
-        input_config._load_parcel_selection({}, pd.DataFrame(columns=["pid"]), DummyLogger())
+        spatial_loading._load_parcel_selection({}, pd.DataFrame(columns=["pid"]), DummyLogger())
 
 
 def test_load_parcel_selection_normalizes_selection_weights(monkeypatch) -> None:
     parcels = pd.DataFrame({"pid": [1, 2, 3]})
     weights = pd.DataFrame({"pid": [1, 2, 3], "value": [1.0, 3.0, 1.0]})
-    monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
-    loaded = input_config._load_parcel_selection({}, parcels, DummyLogger())
+    monkeypatch.setattr(spatial_loading, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
+    loaded = spatial_loading._load_parcel_selection({}, parcels, DummyLogger())
     probs = dict(zip(loaded["pid"].astype(str), loaded["probability"]))
     assert probs == pytest.approx({"1": 0.2, "2": 0.6, "3": 0.2})
 
@@ -42,9 +43,9 @@ def test_load_parcel_selection_normalizes_selection_weights(monkeypatch) -> None
 def test_load_parcel_selection_rejects_negative_weight(monkeypatch) -> None:
     parcels = pd.DataFrame({"pid": [1, 2]})
     weights = pd.DataFrame({"pid": [1, 2], "value": [1.0, -1.0]})
-    monkeypatch.setattr(input_config, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
+    monkeypatch.setattr(spatial_loading, "_load_fixed_numeric_variable_table", lambda *args, **kwargs: weights)
     with pytest.raises(ValueError, match="finite and >= 0"):
-        input_config._load_parcel_selection({}, parcels, DummyLogger())
+        spatial_loading._load_parcel_selection({}, parcels, DummyLogger())
 
 def test_downstream_single_destination_and_reverse_in_memory():
     edges = pd.DataFrame({'pid':['4','5','9'], 'pid_down':['9','9','10']})

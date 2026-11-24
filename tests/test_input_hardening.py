@@ -1,5 +1,7 @@
 from __future__ import annotations
 from basin_bmp_sim.config.settings import normalize_config
+from basin_bmp_sim.config import spatial_loading
+from basin_bmp_sim.config import table_sources
 
 import sqlite3
 from pathlib import Path
@@ -150,7 +152,7 @@ def test_clipped_structural_relationships_are_filtered_but_true_unknown_ids_erro
             {"pid": "P3", "pid_down": "P2"},  # P3 exists in source but is outside domain.
         ]
     )
-    result = input_config._build_parcel_down_map(
+    result = spatial_loading._build_parcel_down_map(
         rows,
         ["P1", "P2"],
         source_parcel_ids=["P1", "P2", "P3"],
@@ -160,7 +162,7 @@ def test_clipped_structural_relationships_are_filtered_but_true_unknown_ids_erro
 
     bad = pd.DataFrame([{"pid": "P2", "pid_down": "TYPO"}])
     with pytest.raises(ValueError, match="source parcels"):
-        input_config._build_parcel_down_map(
+        spatial_loading._build_parcel_down_map(
             bad,
             ["P1", "P2"],
             source_parcel_ids=["P1", "P2", "P3"],
@@ -228,15 +230,15 @@ def test_load_parcels_recovers_pid_when_reader_hides_feature_id(
     domain = gpd.GeoDataFrame(
         geometry=[box(-1, -1, 20, 2)], crs="EPSG:5070"
     )
-    domain = input_config._ensure_projected(domain, Logger())
+    domain = table_sources._ensure_projected(domain, Logger())
 
     def read_without_feature_id(path, *, layer=None, fid_as_index=False):
         # Mimic readers that accept/ignore fid_as_index but expose only geometry
         # when the GeoPackage INTEGER PRIMARY KEY is used as the feature ID.
         return gpd.read_file(path, layer=layer)
 
-    monkeypatch.setattr(input_config, "read_geodataframe", read_without_feature_id)
-    parcels = input_config._load_parcels({"parcels": str(package)}, domain, Logger())
+    monkeypatch.setattr(spatial_loading, "read_geodataframe", read_without_feature_id)
+    parcels = spatial_loading._load_parcels({"parcels": str(package)}, domain, Logger())
 
     assert parcels["pid"].dtype.kind in "iu"
     assert parcels["pid"].is_unique
@@ -248,7 +250,7 @@ def test_gpkg_reader_accepts_legacy_registry_wildcard_field(monkeypatch, tmp_pat
     from types import SimpleNamespace
 
     fake_spec = SimpleNamespace(wildcard_allowed=True, key_columns=("pid",))
-    monkeypatch.setitem(input_config.INPUT_VARIABLE_SPECS, "input_fake", fake_spec)
+    monkeypatch.setitem(table_sources.INPUT_VARIABLE_SPECS, "input_fake", fake_spec)
     monkeypatch.setattr(
         input_tables,
         "read_geopackage_table",
@@ -257,7 +259,7 @@ def test_gpkg_reader_accepts_legacy_registry_wildcard_field(monkeypatch, tmp_pat
     package = tmp_path / "inputs.gpkg"
     package.touch()
 
-    result = input_config._read_gpkg_input_table(
+    result = table_sources._read_gpkg_input_table(
         package, "input_fake", ["pid"], "input_fake", Logger()
     )
     assert pd.isna(result.loc[0, "pid"])

@@ -1,5 +1,7 @@
 from __future__ import annotations
 from basin_bmp_sim.config.settings import normalize_config
+from basin_bmp_sim.config import spatial_loading
+from basin_bmp_sim.config import table_sources
 
 import sqlite3
 from pathlib import Path
@@ -45,7 +47,7 @@ def test_parameter_tables_are_assembled_into_runtime_long_form(tmp_path) -> None
             ),
         },
     )
-    out = input_config._assemble_parcel_parameter_source({"parcels": str(gpkg)}, Logger())
+    out = table_sources._assemble_parcel_parameter_source({"parcels": str(gpkg)}, Logger())
     assert set(out["parameter"]) == {"annual_precip_in", "avg_rain_in", "land_cover", "k"}
     assert out.loc[out["parameter"] == "land_cover", "value"].iloc[0] == "cropland"
 
@@ -63,7 +65,7 @@ def test_hydrology_tables_are_separate_and_preserve_distributions(tmp_path) -> N
             ),
         },
     )
-    out = input_config._assemble_plet_hydrology_source({"parcels": str(gpkg)}, Logger())
+    out = table_sources._assemble_plet_hydrology_source({"parcels": str(gpkg)}, Logger())
     assert set(out["parameter"]) == {"cn", "infiltration_fraction"}
     cn = out[out["parameter"] == "cn"].iloc[0]
     assert cn["mean"] == pytest.approx(78.0)
@@ -83,7 +85,7 @@ def test_surface_and_subsurface_concentrations_are_distinct_variable_tables(tmp_
             ),
         },
     )
-    out = input_config._assemble_plet_concentration_source({"parcels": str(gpkg)}, Logger())
+    out = table_sources._assemble_plet_concentration_source({"parcels": str(gpkg)}, Logger())
     got = {(r.pollutant, r.pathway): r.value for r in out.itertuples()}
     assert got[("TN", "surface")] == pytest.approx(2.0)
     assert got[("TN", "subsurface")] == pytest.approx(5.5)
@@ -103,7 +105,7 @@ def test_delivery_ratio_tables_support_global_default_and_exact_override(tmp_pat
             ),
         },
     )
-    out = input_config._load_delivery_ratios({"parcels": str(gpkg)}, Logger())
+    out = spatial_loading._load_delivery_ratios({"parcels": str(gpkg)}, Logger())
     rows = {(r.pid, r.oid): r for r in out.itertuples()}
     assert rows[(1, "A")].sdr_f_to_s == pytest.approx(0.9)
     assert rows[(2, "A")].sdr_f_to_s == pytest.approx(0.5)

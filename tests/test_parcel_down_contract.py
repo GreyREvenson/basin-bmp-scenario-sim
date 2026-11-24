@@ -12,7 +12,7 @@ import rasterio
 from rasterio.transform import from_origin
 from shapely.geometry import box
 
-from basin_bmp_sim.config.loading import _build_parcel_down_map, _load_parcel_graph
+from basin_bmp_sim.config.spatial_loading import _build_parcel_down_map, _load_parcel_graph
 from utils.parcel_down_graph import validate_direct_edges, write_gpkg_parcel_down
 from utils.drainage_validation import validate_dem_coverage, validate_parcel_overlaps
 from utils.drainage_manifest import write_drainage_manifest, parcel_geometry_sha256

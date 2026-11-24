@@ -14,7 +14,7 @@ from basin_bmp_sim.domain.constants import (
     OUTPUT_REMOVED,
     OUTPUT_TREATED,
 )
-from basin_bmp_sim.config.loading import _build_parcel_down_map
+from basin_bmp_sim.config.spatial_loading import _build_parcel_down_map
 from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
 from basin_bmp_sim.domain.parcel_graph import iter_full_upstream_by_distance
 from test_hydrologic_parcel_universe import _model_with_nonselectable_upstream_parcels

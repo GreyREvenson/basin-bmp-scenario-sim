@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from basin_bmp_sim.config import spatial_loading
 from types import SimpleNamespace
 
 import numpy as np
@@ -9,7 +10,7 @@ import pandas as pd
 import pytest
 
 from basin_bmp_sim.domain.constants import OUTPUT_IMPACTED_PIDS
-from basin_bmp_sim.config.loading import _build_parcel_down_map
+from basin_bmp_sim.config.spatial_loading import _build_parcel_down_map
 from basin_bmp_sim.config.validation.plet import validate_plet_runtime_inputs
 from basin_bmp_sim.execution.monte_carlo_driver import _bmp_impacted_parcel_indices
 
@@ -64,24 +65,24 @@ def _patch_loader_preamble(monkeypatch) -> None:
 
     monkeypatch.setattr(input_config, "normalize_config", lambda cfg: cfg)
     monkeypatch.setattr(input_config, "validate_config", lambda cfg: None)
-    monkeypatch.setattr(input_config, "_load_domain", lambda cfg, logger: object())
+    monkeypatch.setattr(spatial_loading, "_load_domain", lambda cfg, logger: object())
     monkeypatch.setattr(
-        input_config,
+        spatial_loading,
         "_load_parcels",
         lambda cfg, domain, logger: pd.DataFrame({"pid": [1]}),
     )
     monkeypatch.setattr(
-        input_config,
+        spatial_loading,
         "_load_parcel_graph",
         lambda cfg, logger: pd.DataFrame(columns=["pid", "pid_down"]),
     )
     monkeypatch.setattr(
-        input_config,
+        spatial_loading,
         "_load_parcel_outlets",
         lambda cfg, logger: pd.DataFrame({"pid": [1], "oid": ["O1"]}),
     )
     monkeypatch.setattr(
-        input_config,
+        spatial_loading,
         "_load_parcel_selection",
         lambda cfg, parcels, logger: pd.DataFrame(
             {"pid": [1], "probability": [1.0]}
@@ -90,12 +91,12 @@ def _patch_loader_preamble(monkeypatch) -> None:
     monkeypatch.setattr(input_config, "_load_pollutants", lambda cfg: ["TN"])
     monkeypatch.setattr(input_config, "_load_cps", lambda cfg: [340])
     monkeypatch.setattr(
-        input_config,
+        spatial_loading,
         "_load_outlet_loc",
         lambda cfg, domain, logger: pd.DataFrame({"oid": ["O1"]}),
     )
     monkeypatch.setattr(
-        input_config,
+        spatial_loading,
         "_load_optional_outlet_stats",
         lambda *args, **kwargs: None,
     )

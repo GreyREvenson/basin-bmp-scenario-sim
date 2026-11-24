@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from basin_bmp_sim.domain.constants import CFG_BMP_COST, COL_COST_COMPONENT
-from basin_bmp_sim.config.loading import _load_bmp_cost
+from basin_bmp_sim.config.bmp_loading import _load_bmp_cost
 
 
 class DummyLogger:

@@ -30,7 +30,7 @@ from basin_bmp_sim.domain.constants import (
     YAXIS_TOTAL,
 )
 from basin_bmp_sim.common.logging import log_scope
-from basin_bmp_sim.config.loading import load_trajectory_records
+from basin_bmp_sim.results.trajectory_loading import load_trajectory_records
 from basin_bmp_sim.domain.constants import DIR_OUTLET_TRAJECTORIES, FILE_ALL_SCENARIOS_PARQUET
 
 
