@@ -115,25 +115,13 @@ from basin_bmp_sim.config.distributions import (
     statistic_columns,
     stats_from_row,
 )
-from basin_bmp_sim.config.validation import (
-    FRACTION_DOMAIN,
-    NONNEGATIVE_DOMAIN,
-    POSITIVE_DOMAIN,
-    require_columns,
-    validate_config,
-    validate_distribution_bounds,
-    validate_numeric_columns_in_domain,
-    validate_numeric_distribution_rows,
-    validate_plet_input_table,
-    validate_plet_runtime_inputs,
-    validate_statistical_efficiency_coverage,
-    validate_statistical_load_rates,
-    validate_stats_rows,
-    validate_stats_table,
-    validate_unique_rows,
-    validate_bmp_selection_table,
-    validate_trajectory_table,
-)
+from basin_bmp_sim.domain.constants import FRACTION_DOMAIN, NONNEGATIVE_DOMAIN, POSITIVE_DOMAIN
+from basin_bmp_sim.config.validation.statistics import require_columns, validate_distribution_bounds, validate_numeric_distribution_rows, validate_stats_rows, validate_stats_table, validate_unique_rows
+from basin_bmp_sim.config.validation.configuration import validate_config
+from basin_bmp_sim.config.validation.domains import validate_numeric_columns_in_domain
+from basin_bmp_sim.config.validation.plet import validate_plet_input_table, validate_plet_runtime_inputs
+from basin_bmp_sim.config.validation.statistical import validate_statistical_efficiency_coverage, validate_statistical_load_rates
+from basin_bmp_sim.config.validation.selection import validate_bmp_selection_table, validate_trajectory_table
 
 from basin_bmp_sim.config.plet_tables import _append_parameter_defaults
 from basin_bmp_sim.config.settings import normalize_config
@@ -146,478 +134,77 @@ from basin_bmp_sim.config.schema import (
 )
 
 
-def _normalize_integer_identifier_value(
-    value: Any, label: str, *, allow_null: bool = False
-) -> Optional[int]:
-    """Normalize a parcel identifier to an integer.
-
-    ``NULL`` is reserved for package-wide default rows in tables whose schema
-    explicitly permits defaults. The legacy ``"*"`` sentinel is rejected so
-    every non-null PID is always a real parcel identifier.
-    """
-    if value is None or pd.isna(value):
-        if allow_null:
-            return None
-        raise ValueError(f"{label} must not be null")
-    if isinstance(value, (bool, np.bool_)):
-        raise ValueError(f"{label} must be an integer parcel identifier, not a boolean")
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            raise ValueError(f"{label} must not be blank")
-        if text == "*":
-            raise ValueError(
-                f"{label} uses the legacy '*' parcel default; use NULL pid for a default row"
-            )
-        value = text
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{label}={value!r} must be an integer parcel identifier") from exc
-    if not np.isfinite(numeric) or not numeric.is_integer():
-        raise ValueError(f"{label}={value!r} must be a finite integer parcel identifier")
-    return int(numeric)
 
 
-def _normalize_text_identifier_value(
-    value: Any, label: str, *, allow_null: bool = False
-) -> Optional[str]:
-    """Normalize an outlet-style identifier while optionally permitting NULL defaults."""
-    if value is None or pd.isna(value):
-        if allow_null:
-            return None
-        raise ValueError(f"{label} must not be null")
-    if isinstance(value, (bool, np.bool_)):
-        raise ValueError(f"{label} must be an identifier, not a boolean")
-    text = str(value).strip()
-    if not text:
-        raise ValueError(f"{label} must not be blank")
-    if text == "*":
-        raise ValueError(
-            f"{label} uses the legacy '*' default sentinel; use NULL in all default key columns"
-        )
-    return text
 
 
-def _normalize_identifier_columns(
-    df: pd.DataFrame,
-    columns: Sequence[str],
-    label: str,
-    *,
-    allow_null_pid: bool = False,
-    allow_null_oid: bool = False,
-) -> pd.DataFrame:
-    """Return a copy with canonical integer PIDs and normalized outlet IDs."""
-    out = df.copy()
-    for column in columns:
-        if column not in out.columns:
-            continue
-        if column in {COL_PID, COL_PID_DOWN}:
-            allow_null = allow_null_pid and column == COL_PID
-            values = [
-                _normalize_integer_identifier_value(
-                    value, f"{label} row {index} {column}", allow_null=allow_null
-                )
-                for index, value in out[column].items()
-            ]
-            out[column] = pd.array(values, dtype="Int64" if allow_null else "int64")
-        else:
-            values = [
-                _normalize_text_identifier_value(
-                    value, f"{label} row {index} {column}", allow_null=allow_null_oid
-                )
-                for index, value in out[column].items()
-            ]
-            out[column] = values
-    return out
 
 
-def _validate_explicit_references(
-    values: Sequence[Any],
-    valid_values: Sequence[Any],
-    *,
-    label: str,
-    allow_default: bool = False,
-) -> None:
-    """Reject explicit foreign-key values that do not exist in the target universe."""
-    valid = set(valid_values)
-    supplied = set()
-    saw_null = False
-    for value in values:
-        if value is None or pd.isna(value):
-            saw_null = True
-            continue
-        supplied.add(value)
-    if saw_null and not allow_default:
-        raise ValueError(f"{label} contains NULL identifiers where defaults are not allowed")
-    unknown = sorted(supplied - valid, key=lambda value: str(value))
-    if unknown:
-        raise ValueError(f"{label} references unknown identifiers: {unknown[:10]}")
 
 
-def _normalize_cps_column(df: pd.DataFrame, label: str) -> pd.DataFrame:
-    """Normalize a CPS column and reject booleans, fractions, and non-finite codes."""
-    if COL_CPS not in df.columns:
-        return df
-    out = df.copy()
-    normalized: List[int] = []
-    for index, value in out[COL_CPS].items():
-        if isinstance(value, (bool, np.bool_)):
-            raise ValueError(f"{label} row {index} cps must be a finite integer, not a boolean")
-        try:
-            numeric = float(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{label} row {index} cps={value!r} must be a finite integer") from exc
-        if not np.isfinite(numeric) or not numeric.is_integer():
-            raise ValueError(f"{label} row {index} cps={value!r} must be a finite integer")
-        normalized.append(int(numeric))
-    out[COL_CPS] = normalized
-    return out
-
-def _sort_input_table(df: pd.DataFrame, keys: Sequence[str]) -> pd.DataFrame:
-    """Return deterministic row ordering without changing stored key values."""
-    if df.empty or not keys:
-        return df.reset_index(drop=True)
-    out = df.copy()
-    temp_cols: List[str] = []
-    for index, key in enumerate(keys):
-        if key not in out.columns:
-            continue
-        temp = f"__sort_key_{index}"
-        out[temp] = out[key].map(lambda value: "" if pd.isna(value) else str(value).strip())
-        temp_cols.append(temp)
-    if temp_cols:
-        out = out.sort_values(temp_cols, kind="stable").drop(columns=temp_cols)
-    return out.reset_index(drop=True)
 
 
-def _validate_input_package_schema(
-    cfg: Dict[str, Any], load_mode: str, logger: Any,
-    *, input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
-) -> None:
-    """Reject unknown input tables and require mode-specific tables."""
-    raw_package = ci_get(cfg, CFG_PARCELS)
-    # The spatial parcel loader owns path existence/requiredness. Keeping this
-    # helper focused on schema discovery also makes it easy to unit-test loader
-    # stages independently with mocked spatial inputs.
-    if raw_package is None:
-        return
-    package = Path(raw_package)
-    if not package.exists():
-        return
-    table_names = set(list_geopackage_tables(package))
-    supplied_input_tables = {name for name in table_names if name.startswith("input_")}
-    unknown = sorted(supplied_input_tables - set(KNOWN_INPUT_TABLES))
-    if unknown:
-        details = []
-        known = sorted(KNOWN_INPUT_TABLES)
-        for name in unknown:
-            match = difflib.get_close_matches(name, known, n=1, cutoff=0.65)
-            details.append(f"{name!r}" + (f" (did you mean {match[0]!r}?)" if match else ""))
-        raise ValueError("Unknown input_* table(s) in parcels GeoPackage: " + ", ".join(details))
-
-    available = table_names | set(input_tables or {})
-    missing = sorted(set(required_input_tables(load_mode)) - available)
-    if missing:
-        raise ValueError(
-            f"load_generation.mode={load_mode!r} requires input table(s) missing from parcels/HUC/domain GeoPackages: {missing}"
-        )
-
-    if INPUT_SCHEMA_TABLE in table_names:
-        schema = read_geopackage_table(package, INPUT_SCHEMA_TABLE)
-        schema = normalize_columns(schema)
-        require_columns(schema, ["schema_version"], INPUT_SCHEMA_TABLE, logger)
-        versions = pd.to_numeric(schema["schema_version"], errors="coerce")
-        if len(schema) != 1 or versions.isna().any() or int(versions.iloc[0]) != INPUT_SCHEMA_VERSION:
-            raise ValueError(
-                f"{INPUT_SCHEMA_TABLE} must contain exactly one row with schema_version={INPUT_SCHEMA_VERSION}"
-            )
-
-        parcel_info = read_geopackage_table_info(package, GPKG_PARCELS_LAYER)
-        parcel_columns = {row["name"].lower(): row for row in parcel_info}
-        pid_meta = parcel_columns.get(COL_PID)
-        if (
-            pid_meta is None
-            or "INT" not in pid_meta["type"].upper()
-            or int(pid_meta["pk"]) != 1
-            or "fid" in parcel_columns
-        ):
-            raise ValueError(
-                "GeoPackage schema v3 requires parcels.pid to be the INTEGER PRIMARY KEY "
-                "and does not use a separate fid column"
-            )
-
-        editable_tables = (set(KNOWN_INPUT_TABLES) | {GPKG_PARCEL_DOWN_TABLE, GPKG_PARCEL_OUTLETS_TABLE, GPKG_PARCEL_HUC12_TABLE, "parcel_huc"}) & table_names
-        for table_name in sorted(editable_tables):
-            info = read_geopackage_table_info(package, table_name)
-            metadata = {row["name"].lower(): row for row in info}
-            if not any(int(row["pk"]) > 0 for row in info):
-                raise ValueError(
-                    f"GeoPackage schema v3 requires {table_name!r} to have an integer primary-key row ID so it is editable in QGIS"
-                )
-            for pid_column in (COL_PID, COL_PID_DOWN):
-                if pid_column in metadata and "INT" not in metadata[pid_column]["type"].upper():
-                    raise ValueError(
-                        f"GeoPackage schema v3 requires {table_name}.{pid_column} to use INTEGER storage"
-                    )
-    else:
-        logger.warning(
-            f"{INPUT_SCHEMA_TABLE} is not present in {package.name}; accepting the current table layout, "
-            f"but future input packages should declare schema_version={INPUT_SCHEMA_VERSION}"
-        )
 
 
-def _merge_csvs(
-    paths: Union[str, Path, Sequence[Union[str, Path]]],
-    required_cols: Sequence[str],
-    label: str,
-    logger: Any,
-) -> pd.DataFrame:
-    """Read one or more CSV files and combine them into one table.
-
-    Parameters
-    ----------
-    paths : str, pathlib.Path, or sequence of str or pathlib.Path
-        One or more CSV file paths.
-    required_cols : sequence of str
-        Columns that must be present in every file.
-    label : str
-        Human-readable dataset name used in logs and errors.
-    logger : Any
-        Logger used for progress and duplicate warnings.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Concatenated dataframe with duplicates removed on the required key
-        columns.
-    """
-    paths = [paths] if isinstance(paths, (str, Path)) else list(paths)
-    frames: List[pd.DataFrame] = []
-    for p in paths:
-        logger.verbose(f"Reading {label} from {p}")
-        df = read_csv_table(p)
-        df = normalize_columns(df)
-        require_columns(df, required_cols, f"{label} ({p})", logger)
-        frames.append(df)
-    out = pd.concat(frames, ignore_index=True)
-
-    dedup_subset = list(required_cols)
-    if COL_PATHWAY in out.columns and COL_PATHWAY not in dedup_subset:
-        dedup_subset.append(COL_PATHWAY)
-
-    # Exact duplicate rows are harmless and may arise when users concatenate
-    # identical source files. Conflicting rows for the same logical key are not:
-    # accepting them would make file order determine model behavior.
-    out = out.drop_duplicates(keep="first")
-    dup = out.duplicated(subset=dedup_subset, keep=False)
-    if dup.any():
-        preview = out.loc[dup, dedup_subset].head(10).to_dict(orient="records")
-        raise ValueError(
-            f"{label} contains conflicting duplicate rows for logical key {dedup_subset}: {preview}"
-        )
-    return out.reset_index(drop=True)
 
 
-def _read_gpkg_input_table(
-    package_path: Union[str, Path],
-    table_name: str,
-    required_cols: Sequence[str],
-    label: str,
-    logger: Any,
-) -> pd.DataFrame:
-    """Read one named attribute table from a consolidated GeoPackage input.
-
-    The GeoPackage is a physical container only: each logical dataset retains
-    its own normalized relational table and downstream model contracts remain
-    unchanged.
-    """
-    package = Path(package_path)
-    if not package.exists():
-        raise FileNotFoundError(f"{label} GeoPackage not found: {package}")
-    logger.verbose(f"Reading {label} from {package} layer={table_name}")
-    try:
-        frame = read_geopackage_table(package, table_name)
-    except MissingInputTableError as exc:
-        raise MissingInputTableError(
-            f"{label} requires table/layer '{table_name}' in {package}"
-        ) from exc
-    except Exception as exc:
-        raise ValueError(
-            f"Failed to read {label} table/layer '{table_name}' from {package}: {exc}"
-        ) from exc
-    frame = normalize_columns(pd.DataFrame(frame))
-    # ``id``/``fid`` are technical SQLite/QGIS row identifiers for attribute
-    # tables; they are deliberately not part of the model's logical schema.
-    technical_ids = [column for column in ("fid", "id", "row_id") if column in frame.columns and column not in required_cols]
-    if technical_ids:
-        frame = frame.drop(columns=technical_ids)
-    require_columns(frame, required_cols, f"{label} ({package}:{table_name})", logger)
-    identifier_cols = [column for column in (COL_PID, COL_PID_DOWN, COL_OID) if column in frame.columns]
-    if identifier_cols:
-        spec = INPUT_VARIABLE_SPECS.get(table_name)
-        # Schema-v3 renamed ``wildcard_allowed`` to ``default_row_allowed``
-        # when parcel defaults changed from pid="*" to pid IS NULL. Accept
-        # either registry attribute so a partially updated working tree does
-        # not crash with AttributeError.
-        allow_default = bool(
-            spec
-            and getattr(
-                spec,
-                "default_row_allowed",
-                getattr(spec, "wildcard_allowed", False),
-            )
-        )
-        frame = _normalize_identifier_columns(
-            frame,
-            identifier_cols,
-            label,
-            allow_null_pid=allow_default or table_name in {
-                GPKG_INPUT_CURVE_NUMBER, GPKG_INPUT_INFILTRATION_FRACTION,
-            },
-            allow_null_oid=allow_default and COL_OID in getattr(spec, "key_columns", ()),
-        )
-    sort_cols = list(required_cols)
-    if COL_PATHWAY in frame.columns and COL_PATHWAY not in sort_cols:
-        sort_cols.append(COL_PATHWAY)
-    return _sort_input_table(frame, sort_cols)
 
 
-def _try_read_gpkg_input_table(
-    package_path: Union[str, Path],
-    table_name: str,
-    required_cols: Sequence[str],
-    label: str,
-    logger: Any,
-) -> Optional[pd.DataFrame]:
-    """Read an optional GeoPackage attribute table, returning ``None`` if absent."""
-    try:
-        return _read_gpkg_input_table(
-            package_path, table_name, required_cols, label, logger
-        )
-    except MissingInputTableError:
-        return None
 
 
-def _load_fixed_numeric_variable_table(
-    cfg: Dict[str, Any],
-    table_name: str,
-    key_cols: Sequence[str],
-    logger: Any,
-    *,
-    required: bool = False,
-    domain: Any = None,
-    input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
-) -> Optional[pd.DataFrame]:
-    """Load a deterministic per-variable table using the standard input schema."""
-    table = _read_model_input_table(
-        cfg, table_name, key_cols, logger, required=required, input_tables=input_tables,
-    )
-    if table is None:
-        return None
-    if "value" not in table.columns:
-        raise ValueError(f"{table_name} requires a value column")
-    other_stats = [c for c in statistic_columns(table.columns) if str(c).lower() != "value"]
-    if other_stats and table[other_stats].notna().any(axis=1).any():
-        raise ValueError(f"{table_name} is deterministic and only allows fixed value")
-    table = table.copy()
-    table["value"] = pd.to_numeric(table["value"], errors="raise")
-    validate_unique_rows(table, list(key_cols), table_name)
-    if domain is not None:
-        validate_numeric_columns_in_domain(table, ["value"], domain, table_name)
-    return table.reset_index(drop=True)
 
 
-def _read_model_input_table(
-    cfg: Mapping[str, Any], table_name: str, keys: Sequence[str], logger: Any,
-    *, required: bool = False,
-    input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
-) -> Optional[pd.DataFrame]:
-    if input_tables is not None and table_name in input_tables:
-        return input_tables[table_name].copy()
-    reader = _read_gpkg_input_table if required else _try_read_gpkg_input_table
-    return reader(ci_get(cfg, CFG_PARCELS), table_name, keys, table_name, logger)
 
 
-def _assemble_parcel_parameter_source(
-    cfg: Dict[str, Any],
-    logger: Any,
-    *, input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
-) -> Optional[pd.DataFrame]:
-    """Assemble dedicated ``input_*`` parameter tables into the runtime long form."""
-    frames: List[pd.DataFrame] = []
-    for parameter, table_name in PARCEL_PARAMETER_INPUT_TABLES.items():
-        table = _read_model_input_table(
-            cfg, table_name, [COL_PID], logger, input_tables=input_tables,
-        )
-        if table is None:
-            continue
-        table = table.copy()
-        table.insert(1, "parameter", parameter)
-        frames.append(table)
-    if not frames:
-        return None
-    return pd.concat(frames, ignore_index=True, sort=False)
 
 
-def _assemble_plet_hydrology_source(
-    cfg: Dict[str, Any],
-    logger: Any,
-    *, input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
-) -> pd.DataFrame:
-    """Assemble CN and infiltration tables into the existing hydrology long form."""
-    specs = (
-        ("cn", GPKG_INPUT_CURVE_NUMBER),
-        ("infiltration_fraction", GPKG_INPUT_INFILTRATION_FRACTION),
-    )
-    frames: List[pd.DataFrame] = []
-    for parameter, table_name in specs:
-        table = _read_model_input_table(
-            cfg, table_name, ["land_cover", "hsg"], logger,
-            required=True, input_tables=input_tables,
-        )
-        table.insert(2, "parameter", parameter)
-        frames.append(table)
-    return pd.concat(frames, ignore_index=True, sort=False)
 
 
-def _assemble_plet_concentration_source(
-    cfg: Dict[str, Any],
-    logger: Any,
-    *, input_tables: Optional[Mapping[str, pd.DataFrame]] = None,
-) -> pd.DataFrame:
-    """Assemble dedicated surface/subsurface concentration variable tables."""
-    frames: List[pd.DataFrame] = []
-    for pathway, table_name in (
-        ("surface", GPKG_INPUT_SURFACE_CONCENTRATION),
-        ("subsurface", GPKG_INPUT_SUBSURFACE_CONCENTRATION),
-    ):
-        table = _read_model_input_table(
-            cfg, table_name, [COL_PID, COL_POLLUTANT], logger, input_tables=input_tables,
-        )
-        if table is None:
-            continue
-        table = table.copy()
-        table.insert(2, COL_PATHWAY, pathway)
-        frames.append(table)
-    if not frames:
-        return pd.DataFrame(columns=[COL_PID, COL_POLLUTANT, COL_PATHWAY, "value"])
-    return pd.concat(frames, ignore_index=True, sort=False)
 
 
-def _load_table_source(
-    source: Any,
-    required_cols: Sequence[str],
-    label: str,
-    logger: Any,
-) -> pd.DataFrame:
-    """Load a logical input table from either an in-memory frame or CSV path(s)."""
-    if isinstance(source, pd.DataFrame):
-        frame = normalize_columns(source.copy())
-        require_columns(frame, required_cols, label, logger)
-        return _sort_input_table(frame, required_cols)
-    return _merge_csvs(source, required_cols, label, logger)
 
+
+
+from basin_bmp_sim.config.table_sources import (
+    _normalize_integer_identifier_value,
+    _normalize_text_identifier_value,
+    _normalize_identifier_columns,
+    _validate_explicit_references,
+    _normalize_cps_column,
+    _sort_input_table,
+    _validate_input_package_schema,
+    _merge_csvs,
+    _read_gpkg_input_table,
+    _try_read_gpkg_input_table,
+    _load_fixed_numeric_variable_table,
+    _read_model_input_table,
+    _assemble_parcel_parameter_source,
+    _assemble_plet_hydrology_source,
+    _assemble_plet_concentration_source,
+    _load_table_source,
+    _normalize_pathway_label,
+    _normalize_pathway_column,
+    _normalize_pollutant_column,
+    _nonblank,
+    _row_stats_raw,
+    _ensure_projected,
+    _normalize_huc12,
+    _rows_for_pid
+)
+from basin_bmp_sim.config.plet_loading import (
+    _effective_plet_classification_pairs,
+    _load_plet_hydrology_records,
+    _load_parameter_stats_table,
+    _load_plet_parameter_table,
+    _load_plet_hydrology_lookup,
+    _load_pollutant_concentrations,
+    _split_plet_concentrations,
+    _load_parcel_huc12,
+    _load_plet_huc12_layer,
+    _assemble_huc12_plet_parameter_source,
+    _merge_huc12_plet_parameters,
+    _merge_huc12_plet_concentrations
+)
 
 def load_bmp_selection_probabilities(
     path: Union[str, Path],
@@ -702,538 +289,48 @@ def load_trajectory_records(
     return out
 
 
-def _ensure_projected(gdf: gpd.GeoDataFrame, logger: Any) -> gpd.GeoDataFrame:
-    """Return geometry in a projected CRS whose linear units are meters.
-
-    Area/perimeter values are model inputs, so merely being projected is not
-    sufficient: State Plane feet, for example, must not be interpreted as
-    meters.  The model therefore establishes a metric analysis CRS once from
-    the domain and transforms all other spatial inputs into that CRS.
-    """
-    if gdf.crs is None:
-        raise ValueError("Spatial inputs must declare a CRS; a missing CRS cannot be safely inferred")
-
-    crs = gdf.crs
-    axis_info = list(getattr(crs, "axis_info", ()) or ())
-    uses_meters = bool(
-        crs.is_projected
-        and axis_info
-        and all(
-            getattr(axis, "unit_conversion_factor", None) is not None
-            and abs(float(axis.unit_conversion_factor) - 1.0) < 1e-12
-            for axis in axis_info[:2]
-        )
-    )
-    if uses_meters:
-        return gdf
-
-    est = gdf.estimate_utm_crs()
-    if est is None:
-        raise ValueError(f"Could not determine a metric analysis CRS from input CRS {crs}")
-    logger.info(f"Reprojecting analysis geometry from {crs} to metric CRS: {est}")
-    return gdf.to_crs(est)
-
-
-def _normalize_pollutant_column(df: pd.DataFrame, col: str, label: str, logger: Any) -> pd.DataFrame:
-    """Normalize pollutant labels in a dataframe column.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Input table.
-    col : str
-        Name of the pollutant column.
-    label : str
-        Dataset label used in error messages.
-    logger : Any
-        Logger retained for interface consistency.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Dataframe with standardized pollutant labels.
-
-    Raises
-    ------
-    ValueError
-        If the pollutant column is missing or cannot be normalized.
-    """
-    if col not in df.columns:
-        raise ValueError(f"{label} missing required column '{col}'")
-    try:
-        df[col] = [normalize_pollutant_label(x) for x in df[col]]
-    except Exception as ex:
-        raise ValueError(f"Failed to normalize pollutant labels in {label}: {ex}") from ex
-    return df
-
-
-def _normalize_pathway_label(value: Any) -> str:
-    """Return a stable, user-extensible pathway label.
-
-    Parameters
-    ----------
-    value : Any
-        Input value to normalize or evaluate.
-
-    Returns
-    -------
-    str
-        Normalized pathway label.
-    """
-    label = str(value).strip().lower().replace("_", " ")
-    return " ".join(label.split())
-
-
-def _normalize_pathway_column(df: pd.DataFrame, label: str, logger: Any) -> pd.DataFrame:
-    """Normalize pathway labels without restricting user-defined pathways.
-
-    Statistical mode may use any non-empty pathway labels shared by the parcel
-    load-rate and BMP efficiency inputs. PLET/RUSLE-specific pathway restrictions
-    are applied later, after the load-generation mode is known.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input table to process.
-    label : str
-        Context label used in diagnostics and validation errors.
-    logger : Any
-        Logger used for diagnostic and progress messages.
-
-    Returns
-    -------
-    pd.DataFrame
-        Copy of the table with normalized pathway labels.
-
-    Raises
-    ------
-    ValueError
-        If any pathway label is blank after normalization.
-    """
-    del logger
-    if COL_PATHWAY not in df.columns:
-        return df
-    df[COL_PATHWAY] = df[COL_PATHWAY].map(_normalize_pathway_label)
-    bad = df[COL_PATHWAY].eq("")
-    if bad.any():
-        raise ValueError(f"{label} contains blank pathway labels")
-    return df
-
-
-def _nonblank(value: Any) -> bool:
-    """Return whether an input cell contains a nonblank value.
-
-    Parameters
-    ----------
-    value : Any
-        Input value to normalize or evaluate.
-
-    Returns
-    -------
-    bool
-        ``True`` when the value is nonblank; otherwise ``False``.
-    """
-    return value is not None and not pd.isna(value) and str(value).strip() != ""
-
-
-def _row_stats_raw(row: Mapping[str, Any]) -> Dict[str, float]:
-    """Return normalized numeric statistics from an input row.
-
-    Parameters
-    ----------
-    row : Mapping[str, Any]
-        Input table row.
-
-    Returns
-    -------
-    Dict[str, float]
-        Normalized numeric statistics extracted from the row.
-    """
-    return stats_from_row(row)
-
-
-def _rows_for_pid(table: Optional[pd.DataFrame], pid: Union[int, str]) -> List[pd.Series]:
-    """Resolve NULL default rows plus parcel-specific overrides for one parcel."""
-    if table is None or table.empty:
-        return []
-    from basin_bmp_sim.science.plet_rusle import canonical_parameter_name
-
-    default_rows = table[table[COL_PID].isna()]
-    try:
-        target_pid = int(pid)
-        numeric_pids = pd.to_numeric(table[COL_PID], errors="coerce")
-        exact_rows = table[table[COL_PID].notna() & (numeric_pids == target_pid)]
-    except (TypeError, ValueError):
-        exact_rows = table[
-            table[COL_PID].notna() & (table[COL_PID].astype(str) == str(pid))
-        ]
-    combined = pd.concat([default_rows, exact_rows], ignore_index=True)
-    if combined.empty:
-        return []
-    combined = combined.assign(
-        _canonical_parameter=combined["parameter"].map(canonical_parameter_name)
-    )
-    combined = combined.drop_duplicates(subset=["_canonical_parameter"], keep="last")
-    return [row for _, row in combined.iterrows()]
-
-
-
-def _effective_plet_classification_pairs(
-    table: pd.DataFrame, parcel_ids: Sequence[str]
-) -> List[Tuple[str, str]]:
-    """Return normalized land-cover/HSG pairs actually used by modeled parcels."""
-    from basin_bmp_sim.science.plet_rusle import canonical_parameter_name, normalize_plet_hsg, normalize_plet_land_cover
-
-    pairs: set[Tuple[str, str]] = set()
-    for pid in map(str, parcel_ids):
-        effective = {canonical_parameter_name(row["parameter"]): row for row in _rows_for_pid(table, pid)}
-        land_row = effective.get("land_cover")
-        hsg_row = effective.get("hsg")
-        if land_row is None or hsg_row is None:
-            continue
-        pairs.add((normalize_plet_land_cover(land_row["value"]), normalize_plet_hsg(hsg_row["value"])))
-    return sorted(pairs)
-
-def _load_plet_hydrology_records(
-    lookup_path: Union[str, Path],
-) -> Dict[Tuple[str, str], Tuple[float, float]]:
-    """Read and validate fixed PLET CN/infiltration records for deterministic helpers.
-
-    Parameters
-    ----------
-    lookup_path : Union[str, Path]
-        Path to the user-supplied PLET hydrology lookup table.
-
-    Returns
-    -------
-    Dict[Tuple[str, str], Tuple[float, float]]
-        Hydrology values keyed by normalized land-cover and HSG classes.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the configured PLET hydrology lookup file does not exist.
-    ValueError
-        If the deterministic lookup is missing required columns or values,
-        contains duplicate rows, or contains stochastic definitions.
-    """
-    from basin_bmp_sim.science.plet_rusle import (
-        _PLET_DERIVED_PARAMETERS,
-        canonical_parameter_name,
-        normalize_plet_hsg,
-        normalize_plet_land_cover,
-    )
-    path = Path(lookup_path)
-    if not path.exists():
-        raise FileNotFoundError(f"PLET hydrology lookup table not found: {path}")
-    table = read_csv_table(path)
-    table = normalize_columns(table)
-    records: Dict[Tuple[str, str], Dict[str, float]] = {}
-    if {"land_cover", "hsg", "parameter"} <= set(table.columns):
-        for row_index, row in table.iterrows():
-            land_cover = normalize_plet_land_cover(row["land_cover"])
-            hsg = normalize_plet_hsg(row["hsg"])
-            parameter = canonical_parameter_name(row["parameter"])
-            if parameter not in _PLET_DERIVED_PARAMETERS:
-                continue
-            stats = stats_from_row(row)
-            if set(stats) != {"value"}:
-                raise ValueError(
-                    "The deterministic PLET hydrology helper requires fixed lookup values; "
-                    f"row {row_index} for {land_cover}/{hsg}/{parameter} is stochastic"
-                )
-            records.setdefault((land_cover, hsg), {})[parameter] = float(stats["value"])
-        output: Dict[Tuple[str, str], Tuple[float, float]] = {}
-        for key, values in records.items():
-            if set(values) != set(_PLET_DERIVED_PARAMETERS):
-                raise ValueError(f"PLET hydrology lookup is incomplete for {key}")
-            output[key] = (float(values["cn"]), float(values["infiltration_fraction"]))
-        return output
-    required = {"land_cover", "hsg", "cn", "infiltration_fraction"}
-    missing = sorted(required - set(table.columns))
-    if missing:
-        raise ValueError(f"PLET hydrology lookup is missing required columns: {missing}")
-    output = {}
-
-    for _, row in table.iterrows():
-        key = (normalize_plet_land_cover(row["land_cover"]), normalize_plet_hsg(row["hsg"]))
-        if key in output:
-            raise ValueError(f"Duplicate PLET hydrology lookup row for {key}")
-        output[key] = (float(row["cn"]), float(row["infiltration_fraction"]))
-    return output
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def _load_parameter_stats_table(
-    source: Any,
-    label: str,
-    logger: Any,
-    parcel_ids: Optional[Sequence[str]] = None,
-) -> Optional[pd.DataFrame]:
-    """Load a parcel parameter statistics table from a frame or CSV path(s)."""
-    if source is None:
-        return None
-    from basin_bmp_sim.science.plet_rusle import canonical_parameter_name
-    df = _load_table_source(source, [COL_PID, "parameter"], label, logger)
-    df = _normalize_identifier_columns(df, [COL_PID], label, allow_null_pid=True)
-    if parcel_ids is not None:
-        _validate_explicit_references(
-            df[COL_PID].tolist(), parcel_ids, label=label, allow_default=True
-        )
-    df["parameter"] = df["parameter"].map(canonical_parameter_name)
-    validate_unique_rows(df, [COL_PID, "parameter"], label)
-    validate_stats_rows(df, label)
-    return df
-
-
-def _load_plet_parameter_table(
-    source: Any,
-    parcel_ids: Sequence[str],
-    logger: Any,
-) -> Optional[pd.DataFrame]:
-    """Load PLET numeric parameters and fixed land-cover/HSG classifications."""
-    if source is None:
-        return None
-    from basin_bmp_sim.science.plet_rusle import canonical_parameter_name, PLET_CLASSIFICATION_PARAMETERS
-    df = _load_table_source(source, [COL_PID, "parameter"], LOAD_PLET_INPUTS, logger)
-    df = _normalize_identifier_columns(df, [COL_PID], LOAD_PLET_INPUTS, allow_null_pid=True)
-    _validate_explicit_references(
-        df[COL_PID].tolist(), parcel_ids, label=LOAD_PLET_INPUTS, allow_default=True
-    )
-    df["parameter"] = df["parameter"].map(canonical_parameter_name)
-    validate_unique_rows(df, [COL_PID, "parameter"], LOAD_PLET_INPUTS)
-
-    categorical_mask = df["parameter"].isin(PLET_CLASSIFICATION_PARAMETERS)
-    categorical_rows = df.loc[categorical_mask].copy()
-    categorical_stat_cols = [
-        col for col in statistic_columns(categorical_rows.columns)
-        if str(col).strip().lower() != "value"
-    ]
-    if categorical_stat_cols and not categorical_rows.empty:
-        bad_stats = categorical_rows[categorical_stat_cols].notna().any(axis=1)
-        if bad_stats.any():
-            rows = categorical_rows.index[bad_stats].tolist()
-            raise ValueError(
-                "PLET land_cover and hsg are classifications and must use only a fixed value; "
-                f"distribution statistics were supplied at rows {rows}"
-            )
-    numeric_rows = df.loc[~categorical_mask].copy()
-    if not numeric_rows.empty:
-        validate_stats_rows(numeric_rows, LOAD_PLET_INPUTS)
-    df = pd.concat([categorical_rows, numeric_rows], axis=0).sort_index()
-    return validate_plet_input_table(df, parcel_ids)
-
-
-def _load_plet_hydrology_lookup(
-    path: Any,
-    logger: Any,
-    required_pairs: Optional[Sequence[Tuple[str, str]]] = None,
-    required_parcel_pairs: Optional[Mapping[int, Tuple[str, str]]] = None,
-) -> pd.DataFrame:
-    """Load required land-cover/HSG hydrology distributions for PLET mode.
-
-    The table is long-form with one row per ``land_cover`` x ``hsg`` x
-    ``parameter``. Exactly two parameters are required for every supported
-    pairing: ``cn`` and ``infiltration_fraction``. Each row follows the same
-    fixed-value/distribution schema as other numeric model inputs.
-
-    Parameters
-    ----------
-    path : Any
-        Path to the required PLET hydrology lookup CSV file.
-    logger : Any
-        Logger used for diagnostic and progress messages.
-
-    Returns
-    -------
-    pd.DataFrame
-        Validated PLET hydrology lookup table.
-
-    Raises
-    ------
-    ValueError
-        If the required hydrology lookup is absent, contains unsupported parameters, or lacks required land-cover/HSG coverage.
-    """
-    if path is None:
-        raise ValueError(
-            "PLET hydrology requires input_curve_number and "
-            "input_infiltration_fraction in parcels.gpkg"
-        )
-    from basin_bmp_sim.science.plet_rusle import (
-        PLET_HSG_VALUES,
-        PLET_LAND_COVERS,
-        canonical_parameter_name,
-        normalize_plet_hsg,
-        normalize_plet_land_cover,
-    )
-    if isinstance(path, pd.DataFrame):
-        table = normalize_columns(path.copy())
-        require_columns(
-            table, ["land_cover", "hsg", "parameter"],
-            _PLET_HYDROLOGY_LABEL, logger
-        )
-    else:
-        paths = [path] if isinstance(path, (str, Path)) else list(path)
-        frames: List[pd.DataFrame] = []
-        for item in paths:
-            logger.verbose(f"Reading {_PLET_HYDROLOGY_LABEL} from {item}")
-            frame = read_csv_table(item)
-            frame = normalize_columns(frame)
-            require_columns(
-                frame,
-                ["land_cover", "hsg", "parameter"],
-                f"{_PLET_HYDROLOGY_LABEL} ({item})",
-                logger,
-            )
-            frames.append(frame)
-        table = pd.concat(frames, ignore_index=True)
-    table["land_cover"] = table["land_cover"].map(normalize_plet_land_cover)
-    table["hsg"] = table["hsg"].map(normalize_plet_hsg)
-    table["parameter"] = table["parameter"].map(canonical_parameter_name)
-
-    allowed_parameters = {"cn", "infiltration_fraction"}
-    unexpected_parameters = sorted(set(table["parameter"]) - allowed_parameters)
-    if unexpected_parameters:
-        raise ValueError(
-            f"{_PLET_HYDROLOGY_LABEL} contains unsupported parameters: "
-            f"{unexpected_parameters}; expected only cn and infiltration_fraction"
-        )
-
-    validate_stats_rows(table, _PLET_HYDROLOGY_LABEL)
-    keys = ["land_cover", "hsg", "parameter"]
-    per_parcel = COL_PID in table.columns
-    if per_parcel:
-        keys.insert(0, COL_PID)
-        if required_parcel_pairs is None:
-            raise ValueError("Parcel-keyed hydrology inputs require modeled parcel classifications")
-        table = _normalize_identifier_columns(
-            table, [COL_PID], _PLET_HYDROLOGY_LABEL, allow_null_pid=True
-        )
-        validate_unique_rows(table, keys, _PLET_HYDROLOGY_LABEL)
-        _validate_explicit_references(
-            table[COL_PID], list(required_parcel_pairs), label=_PLET_HYDROLOGY_LABEL,
-            allow_default=True,
-        )
-        defaults = table[table[COL_PID].isna()].drop(columns=COL_PID)
-        table = pd.concat([
-            pd.DataFrame({COL_PID: list(required_parcel_pairs)}).merge(defaults, how="cross"),
-            table[table[COL_PID].notna()],
-        ], ignore_index=True).drop_duplicates(keys, keep="last")
-    validate_unique_rows(table, keys, _PLET_HYDROLOGY_LABEL)
-
-    if required_pairs is None:
-        pairs = {(land_cover, hsg) for land_cover in PLET_LAND_COVERS for hsg in PLET_HSG_VALUES}
-    else:
-        pairs = {
-            (normalize_plet_land_cover(land_cover), normalize_plet_hsg(hsg))
-            for land_cover, hsg in required_pairs
-        }
-    expected = {
-        (land_cover, hsg, parameter)
-        for land_cover, hsg in pairs
-        for parameter in ("cn", "infiltration_fraction")
-    }
-    supplied = set(
-        zip(table["land_cover"], table["hsg"], table["parameter"])
-    )
-    if per_parcel:
-        expected = {
-            (pid, land_cover, hsg, parameter)
-            for pid, (land_cover, hsg) in required_parcel_pairs.items()
-            for parameter in ("cn", "infiltration_fraction")
-        }
-        supplied = set(table[keys].itertuples(index=False, name=None))
-    missing = sorted(expected - supplied)
-    # Extra valid rows are harmless and make a reusable hydrology table possible;
-    # only the land-cover/HSG combinations used by this run must be complete.
-    if missing:
-        scope = "every supported land_cover x hsg pairing" if required_pairs is None else "every land_cover x hsg pairing used by modeled parcels"
-        raise ValueError(
-            f"{_PLET_HYDROLOGY_LABEL} must define cn and infiltration_fraction for {scope}; "
-            f"missing={missing}"
-        )
-
-    validate_distribution_bounds(
-        table,
-        _PLET_HYDROLOGY_LABEL,
-        parameter_col="parameter",
-        bounds={
-            "cn": (1.0e-9, 100.0),
-            "infiltration_fraction": (0.0, 1.0),
-        },
-    )
-    return table.reset_index(drop=True)
-
-
-def _load_pollutant_concentrations(
-    source: Any,
-    pollutants: List[str],
-    logger: Any,
-    parcel_ids: Optional[Sequence[str]] = None,
-) -> Optional[pd.DataFrame]:
-    """Load the unified surface/subsurface concentration table."""
-    if source is None:
-        return None
-    df = _load_table_source(
-        source,
-        [COL_PID, COL_POLLUTANT, COL_PATHWAY],
-        LOAD_CONCENTRATIONS,
-        logger,
-    )
-    df = _normalize_pollutant_column(df, COL_POLLUTANT, LOAD_CONCENTRATIONS, logger)
-    df = _normalize_pathway_column(df, LOAD_CONCENTRATIONS, logger)
-    df = _normalize_identifier_columns(df, [COL_PID], LOAD_CONCENTRATIONS, allow_null_pid=True)
-    if parcel_ids is not None:
-        _validate_explicit_references(
-            df[COL_PID].tolist(), parcel_ids, label=LOAD_CONCENTRATIONS, allow_default=True
-        )
-    df = df[df[COL_POLLUTANT].isin(pollutants)].copy()
-    invalid_pathways = sorted(set(df[COL_PATHWAY]) - set(PLET_PATHWAY_VALUES))
-    if invalid_pathways:
-        raise ValueError(
-            f"{LOAD_CONCENTRATIONS} contains unsupported pathways {invalid_pathways}; "
-            f"expected only {list(PLET_PATHWAY_VALUES)}"
-        )
-    validate_unique_rows(
-        df, [COL_PID, COL_POLLUTANT, COL_PATHWAY], LOAD_CONCENTRATIONS
-    )
-    pathways = df[COL_PATHWAY].copy().reset_index(drop=True)
-    numeric_df = df.drop(columns=[COL_PATHWAY]).reset_index(drop=True)
-    validate_stats_rows(numeric_df, LOAD_CONCENTRATIONS)
-    numeric_df.insert(2, COL_PATHWAY, pathways)
-    return numeric_df.reset_index(drop=True)
-
-
-def _split_plet_concentrations(
-    table: Optional[pd.DataFrame],
-) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
-    """Split the unified concentration table into runtime pathway tables.
-
-    The simulation historically carries surface and groundwater/subsurface
-    concentrations separately in its in-memory state.  Keeping that internal
-    representation avoids changing scenario-state and output behavior while
-    allowing users to maintain only one concentration input file.
-    """
-    if table is None:
-        return None, None
-    surface = table[table[COL_PATHWAY] == "surface"].copy().reset_index(drop=True)
-    subsurface = table[table[COL_PATHWAY] == "subsurface"].copy().reset_index(drop=True)
-    return surface, subsurface
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _load_pollutants(cfg: Dict[str, Any]) -> List[str]:
@@ -1385,337 +482,16 @@ def _load_parcels(cfg: Dict[str, Any], domain: gpd.GeoDataFrame, logger: Any) ->
     parcels.attrs["source_pid_universe"] = sorted(source_pid_universe)
     return parcels
 
-def _normalize_huc12(value: Any, *, label: str) -> str:
-    """Normalize and validate one HUC12 code as a 12-character text value."""
-    if value is None or pd.isna(value):
-        raise ValueError(f"{label} must not be null")
-    text = str(value).strip()
-    if not (len(text) == 12 and text.isdigit()):
-        raise ValueError(
-            f"{label}={value!r} must be a 12-digit HUC stored as text "
-            "(for example '050902021001')"
-        )
-    return text
 
 
-def _load_parcel_huc12(
-    cfg: Dict[str, Any],
-    parcel_ids: Sequence[int],
-    source_parcel_ids: Sequence[int],
-    logger: Any,
-) -> pd.DataFrame:
-    """Load the dominant-HUC12 assignment for each modeled parcel."""
-    table = _read_gpkg_input_table(
-        ci_get(cfg, CFG_PARCELS),
-        GPKG_PARCEL_HUC12_TABLE,
-        [COL_PID, COL_HUC12],
-        GPKG_PARCEL_HUC12_TABLE,
-        logger,
-    ).copy()
-    table[COL_HUC12] = table[COL_HUC12].map(
-        lambda value: _normalize_huc12(value, label=f"{GPKG_PARCEL_HUC12_TABLE}.{COL_HUC12}")
-    )
-    validate_unique_rows(table, [COL_PID], GPKG_PARCEL_HUC12_TABLE)
-
-    if COL_AREA_FRACTION in table.columns:
-        table[COL_AREA_FRACTION] = pd.to_numeric(table[COL_AREA_FRACTION], errors="raise")
-        validate_numeric_columns_in_domain(
-            table, [COL_AREA_FRACTION], FRACTION_DOMAIN, GPKG_PARCEL_HUC12_TABLE
-        )
-
-    source_ids = {int(pid) for pid in source_parcel_ids}
-    modeled_ids = {int(pid) for pid in parcel_ids}
-    unknown = sorted(set(table[COL_PID].astype(int)) - source_ids)
-    if unknown:
-        raise ValueError(
-            f"{GPKG_PARCEL_HUC12_TABLE} references parcel IDs not found in the source parcels layer: {unknown[:10]}"
-        )
-    table = table.loc[table[COL_PID].astype(int).isin(modeled_ids)].copy()
-    missing = sorted(modeled_ids - set(table[COL_PID].astype(int)))
-    if missing:
-        raise ValueError(
-            f"{GPKG_PARCEL_HUC12_TABLE} must assign every modeled parcel to one HUC12; missing pid values: {missing[:10]}"
-        )
-    if COL_AREA_FRACTION in table.columns:
-        low = table[table[COL_AREA_FRACTION] < 0.75]
-        if not low.empty:
-            preview = low[[COL_PID, COL_HUC12, COL_AREA_FRACTION]].head(10).to_dict(orient="records")
-            logger.warning(
-                "Some parcels have less than 75% of their area in the assigned dominant HUC12; "
-                f"review boundary parcels if needed: {preview}",
-                extra={"file_only": True},
-            )
-    return table.reset_index(drop=True)
 
 
-def _load_plet_huc12_layer(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
-    """Validate the spatial HUC12 layer and return its identifiers/metadata.
-
-    HUC12 geometry is structural/provenance information only. PLET model
-    variables are stored in separate ``input_*`` attribute tables in the same
-    GeoPackage so they can use the standard fixed-value/distribution schema.
-    """
-    package = ci_get(cfg, CFG_PLET_FORCING)
-    if package is None:
-        return pd.DataFrame(columns=[COL_HUC12])
-    package = Path(package)
-    if not package.exists():
-        raise FileNotFoundError(f"PLET forcing GeoPackage not found: {package}")
-
-    tables = set(list_geopackage_tables(package))
-    if GPKG_PLET_HUC12_LAYER not in tables:
-        raise MissingInputTableError(
-            f"PLET forcing GeoPackage {package} must contain spatial layer "
-            f"{GPKG_PLET_HUC12_LAYER!r}"
-        )
-
-    spatial = read_geodataframe(package, layer=GPKG_PLET_HUC12_LAYER)
-    if spatial.empty:
-        raise ValueError(f"{package}:{GPKG_PLET_HUC12_LAYER} must not be empty")
-    if spatial.crs is None:
-        raise ValueError(f"{package}:{GPKG_PLET_HUC12_LAYER} must declare a CRS")
-    if spatial.geometry.isna().any() or spatial.geometry.is_empty.any():
-        raise ValueError(
-            f"{package}:{GPKG_PLET_HUC12_LAYER} contains null or empty geometry"
-        )
-    if (~spatial.geometry.is_valid).any():
-        raise ValueError(f"{package}:{GPKG_PLET_HUC12_LAYER} contains invalid geometry")
-
-    table = pd.DataFrame(spatial.drop(columns=[spatial.geometry.name], errors="ignore"))
-    table = normalize_columns(table)
-    technical_ids = [c for c in ("fid", "id", "row_id") if c in table.columns]
-    if technical_ids:
-        table = table.drop(columns=technical_ids)
-    require_columns(
-        table, [COL_HUC12],
-        f"{GPKG_PLET_HUC12_LAYER} ({package})", logger,
-    )
-    table[COL_HUC12] = table[COL_HUC12].map(
-        lambda value: _normalize_huc12(
-            value, label=f"{GPKG_PLET_HUC12_LAYER}.{COL_HUC12}"
-        )
-    )
-    validate_unique_rows(table, [COL_HUC12], GPKG_PLET_HUC12_LAYER)
-    return table.reset_index(drop=True)
 
 
-def _assemble_huc12_plet_parameter_source(
-    cfg: Dict[str, Any],
-    huc12_layer: pd.DataFrame,
-    logger: Any,
-) -> Optional[pd.DataFrame]:
-    """Assemble HUC12 ``input_*`` tables into the runtime long form.
-
-    Every numeric HUC12-scale PLET variable uses the same distribution schema
-    as parcel inputs. One row describes one HUC12/parameter combination.
-    """
-    package = ci_get(cfg, CFG_PLET_FORCING)
-    if package is None:
-        return None
-
-    valid_hucs = set(huc12_layer[COL_HUC12].astype(str))
-    frames: List[pd.DataFrame] = []
-    existing_tables = set(list_geopackage_tables(package))
-    for parameter, table_name in HUC12_PLET_PARAMETER_INPUT_TABLES.items():
-        if table_name not in existing_tables:
-            continue
-        table = _read_gpkg_input_table(
-            package, table_name, [COL_HUC12], table_name, logger
-        ).copy()
-        if table.empty:
-            continue
-        table[COL_HUC12] = table[COL_HUC12].map(
-            lambda value: _normalize_huc12(value, label=f"{table_name}.{COL_HUC12}")
-        )
-        if parameter in {"r", "k", "ls", "c", "p"}:
-            require_columns(table, ["land_cover"], table_name, logger)
-            from basin_bmp_sim.science.plet_rusle import normalize_plet_land_cover
-            table["land_cover"] = table["land_cover"].map(normalize_plet_land_cover)
-        keys = [COL_HUC12] + (["land_cover"] if parameter in {"r", "k", "ls", "c", "p"} else [])
-        validate_unique_rows(table, keys, table_name)
-        unknown = sorted(set(table[COL_HUC12].astype(str)) - valid_hucs)
-        if unknown:
-            raise ValueError(
-                f"{table_name} references HUC12 value(s) not found in the spatial "
-                f"{GPKG_PLET_HUC12_LAYER} layer: {unknown[:10]}"
-            )
-
-        # Add the known parameter context before validating distribution rows.
-        # Unit labels such as ``fraction`` are intentionally ambiguous without
-        # parameter/table context because they may represent several
-        # dimensionless model quantities.  Parcel long-form inputs already
-        # carry a ``parameter`` column; HUC12 one-variable-per-table inputs must
-        # materialize that context here before unit-aware validation.
-        table.insert(1, "parameter", parameter)
-        if parameter == "hsg":
-            from basin_bmp_sim.science.plet_rusle import normalize_plet_hsg
-            require_columns(table, ["value"], table_name, logger)
-            other_stats = [col for col in statistic_columns(table.columns) if col != "value"]
-            if other_stats and table[other_stats].notna().any(axis=1).any():
-                raise ValueError(f"{table_name} must use fixed HSG values, not distributions")
-            table["value"] = table["value"].map(normalize_plet_hsg)
-        else:
-            validate_stats_rows(table, table_name)
-        frames.append(table)
-
-    if not frames:
-        return None
-    return pd.concat(frames, ignore_index=True, sort=False)
 
 
-def _merge_huc12_plet_parameters(
-    parcel_source: pd.DataFrame,
-    parcel_huc12: pd.DataFrame,
-    huc_source: Optional[pd.DataFrame],
-    parcel_ids: Sequence[int],
-) -> pd.DataFrame:
-    """Merge HUC12 parameter rows into parcel PLET rows with explicit precedence.
-
-    Precedence is parcel-specific ``input_*`` row > HUC12 ``input_*`` row >
-    NULL-pid parcel default. Distributional HUC12 inputs are materialized for
-    parcels assigned to that HUC12. Unless the user supplies ``sample_group``,
-    an automatic HUC12/parameter sample group is assigned so one value is drawn
-    per HUC12 per scenario and shared by all parcels in that HUC12.
-    """
-    from basin_bmp_sim.science.plet_rusle import canonical_parameter_name
-
-    out = parcel_source.copy()
-    if huc_source is None or huc_source.empty:
-        return out
-
-    mapping = parcel_huc12.set_index(COL_PID)
-    huc_rows = huc_source.copy()
-    huc_rows["parameter"] = huc_rows["parameter"].map(canonical_parameter_name)
-    huc_rows["land_cover"] = huc_rows.get("land_cover", pd.Series(index=huc_rows.index, dtype=object))
-    validate_unique_rows(huc_rows, [COL_HUC12, "parameter", "land_cover"], "HUC12 PLET inputs")
-
-    available_hucs = set(huc_rows[COL_HUC12].astype(str))
-    used_hucs = set(mapping[COL_HUC12].astype(str))
-    # A HUC may legitimately omit a particular parameter because parcel-level
-    # defaults can provide it, but every mapped HUC must exist in at least one
-    # HUC input row when a HUC forcing source is configured.
-    missing_hucs = sorted(used_hucs - available_hucs)
-    if missing_hucs:
-        raise ValueError(
-            "HUC12 PLET input tables have no parameter rows for HUC12 value(s): "
-            f"{missing_hucs[:10]}"
-        )
-
-    canonical = out["parameter"].map(canonical_parameter_name)
-    exact_keys = {
-        (int(pid), str(param))
-        for pid, param in zip(out[COL_PID], canonical)
-        if not pd.isna(pid)
-    }
-
-    rows: List[Dict[str, Any]] = []
-    for pid in map(int, parcel_ids):
-        huc12 = str(mapping.at[pid, COL_HUC12])
-        subset = huc_rows[huc_rows[COL_HUC12].astype(str) == huc12]
-        land_rows = [row for row in _rows_for_pid(out, pid) if row["parameter"] == "land_cover"]
-        land_cover = str(land_rows[0]["value"]).strip().lower() if land_rows else None
-        for _, source_row in subset.iterrows():
-            parameter = str(source_row["parameter"])
-            source_land_cover = source_row["land_cover"]
-            if pd.notna(source_land_cover) and source_land_cover != land_cover:
-                continue
-            if (pid, parameter) in exact_keys:
-                continue
-            row = source_row.to_dict()
-            row.pop(COL_HUC12, None)
-            row.pop("land_cover", None)
-            row[COL_PID] = pid
-            raw_group = row.get("sample_group")
-            if raw_group is None or pd.isna(raw_group) or str(raw_group).strip() == "":
-                group_key = f"{huc12}:{parameter}"
-                if pd.notna(source_land_cover):
-                    group_key += f":{source_land_cover}"
-                row["sample_group"] = f"huc12:{group_key}"
-            note = row.get("notes")
-            prefix = f"HUC12 forcing from {huc12}"
-            row["notes"] = prefix if note is None or pd.isna(note) or not str(note).strip() else f"{prefix}; {note}"
-            rows.append(row)
-
-    if rows:
-        out = pd.concat([out, pd.DataFrame(rows)], ignore_index=True, sort=False)
-    return out
 
 
-def _merge_huc12_plet_concentrations(
-    cfg: Dict[str, Any],
-    parcel_source: pd.DataFrame,
-    parcel_huc12: pd.DataFrame,
-    plet_inputs: pd.DataFrame,
-    parcel_ids: Sequence[int],
-    logger: Any,
-) -> pd.DataFrame:
-    """Apply HUC12/land-cover concentrations beneath parcel-specific rows."""
-    from basin_bmp_sim.science.plet_rusle import normalize_plet_land_cover
-
-    package = ci_get(cfg, CFG_PLET_FORCING)
-    if package is None:
-        return parcel_source
-    existing = set(list_geopackage_tables(package))
-    frames = []
-    for pathway, table_name in (
-        ("surface", GPKG_INPUT_SURFACE_CONCENTRATION),
-        ("subsurface", GPKG_INPUT_SUBSURFACE_CONCENTRATION),
-    ):
-        if table_name not in existing:
-            continue
-        table = _read_gpkg_input_table(
-            package, table_name, [COL_HUC12, "land_cover", COL_POLLUTANT], table_name, logger
-        ).copy()
-        if table.empty:
-            continue
-        table[COL_HUC12] = table[COL_HUC12].map(
-            lambda value: _normalize_huc12(value, label=f"{table_name}.{COL_HUC12}")
-        )
-        table["land_cover"] = table["land_cover"].map(normalize_plet_land_cover)
-        validate_unique_rows(table, [COL_HUC12, "land_cover", COL_POLLUTANT], table_name)
-        validate_stats_rows(table, table_name)
-        table.insert(3, COL_PATHWAY, pathway)
-        frames.append(table)
-    if not frames:
-        return parcel_source
-
-    huc_rows = pd.concat(frames, ignore_index=True)
-    mapping = parcel_huc12.set_index(COL_PID)[COL_HUC12].astype(str)
-    # The spatial layer is the authority for valid HUC identifiers, including
-    # those not currently assigned to a modeled parcel.
-    layer = _load_plet_huc12_layer(cfg, logger)
-    unknown = sorted(set(huc_rows[COL_HUC12]) - set(layer[COL_HUC12]))
-    if unknown:
-        raise ValueError(f"HUC12 concentration rows reference unknown HUC12s: {unknown[:10]}")
-    exact = {
-        (int(row[COL_PID]), str(row[COL_POLLUTANT]), str(row[COL_PATHWAY]))
-        for _, row in parcel_source[parcel_source[COL_PID].notna()].iterrows()
-    }
-    rows: List[Dict[str, Any]] = []
-    for pid in map(int, parcel_ids):
-        huc12 = mapping.at[pid]
-        land_rows = [row for row in _rows_for_pid(plet_inputs, pid) if row["parameter"] == "land_cover"]
-        if not land_rows:
-            continue
-        land_cover = normalize_plet_land_cover(land_rows[0]["value"])
-        subset = huc_rows[
-            (huc_rows[COL_HUC12] == huc12) & (huc_rows["land_cover"] == land_cover)
-        ]
-        for _, source in subset.iterrows():
-            key = (pid, str(source[COL_POLLUTANT]), str(source[COL_PATHWAY]))
-            if key in exact:
-                continue
-            row = source.to_dict()
-            row.pop(COL_HUC12)
-            row.pop("land_cover")
-            row[COL_PID] = pid
-            group = row.get("sample_group")
-            if group is None or pd.isna(group) or not str(group).strip():
-                row["sample_group"] = f"huc12:{huc12}:{land_cover}:{key[1]}:{key[2]}"
-            rows.append(row)
-    if not rows:
-        return parcel_source
-    return pd.concat([parcel_source, pd.DataFrame(rows)], ignore_index=True, sort=False)
 
 
 def _load_parcel_graph(cfg: Dict[str, Any], logger: Any) -> pd.DataFrame:
@@ -2794,7 +1570,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 raise ValueError(
                     "plet_rusle mode requires dedicated input_* parameter tables in parcels.gpkg"
                 )
-            from basin_bmp_sim.science.plet_rusle import canonical_parameter_name
+            from basin_bmp_sim.science.plet_classification import canonical_parameter_name
             canonical_names = package_parameters["parameter"].map(canonical_parameter_name)
             rusle_mask = canonical_names.isin(set(RUSLE_PARAMETER_NAMES))
             plet_source = package_parameters.loc[~rusle_mask].copy()

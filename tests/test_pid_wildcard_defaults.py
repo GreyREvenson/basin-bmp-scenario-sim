@@ -14,10 +14,7 @@ from basin_bmp_sim.domain.constants import (
     COL_SDR_S_TO_O,
 )
 import basin_bmp_sim.config.loading as input_config
-from basin_bmp_sim.config.loading import (
-    _build_parcel_down_map,
-    _complete_delivery_ratio_defaults,
-)
+from basin_bmp_sim.config.loading import _build_parcel_down_map, _complete_delivery_ratio_defaults
 
 
 class RecordingLogger:

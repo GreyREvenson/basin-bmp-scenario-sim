@@ -20,7 +20,7 @@ from basin_bmp_sim.domain.constants import (
     OUTPUT_TREATED,
     OUTPUT_WETLAND_AREA,
 )
-from basin_bmp_sim.science.plet_rusle import initialize_plet_rusle_state
+from basin_bmp_sim.science.plet_initialization import initialize_plet_rusle_state
 from basin_bmp_sim.execution.monte_carlo_driver import Model, _ScenarioContext
 
 
@@ -200,7 +200,7 @@ def test_grassed_design_respects_config(
 
 
 def test_plet_initialization_uses_full_hydrologic_parcel_universe(monkeypatch) -> None:
-    import basin_bmp_sim.science.plet_rusle as lg
+    import basin_bmp_sim.science.plet_initialization as lg
 
     ctx = SimpleNamespace(
         parcel_ids=["A", "B", "C"],

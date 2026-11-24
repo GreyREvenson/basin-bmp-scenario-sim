@@ -10,14 +10,9 @@ import pandas as pd
 
 from basin_bmp_sim.config.distributions import statistic_columns
 from basin_bmp_sim.config.schema import INPUT_VARIABLE_SPECS, KNOWN_INPUT_TABLES
-from basin_bmp_sim.config.validation import (
-    FRACTION_DOMAIN,
-    NONNEGATIVE_DOMAIN,
-    require_columns,
-    validate_numeric_columns_in_domain,
-    validate_stats_rows,
-    validate_unique_rows,
-)
+from basin_bmp_sim.domain.constants import FRACTION_DOMAIN, NONNEGATIVE_DOMAIN
+from basin_bmp_sim.config.validation.statistics import require_columns, validate_stats_rows, validate_unique_rows
+from basin_bmp_sim.config.validation.domains import validate_numeric_columns_in_domain
 from basin_bmp_sim.common.io import list_geopackage_tables, read_geodataframe
 from basin_bmp_sim.common.utils import ci_get, normalize_columns, normalize_pollutant_label
 
@@ -362,9 +357,9 @@ def load_scoped_input_tables(
                     raise ValueError(f"{scope} {name} requires nonblank pollutant keys")
                 table["pollutant"] = table.pollutant.map(normalize_pollutant_label)
             if "pathway" in table:
-                from basin_bmp_sim.config.loading import _normalize_pathway_column
+                from basin_bmp_sim.config.table_sources import _normalize_pathway_column
                 table = _normalize_pathway_column(table, name, logger)
-            from basin_bmp_sim.science.plet_rusle import normalize_plet_hsg, normalize_plet_land_cover
+            from basin_bmp_sim.science.plet_classification import normalize_plet_hsg, normalize_plet_land_cover
             for column, normalize in (("land_cover", normalize_plet_land_cover), ("hsg", normalize_plet_hsg)):
                 if column in table:
                     table[column] = table[column].map(normalize)

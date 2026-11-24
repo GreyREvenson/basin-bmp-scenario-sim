@@ -6,12 +6,10 @@ import numpy as np
 import pytest
 
 from basin_bmp_sim.domain.constants import INCH_OVER_HA_TO_LITERS
-from basin_bmp_sim.science.plet_rusle import (
-    calculate_plet_pathway_load_rates,
-    plet_annual_infiltration_in,
-    plet_annual_surface_runoff_in,
-    rusle_sediment_load_rate_kg_ha_yr,
-)
+from basin_bmp_sim.science.nutrients.surface_load_plet_emc import calculate_plet_pathway_load_rates
+from basin_bmp_sim.science.hydrology.infiltration_plet_balance import plet_annual_infiltration_in
+from basin_bmp_sim.science.hydrology.runoff_plet_curve_number import plet_annual_surface_runoff_in
+from basin_bmp_sim.science.sediment.soil_loss_rusle import rusle_sediment_load_rate_kg_ha_yr
 
 
 def _parameters() -> dict[str, float]:

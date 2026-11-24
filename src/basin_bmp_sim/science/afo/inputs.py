@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 from basin_bmp_sim.domain.constants import AFO_FEEDLOT_MAX_CONCENTRATIONS as _FEEDLOT_MAX_CONC
 from basin_bmp_sim.config.distributions import stats_from_row, statistic_columns
-from basin_bmp_sim.config.validation import validate_named_parameter_stats, validate_stats_rows
-from basin_bmp_sim.science.plet_rusle import normalize_plet_land_cover
+from basin_bmp_sim.config.validation.statistics import validate_named_parameter_stats, validate_stats_rows
+from basin_bmp_sim.science.plet_classification import normalize_plet_land_cover
 
 from .shared import _animal_species, _need_columns, _finite
 from .excretion import reference_excretion_factors, _EXCRETION_PARAMETERS

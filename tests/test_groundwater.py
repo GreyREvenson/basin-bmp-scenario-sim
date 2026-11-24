@@ -9,10 +9,8 @@ import pytest
 from basin_bmp_sim.bmp.pathways.plet_pathway_efficiency import _apply_pathway_reduction, _get_current_total_load_rate, _get_pathway_load_rates
 from basin_bmp_sim.bmp.infield.response.plet_pathway_efficiency import _simulate_infield
 from basin_bmp_sim.domain.constants import OUTPUT_REMOVED, OUTPUT_TREATED
-from basin_bmp_sim.science.plet_rusle import (
-    INCH_OVER_HA_TO_LITERS,
-    plet_annual_infiltration_in,
-)
+from basin_bmp_sim.domain.constants import INCH_OVER_HA_TO_LITERS
+from basin_bmp_sim.science.hydrology.infiltration_plet_balance import plet_annual_infiltration_in
 
 
 def _plet_parameters() -> dict[str, float]:

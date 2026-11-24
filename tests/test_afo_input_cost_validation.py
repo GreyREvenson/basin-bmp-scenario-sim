@@ -12,7 +12,7 @@ from basin_bmp_sim.science.afo.feedlot import feedlot_bmp_cost_quantities
 from basin_bmp_sim.science.afo.inputs import load_afo_inputs
 from basin_bmp_sim.science.afo.excretion import animal_production
 from basin_bmp_sim.scenarios.costs import _estimate_costs_for_probabilities, _get_bmp_cost
-from basin_bmp_sim.config.validation import validate_stats_rows, validate_named_parameter_stats
+from basin_bmp_sim.config.validation.statistics import validate_stats_rows, validate_named_parameter_stats
 from test_afo import _package, _parcels
 from test_afo_mass import _load, _mass_package
 from test_cost_units import DummyModel

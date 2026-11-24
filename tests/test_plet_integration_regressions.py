@@ -10,7 +10,7 @@ import pytest
 
 from basin_bmp_sim.domain.constants import OUTPUT_IMPACTED_PIDS
 from basin_bmp_sim.config.loading import _build_parcel_down_map
-from basin_bmp_sim.config.validation import validate_plet_runtime_inputs
+from basin_bmp_sim.config.validation.plet import validate_plet_runtime_inputs
 from basin_bmp_sim.execution.monte_carlo_driver import _bmp_impacted_parcel_indices
 
 

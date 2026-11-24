@@ -10,7 +10,10 @@ import pytest
 from shapely.geometry import Point, box
 
 from basin_bmp_sim.config import loading as input_config
-from basin_bmp_sim.config.loading import _ensure_projected, _load_cps, _load_plet_hydrology_lookup, _merge_csvs, _normalize_integer_identifier_value, _validate_input_package_schema
+import basin_bmp_sim.config.table_sources as input_tables
+from basin_bmp_sim.config.table_sources import _ensure_projected, _merge_csvs, _normalize_integer_identifier_value, _validate_input_package_schema
+from basin_bmp_sim.config.loading import _load_cps
+from basin_bmp_sim.config.plet_loading import _load_plet_hydrology_lookup
 from basin_bmp_sim.science.plet_defaults import _plet_parameter_defaults
 from basin_bmp_sim.common.io import MissingInputTableError, read_geopackage_table, read_geopackage_table_info
 
@@ -166,7 +169,7 @@ def test_clipped_structural_relationships_are_filtered_but_true_unknown_ids_erro
 
 
 def test_validate_config_rejects_unknown_keys() -> None:
-    from basin_bmp_sim.config.validation import validate_config
+    from basin_bmp_sim.config.validation.configuration import validate_config
 
     cfg = normalize_config({"n_scenarios": 1, "mdoe": "plet_rusle"})
     with pytest.raises(ValueError, match="Unknown configuration key.*mdoe"):
@@ -174,7 +177,7 @@ def test_validate_config_rejects_unknown_keys() -> None:
 
 
 def test_validate_config_rejects_unknown_load_generation_keys() -> None:
-    from basin_bmp_sim.config.validation import validate_config
+    from basin_bmp_sim.config.validation.configuration import validate_config
 
     cfg = normalize_config(
         {"n_scenarios": 1, "load_generation": {"mode": "plet_rusle", "mdoe": "x"}}
@@ -247,7 +250,7 @@ def test_gpkg_reader_accepts_legacy_registry_wildcard_field(monkeypatch, tmp_pat
     fake_spec = SimpleNamespace(wildcard_allowed=True, key_columns=("pid",))
     monkeypatch.setitem(input_config.INPUT_VARIABLE_SPECS, "input_fake", fake_spec)
     monkeypatch.setattr(
-        input_config,
+        input_tables,
         "read_geopackage_table",
         lambda package, table: pd.DataFrame([{"pid": None, "value": 1.0}]),
     )
@@ -262,7 +265,7 @@ def test_gpkg_reader_accepts_legacy_registry_wildcard_field(monkeypatch, tmp_pat
 
 def test_plet_validation_applies_null_classification_defaults_to_integer_pids() -> None:
     """Schema-v3 NULL defaults must satisfy classifications for every integer parcel."""
-    from basin_bmp_sim.config.validation import validate_plet_input_table
+    from basin_bmp_sim.config.validation.plet import validate_plet_input_table
 
     table = pd.DataFrame(
         [
@@ -279,7 +282,7 @@ def test_plet_validation_applies_null_classification_defaults_to_integer_pids() 
 
 def test_plet_concentration_sampling_applies_null_defaults_to_integer_pids() -> None:
     """Runtime concentration sampling must honor schema-v3 NULL parcel defaults."""
-    from basin_bmp_sim.science.plet_rusle import _sample_concentrations
+    from basin_bmp_sim.science.plet_sampling import _sample_concentrations
 
     class FixedContext:
         @staticmethod

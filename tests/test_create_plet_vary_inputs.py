@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from basin_bmp_sim.config.validation import validate_stats_rows
+from basin_bmp_sim.config.validation.statistics import validate_stats_rows
 from utils import create_plet_vary_inputs as utility
 
 

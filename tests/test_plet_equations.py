@@ -5,12 +5,9 @@ from __future__ import annotations
 import pytest
 
 from basin_bmp_sim.domain.constants import TON_PER_ACRE_TO_KG_PER_HA
-from basin_bmp_sim.science.plet_rusle import (
-    plet_annual_infiltration_in,
-    plet_annual_surface_runoff_in,
-    plet_runoff_depth_in,
-    rusle_sediment_load_rate_kg_ha_yr,
-)
+from basin_bmp_sim.science.hydrology.infiltration_plet_balance import plet_annual_infiltration_in
+from basin_bmp_sim.science.hydrology.runoff_plet_curve_number import plet_annual_surface_runoff_in, plet_runoff_depth_in
+from basin_bmp_sim.science.sediment.soil_loss_rusle import rusle_sediment_load_rate_kg_ha_yr
 
 
 def test_plet_runoff_matches_hand_calculation() -> None:

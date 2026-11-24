@@ -50,10 +50,7 @@ from basin_bmp_sim.config.loading import load_and_validate_all
 from basin_bmp_sim.config.settings import normalize_config, resolve_config_paths
 from basin_bmp_sim.common.logging import make_logger
 from basin_bmp_sim.execution.monte_carlo_driver import Model
-from basin_bmp_sim.science.plet_rusle import (
-    calculate_plet_pathway_load_rates,
-    calculate_load_diagnostics,
-)
+from basin_bmp_sim.science.nutrients.surface_load_plet_emc import calculate_plet_pathway_load_rates, calculate_load_diagnostics
 
 INCH_OVER_HA_TO_LITERS = 254_000.0
 

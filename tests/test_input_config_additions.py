@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 import basin_bmp_sim.config.loading as input_config
+import basin_bmp_sim.config.plet_loading as plet_inputs
 from basin_bmp_sim.domain.constants import (
     CFG_CPS,
     CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
@@ -210,7 +211,7 @@ def test_load_pollutant_concentrations_requires_and_preserves_plet_pathway(tmp_p
         ]
     ).to_csv(path, index=False)
 
-    loaded = input_config._load_pollutant_concentrations(
+    loaded = plet_inputs._load_pollutant_concentrations(
         path, ["TN", "TP"], logger
     )
 
@@ -222,7 +223,7 @@ def test_load_pollutant_concentrations_requires_and_preserves_plet_pathway(tmp_p
         {"pollutant": "TP", "pathway": "subsurface"},
     ]
 
-    surface, subsurface = input_config._split_plet_concentrations(loaded)
+    surface, subsurface = plet_inputs._split_plet_concentrations(loaded)
     assert surface is not None and subsurface is not None
     assert set(surface["pathway"]) == {"surface"}
     assert set(subsurface["pathway"]) == {"subsurface"}
@@ -238,7 +239,7 @@ def test_load_pollutant_concentrations_rejects_missing_pathway_column(tmp_path) 
     ).to_csv(path, index=False)
 
     with pytest.raises(ValueError, match="pathway"):
-        input_config._load_pollutant_concentrations(path, ["TN"], logger)
+        plet_inputs._load_pollutant_concentrations(path, ["TN"], logger)
 
 
 def test_load_pollutant_concentrations_rejects_non_plet_pathway(tmp_path) -> None:
@@ -257,4 +258,4 @@ def test_load_pollutant_concentrations_rejects_non_plet_pathway(tmp_path) -> Non
     ).to_csv(path, index=False)
 
     with pytest.raises(ValueError, match="surface.*subsurface|unexpected"):
-        input_config._load_pollutant_concentrations(path, ["TN"], logger)
+        plet_inputs._load_pollutant_concentrations(path, ["TN"], logger)

@@ -23,7 +23,7 @@ from basin_bmp_sim.science.accounting.bmp_mass import (
     _add_mass_metrics_to_bmp_record, _removed_mass_by_parcel_kg,
 )
 from basin_bmp_sim.science.routing.outlet_delivery import _accumulate_delivered_bmp_reductions
-from basin_bmp_sim.science.plet_rusle import plet_annual_surface_runoff_in
+from basin_bmp_sim.science.hydrology.runoff_plet_curve_number import plet_annual_surface_runoff_in
 
 
 @dataclass

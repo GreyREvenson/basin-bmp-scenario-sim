@@ -5,15 +5,10 @@ import pandas as pd
 import pytest
 
 import basin_bmp_sim.scenarios.sampling as sampling
-from basin_bmp_sim.science.plet_rusle import (
-    PLET_HSG_VALUES,
-    PLET_LAND_COVERS,
-    PLET_PATHWAY_NAMES,
-    _sample_parameter_table,
-    _sample_plet_hydrology,
-    initialize_plet_rusle_state,
-    plet_hydrology_from_classifications,
-)
+from basin_bmp_sim.domain.constants import PLET_HSG_VALUES, PLET_LAND_COVERS, PLET_PATHWAY_VALUES as PLET_PATHWAY_NAMES
+from basin_bmp_sim.science.plet_sampling import _sample_parameter_table, _sample_plet_hydrology
+from basin_bmp_sim.science.plet_initialization import initialize_plet_rusle_state
+from basin_bmp_sim.config.plet_loading import plet_hydrology_from_classifications
 
 
 class Ctx:

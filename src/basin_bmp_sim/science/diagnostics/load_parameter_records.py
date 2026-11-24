@@ -1,7 +1,7 @@
 """Model-owned derived load diagnostics exposed as per-parcel records."""
 from __future__ import annotations
 from typing import Any, Dict
-from basin_bmp_sim.science.plet_rusle import calculate_load_diagnostics
+from basin_bmp_sim.science.nutrients.surface_load_plet_emc import calculate_load_diagnostics
 
 
 def model_parameter_records(ctx, sid: int, load_state) -> list[dict]:

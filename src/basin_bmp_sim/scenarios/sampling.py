@@ -11,11 +11,8 @@ import numpy as np
 from typing import Dict, Optional, Tuple, TYPE_CHECKING
 
 from basin_bmp_sim.config.units import convert_sampling_mapping
-from basin_bmp_sim.config.validation import (
-    PhysicalDomain,
-    physical_domain_for_sampling_kind,
-    validate_scalar_in_domain,
-)
+from basin_bmp_sim.domain.constants import PhysicalDomain
+from basin_bmp_sim.config.validation.domains import physical_domain_for_sampling_kind, validate_scalar_in_domain
 
 if TYPE_CHECKING:
     from basin_bmp_sim.execution.monte_carlo_driver import Model

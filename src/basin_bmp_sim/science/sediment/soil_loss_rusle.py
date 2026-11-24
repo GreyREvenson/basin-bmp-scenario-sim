@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 from basin_bmp_sim.domain.constants import RUSLE_REQUIRED_INPUTS as _REQUIRED_RUSLE, TON_PER_ACRE_TO_KG_PER_HA
 from basin_bmp_sim.science.plet_defaults import apply_plet_parameter_defaults
-from basin_bmp_sim.config.validation import validate_parameter_value
+from basin_bmp_sim.config.validation.domains import validate_parameter_value
 
 
 def rusle_sediment_load_rate_kg_ha_yr(parameters: Mapping[str, Any]) -> float:

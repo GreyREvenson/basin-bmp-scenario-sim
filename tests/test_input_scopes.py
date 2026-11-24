@@ -20,9 +20,9 @@ from basin_bmp_sim.config.scopes import (
     normalize_huc_id,
     validate_huc_polygons,
 )
-from basin_bmp_sim.config.validation import validate_config
+from basin_bmp_sim.config.validation.configuration import validate_config
 from basin_bmp_sim.execution.monte_carlo_driver import Model
-from basin_bmp_sim.science.plet_rusle import _sample_parameter_table, _sample_plet_hydrology
+from basin_bmp_sim.science.plet_sampling import _sample_parameter_table, _sample_plet_hydrology
 from utils.create_parcel_huc import write_parcel_huc
 
 

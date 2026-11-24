@@ -119,7 +119,7 @@ def test_prepare_lookup_tables_rejects_duplicate_parcel_ids() -> None:
 
 
 def test_config_rejects_legacy_per_file_parcel_and_outlet_keys() -> None:
-    from basin_bmp_sim.config.validation import validate_config
+    from basin_bmp_sim.config.validation.configuration import validate_config
 
     cfg = {
         "n_scenarios": 1,
@@ -133,7 +133,7 @@ def test_config_rejects_legacy_per_file_parcel_and_outlet_keys() -> None:
 
 
 def test_config_rejects_legacy_plet_file_keys() -> None:
-    from basin_bmp_sim.config.validation import validate_config
+    from basin_bmp_sim.config.validation.configuration import validate_config
 
     cfg = {
         "n_scenarios": 1,
