@@ -10,7 +10,8 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from basin_bmp_sim.science.afo import load_afo_inputs, apply_afo_baseline, _feedlot_runoff_kg
+from basin_bmp_sim.science.afo.inputs import load_afo_inputs
+from basin_bmp_sim.science.afo.feedlot import apply_afo_baseline, _feedlot_runoff_kg
 from basin_bmp_sim.bmp.pathways.plet_pathway_efficiency import _get_pathway_load_rates, _apply_pathway_reduction
 from basin_bmp_sim.science.plet_rusle import plet_annual_surface_runoff_in
 

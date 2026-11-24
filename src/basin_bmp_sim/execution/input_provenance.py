@@ -90,9 +90,9 @@ def scientific_input_manifest(model_config: Path,
         if (ci_get(cfg, "animal_operations") is not None and
                 str(ci_get(manure, "method") or "concentration_increment").lower() == "mass_based" and
                 ci_get(manure, "excretion_factors") is None):
-            from basin_bmp_sim.science import afo
+            from basin_bmp_sim.science.afo import excretion
             references.append(("bundled_afo_excretion_factors",
-                               Path(afo.__file__).resolve().parents[1] / "data" / "afo" /
+                               Path(excretion.__file__).resolve().parents[2] / "data" / "afo" /
                                "manure_excretion_reference.csv"))
     for index, path in enumerate(additional_files):
         references.append((f"additional_files[{index}]", path.resolve()))

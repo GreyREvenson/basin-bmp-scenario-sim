@@ -94,7 +94,7 @@ class NLCDImage:
 
 
 def _sheet(workbook: pd.ExcelFile, name: str, columns: set[str]) -> pd.DataFrame:
-    table = workbook.parse(sheet_name=name)
+    table = pd.read_excel(workbook, sheet_name=name)
     table.columns = [str(column).strip().upper() for column in table.columns]
     missing = columns - set(table)
     if missing:

@@ -12,7 +12,8 @@ import json
 import logging
 from pathlib import Path
 
-from basin_bmp_sim.config.loading import load_and_validate_all, normalize_config, resolve_config_paths
+from basin_bmp_sim.config.loading import load_and_validate_all
+from basin_bmp_sim.config.settings import normalize_config, resolve_config_paths
 from basin_bmp_sim.config.validation import validate_config
 from basin_bmp_sim.common.io import read_config
 from basin_bmp_sim.science.model_context import ScenarioModelContext

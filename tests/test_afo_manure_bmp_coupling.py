@@ -7,7 +7,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from basin_bmp_sim.science.afo import apply_afo_feedlot_manure_effect, load_afo_inputs, mass_afo_realization
+from basin_bmp_sim.science.afo.recovery import apply_afo_feedlot_manure_effect
+from basin_bmp_sim.science.afo.inputs import load_afo_inputs
+from basin_bmp_sim.science.afo.manure import mass_afo_realization
 from basin_bmp_sim.bmp.pathways.plet_pathway_efficiency import _apply_pathway_reduction
 from basin_bmp_sim.execution.monte_carlo_driver import _run_one_scenario
 from test_afo import _ctx, _parcels

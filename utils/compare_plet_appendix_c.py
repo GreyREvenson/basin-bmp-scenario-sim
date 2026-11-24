@@ -46,7 +46,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from basin_bmp_sim.config.loading import load_and_validate_all, normalize_config, resolve_config_paths
+from basin_bmp_sim.config.loading import load_and_validate_all
+from basin_bmp_sim.config.settings import normalize_config, resolve_config_paths
 from basin_bmp_sim.common.logging import make_logger
 from basin_bmp_sim.execution.monte_carlo_driver import Model
 from basin_bmp_sim.science.plet_rusle import (

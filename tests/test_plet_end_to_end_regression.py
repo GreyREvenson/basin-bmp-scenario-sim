@@ -369,7 +369,7 @@ def test_afo_integrated_scenario_keeps_feedlot_and_field_bmps_separate(
 
 def _single_mass_afo_payload(*, statistical: bool) -> dict:
     from shapely.geometry import box
-    from basin_bmp_sim.science.afo import reference_excretion_factors
+    from basin_bmp_sim.science.afo.excretion import reference_excretion_factors
     payload = _shared_payload()
     payload["afo_inputs"] = {
         "method": "mass_based",

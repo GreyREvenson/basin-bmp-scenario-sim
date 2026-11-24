@@ -1,4 +1,5 @@
 from __future__ import annotations
+from basin_bmp_sim.config.settings import normalize_config, resolve_config_paths
 
 import logging
 import sqlite3
@@ -261,11 +262,11 @@ def test_unknown_table_and_unknown_parameter_huc_fail(inputs):
 def test_config_alias_conflict_and_new_relative_path(inputs):
     cfg, paths, _, _ = inputs
     cfg["plet_forcing"] = cfg["huc_parameters"]
-    input_config.normalize_config(cfg)
+    normalize_config(cfg)
     with pytest.raises(ValueError, match="not both"):
         validate_config(cfg)
     relative = {"huc_parameters": "../hucs/custom.gpkg"}
-    input_config.resolve_config_paths(relative, paths["domain"].parent / "config" / "run.yaml")
+    resolve_config_paths(relative, paths["domain"].parent / "config" / "run.yaml")
     assert Path(relative["huc_parameters"]) == paths["domain"].parent / "hucs" / "custom.gpkg"
 
 

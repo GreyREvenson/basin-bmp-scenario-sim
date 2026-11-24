@@ -5,11 +5,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from basin_bmp_sim.science.afo import (
-    STAT_FEEDLOT_RAIN_DAYS, STAT_FEEDLOT_RAIN_CORRECTION,
-    STAT_FEEDLOT_RUNOFF_DAY_FRACTION, _feedlot_runoff_kg,
-    load_afo_inputs, mass_afo_realization,
-)
+from basin_bmp_sim.science.afo.feedlot import STAT_FEEDLOT_RAIN_DAYS, STAT_FEEDLOT_RAIN_CORRECTION, STAT_FEEDLOT_RUNOFF_DAY_FRACTION, _feedlot_runoff_kg
+from basin_bmp_sim.science.afo.inputs import load_afo_inputs
+from basin_bmp_sim.science.afo.manure import mass_afo_realization
 from basin_bmp_sim.science.plet_rusle import plet_annual_surface_runoff_in
 from test_afo import _ctx, _package, _parcels
 from test_afo_mass import _mass_package, _load

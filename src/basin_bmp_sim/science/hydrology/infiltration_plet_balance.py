@@ -1,7 +1,7 @@
 """PLET annual infiltration calculation using corrected rainfall forcing."""
 from __future__ import annotations
 from typing import Any, Mapping
-from basin_bmp_sim.config.loading import apply_plet_parameter_defaults
+from basin_bmp_sim.science.plet_defaults import apply_plet_parameter_defaults
 from basin_bmp_sim.config.validation import validate_parameter_value
 from basin_bmp_sim.science.hydrology.runoff_plet_curve_number import _plet_corrected_annual_precip_in
 

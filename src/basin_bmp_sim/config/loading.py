@@ -1,9 +1,9 @@
-"""Normalize, default, load, and assemble model inputs.
+"""Load and assemble validated model input tables.
 
 Filesystem and serialization operations live in :mod:`basin_bmp_sim.common.io`, while
-validation policy lives in :mod:`basin_bmp_sim.config.validation`. This module owns
-configuration defaults, aliases, type normalization, input preparation, and
-construction of the validated data bundle consumed by the simulation.
+validation policy lives in :mod:`basin_bmp_sim.config.validation`. Configuration normalization and defaults live in ``settings`` and
+``plet_defaults``. This module prepares the validated input bundle consumed by
+the simulation.
 """
 
 from __future__ import annotations
@@ -135,6 +135,8 @@ from basin_bmp_sim.config.validation import (
     validate_trajectory_table,
 )
 
+from basin_bmp_sim.config.plet_tables import _append_parameter_defaults
+from basin_bmp_sim.config.settings import normalize_config
 from basin_bmp_sim.config.schema import (
     INPUT_SCHEMA_TABLE,
     INPUT_SCHEMA_VERSION,
@@ -961,243 +963,20 @@ def _load_plet_hydrology_records(
     return output
 
 
-def _plet_parameter_defaults(pollutants: Sequence[str]) -> Dict[str, float]:
-    """Return the centralized PLET/RUSLE parameter defaults.
-
-    Parameters
-    ----------
-    pollutants : Sequence[str]
-        Pollutant names in model order.
-
-    Returns
-    -------
-    Dict[str, float]
-        Centralized default PLET/RUSLE parameter values.
-    """
-    defaults: Dict[str, float] = {
-        # Required PLET inputs are intentionally excluded. Missing required
-        # variables must fail validation rather than being synthesized.
-        "ia_ratio": 0.0,
-        "runoff_multiplier": 1.0,
-        "groundwater_multiplier": 1.0,
-        "sediment_multiplier": 1.0,
-        "sediment_delivery_multiplier": 1.0,
-        "enrichment_ratio": 2.0,
-        "sediment_n_pct": 0.0,
-        "sediment_p_pct": 0.0,
-    }
-    for pollutant in pollutants:
-        defaults[f"load_multiplier_{str(pollutant).lower()}"] = 1.0
-    return defaults
 
 
-def apply_plet_parameter_defaults(
-    parameters: Mapping[str, Any],
-    pollutants: Sequence[str] = (),
-) -> Dict[str, Any]:
-    """Return a parameter mapping with centralized PLET/RUSLE defaults applied.
-
-    Parameters
-    ----------
-    parameters : Mapping[str, Any]
-        Model parameter values keyed by canonical parameter name.
-    pollutants : Sequence[str]
-        Pollutant names in model order.
-
-    Returns
-    -------
-    Dict[str, Any]
-        Parameter mapping with centralized defaults applied.
-    """
-    out = dict(parameters)
-    for parameter, value in _plet_parameter_defaults(pollutants).items():
-        if parameter not in out or out[parameter] is None:
-            out[parameter] = value
-    return out
 
 
-def _append_parameter_defaults(
-    table: pd.DataFrame,
-    pollutants: Sequence[str],
-) -> pd.DataFrame:
-    """Append NULL-key PLET parameter defaults before scenario sampling.
-
-    Parameters
-    ----------
-    table : pd.DataFrame
-        Input table containing model data.
-    pollutants : Sequence[str]
-        Pollutant names in model order.
-
-    Returns
-    -------
-    pd.DataFrame
-        Table containing explicit NULL-key default rows.
-    """
-    defaults = _plet_parameter_defaults(pollutants)
-    out = table.copy()
-    if "_default_applied" not in out.columns:
-        out["_default_applied"] = False
-    if "value" not in out.columns:
-        out["value"] = np.nan
-    existing_defaults = set(
-        out.loc[out[COL_PID].isna(), "parameter"].astype(str).tolist()
-    )
-    rows: List[Dict[str, Any]] = []
-    for parameter, value in defaults.items():
-        if parameter in existing_defaults:
-            continue
-        row = {column: np.nan for column in out.columns}
-        row[COL_PID] = pd.NA
-        row["parameter"] = parameter
-        row["value"] = value
-        row["_default_applied"] = True
-        rows.append(row)
-    if rows:
-        out = pd.concat([out, pd.DataFrame(rows, columns=out.columns)], ignore_index=True)
-    return out
 
 
-def _set_case_insensitive_default(mapping: Dict[str, Any], key: str, value: Any) -> None:
-    """Set one input default while respecting existing case-insensitive keys.
-
-    Parameters
-    ----------
-    mapping : Dict[str, Any]
-        Input mapping.
-    key : str
-        Configuration or mapping key.
-    value : Any
-        Input value to normalize or evaluate.
-    """
-    matching_key = next((existing for existing in mapping if str(existing).lower() == key.lower()), None)
-    if matching_key is None:
-        mapping[key] = value
-    elif mapping[matching_key] is None:
-        mapping[matching_key] = value
 
 
-def apply_config_defaults(cfg: Dict[str, Any]) -> None:
-    """Apply all supported top-level configuration defaults in one place.
-
-    Parameters
-    ----------
-    cfg : Dict[str, Any]
-        Normalized model configuration mapping.
-    """
-    _set_case_insensitive_default(cfg, CFG_N_SCENARIOS, 1)
-    _set_case_insensitive_default(cfg, CFG_OUTPUTS, "./outputs")
-    _set_case_insensitive_default(cfg, CFG_VERBOSE, False)
-    _set_case_insensitive_default(cfg, CFG_BUFFER_DEPTH_FT, DEFAULT_BUFFER_DEPTH_FT)
-    _set_case_insensitive_default(cfg, CFG_BMP_SEL_PROB_VIA_COSTS, False)
-    _set_case_insensitive_default(cfg, CFG_BMP_FAIL_RATE, 0.0)
-    _set_case_insensitive_default(cfg, CFG_BMP_FAIL_REDUCTION, DEFAULT_BMP_FAIL_REDUCTION)
-    _set_case_insensitive_default(cfg, CFG_DETERMINISTIC_PARCEL_ORDER, False)
-    _set_case_insensitive_default(cfg, CFG_DETERMINISTIC_BMP_TYPE_ORDER, False)
-    _set_case_insensitive_default(cfg, CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS, False)
-    _set_case_insensitive_default(cfg, CFG_PARALLEL, {"n_jobs": 1})
-    _set_case_insensitive_default(cfg, CFG_LOAD_GENERATION, {})
 
 
-def _resolve_config_path_value(value: Any, base_dir: Path) -> Any:
-    """Resolve one configured filesystem path relative to a config directory.
-
-    Scalar paths and sequences of paths are supported. Non-path values are
-    returned unchanged so this helper can be applied only to known path keys.
-    """
-    if value is None:
-        return None
-    if isinstance(value, (str, Path)):
-        path = Path(value).expanduser()
-        if not path.is_absolute():
-            path = base_dir / path
-        return str(path.resolve())
-    if isinstance(value, list):
-        return [_resolve_config_path_value(item, base_dir) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_resolve_config_path_value(item, base_dir) for item in value)
-    return value
 
 
-def resolve_config_paths(cfg: Dict[str, Any], config_path: Union[str, Path]) -> Dict[str, Any]:
-    """Resolve configured file locations against the YAML file's directory.
-
-    This removes any dependency on the process working directory. Resolution
-    happens once in the parent process, before inputs are loaded and before
-    parallel scenario workers are launched. Absolute paths are preserved.
-
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Normalized model configuration.
-    config_path : str or pathlib.Path
-        Path to the YAML file that supplied ``cfg``.
-
-    Returns
-    -------
-    dict[str, Any]
-        The same mapping object with known path-valued entries resolved to
-        absolute paths.
-    """
-    config_file = Path(config_path).expanduser().resolve()
-    base_dir = config_file.parent
-
-    for key in _CONFIG_PATH_KEYS:
-        value = ci_get(cfg, key)
-        if value is not None:
-            cfg[key] = _resolve_config_path_value(value, base_dir)
-
-    load_generation = ci_get(cfg, CFG_LOAD_GENERATION)
-    if isinstance(load_generation, dict):
-        normalized_load_generation = {str(key).lower(): value for key, value in load_generation.items()}
-        load_generation.clear()
-        load_generation.update(normalized_load_generation)
-        for key in _LOAD_GENERATION_PATH_KEYS:
-            if key in load_generation and load_generation[key] is not None:
-                load_generation[key] = _resolve_config_path_value(
-                    load_generation[key], base_dir
-                )
-
-    manure_loading = ci_get(cfg, "manure_loading")
-    if isinstance(manure_loading, dict):
-        normalized_manure_loading = {str(key).lower(): value for key, value in manure_loading.items()}
-        manure_loading.clear()
-        manure_loading.update(normalized_manure_loading)
-        if manure_loading.get("excretion_factors") is not None:
-            manure_loading["excretion_factors"] = _resolve_config_path_value(
-                manure_loading["excretion_factors"], base_dir
-            )
-
-    return cfg
 
 
-def normalize_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize configuration keys and apply centralized defaults in place.
-
-    Parameters
-    ----------
-    cfg : dict[str, Any]
-        Raw configuration mapping, typically returned by
-        :func:`basin_bmp_sim.common.io.read_config`.
-
-    Returns
-    -------
-    dict[str, Any]
-        The same mapping object after top-level key normalization and default
-        application.
-    """
-    normalized = {str(key).lower(): value for key, value in cfg.items()}
-    cfg.clear()
-    cfg.update(normalized)
-    apply_config_defaults(cfg)
-    parallel = ci_get(cfg, CFG_PARALLEL)
-    if isinstance(parallel, dict):
-        normalized_parallel = {str(key).lower(): value for key, value in parallel.items()}
-        parallel.clear()
-        parallel.update(normalized_parallel)
-        if "n_jobs" not in parallel or parallel["n_jobs"] is None:
-            parallel["n_jobs"] = 1
-    return cfg
 
 
 def _load_parameter_stats_table(
@@ -3127,7 +2906,7 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
                 raise ValueError("feedlot_bmp_cps must be distinct CPS codes present in cps")
             if set(feedlot_bmp_cps).intersection({412, 656, 657}):
                 raise ValueError("feedlot_bmp_cps cannot include buffer or wetland CPS")
-            from basin_bmp_sim.science.afo import load_afo_inputs
+            from basin_bmp_sim.science.afo.inputs import load_afo_inputs
             afo_inputs = load_afo_inputs(
                 afo_path, parcels, pollutants, method=method, mode=load_mode,
                 pathways=pathways, surface_pathway=surface_pathway,
@@ -3198,56 +2977,3 @@ def load_and_validate_all(cfg: Dict[str, Any], logger: Any) -> Dict[str, Any]:
         avg_perim_m=avg_perim_m,
         parallel=ci_get(cfg, CFG_PARALLEL),
     )
-
-
-def format_input_validation_report(data: Mapping[str, Any], cfg: Mapping[str, Any]) -> str:
-    """Return a concise human-readable report for ``--validate-only`` runs."""
-    parcels = data.get("parcels")
-    outlets = data.get("outlet_loc")
-    plet_inputs = data.get("plet_inputs")
-    package = ci_get(cfg, CFG_PARCELS)
-    input_tables: List[str] = []
-    if package is not None and Path(package).exists():
-        input_tables = sorted(
-            name for name in list_geopackage_tables(package) if name.startswith("input_")
-        )
-
-    default_rows = 0
-    override_rows = 0
-    defaults_applied = 0
-    if isinstance(plet_inputs, pd.DataFrame) and not plet_inputs.empty:
-        default_rows = int(plet_inputs[COL_PID].isna().sum())
-        override_rows = int(plet_inputs[COL_PID].notna().sum())
-        if "_default_applied" in plet_inputs.columns:
-            defaults_applied = int(
-                plet_inputs["_default_applied"].fillna(False).astype(bool).sum()
-            )
-
-    load_generation = data.get("load_generation") or {}
-    mode = str(load_generation.get("mode", "statistical"))
-    crs_text = "unknown"
-    if isinstance(parcels, gpd.GeoDataFrame) and parcels.crs is not None:
-        crs_text = parcels.crs.to_string()
-    parcel_count = len(parcels) if parcels is not None else 0
-    outlet_count = len(outlets) if outlets is not None else 0
-
-    lines = [
-        "INPUT VALIDATION",
-        "----------------",
-        f"Mode:                     {mode}",
-        f"Parcels:                  {parcel_count}",
-        f"Analysis CRS:             {crs_text} (metric)",
-        f"Outlets:                  {outlet_count}",
-        f"Pollutants:               {', '.join(map(str, data.get('pollutants', [])))}",
-        f"CPS codes:                {', '.join(map(str, data.get('cps', [])))}",
-        f"Recognized input tables:  {len(input_tables)}",
-        f"Default parameter rows:   {default_rows}",
-        f"Parcel overrides:         {override_rows}",
-        f"Optional defaults added:  {defaults_applied}",
-        "Unknown input tables:     0",
-        "Unknown parcel/outlet IDs: 0",
-        "Duplicate logical keys:   0",
-        "",
-        "VALID",
-    ]
-    return "\n".join(lines)

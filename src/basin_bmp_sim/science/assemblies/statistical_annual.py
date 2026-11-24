@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Any, Dict, Tuple
 import numpy as np
-from basin_bmp_sim.science.afo import mass_afo_realization
+from basin_bmp_sim.science.afo.manure import mass_afo_realization
 from basin_bmp_sim.config.distributions import sample_group_key
 
 

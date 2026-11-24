@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Optional
 
-from basin_bmp_sim.science.afo import feedlot_bmp_cost_quantities
+from basin_bmp_sim.science.afo.feedlot import feedlot_bmp_cost_quantities
 from basin_bmp_sim.bmp.practice_registry import response_family
 from basin_bmp_sim.scenarios.eligibility import BMPEligibilityPool
 from basin_bmp_sim.domain.constants import (

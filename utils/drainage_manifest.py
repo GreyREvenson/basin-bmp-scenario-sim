@@ -12,6 +12,11 @@ from datetime import datetime, timezone
 import geopandas as gpd
 import rasterio
 
+try:
+    from .atomic_files import replace_with_windows_retry
+except ImportError:  # Direct execution alongside other utility scripts
+    from atomic_files import replace_with_windows_retry
+
 
 def _file_sha256(path: str | Path) -> str:
     h = hashlib.sha256()
@@ -75,6 +80,6 @@ def write_drainage_manifest(path: str | Path, *, parcels, id_field: str,
         with os.fdopen(fd,'w',encoding='utf-8') as stream:
             json.dump(manifest, stream, indent=2, sort_keys=True, default=str)
             stream.write('\n')
-        os.replace(tmp,path)
+        replace_with_windows_retry(tmp, path)
     finally:
         Path(tmp).unlink(missing_ok=True)

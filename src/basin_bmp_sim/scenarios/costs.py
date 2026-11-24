@@ -422,7 +422,7 @@ def _estimate_costs_for_probabilities(self: "Model") -> pd.DataFrame:
             cost_area_ha = 0.
             cost_length_m = None
             if feedlot:
-                from basin_bmp_sim.science.afo import feedlot_bmp_cost_quantities
+                from basin_bmp_sim.science.afo.feedlot import feedlot_bmp_cost_quantities
                 inputs = self.data.get("afo_inputs") or {}
                 hosts = sorted({str(op["pid"]) for op in inputs.get("operations", ())})
                 if not hosts:

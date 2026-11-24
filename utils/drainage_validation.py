@@ -84,10 +84,14 @@ def validate_dem_coverage(parcels, dem_dataset, valid_mask: np.ndarray,
     missing_pixels = 0
     for row, col in np.argwhere(potentially_missing):
         # This also works with rotated or sheared pixel grids.
-        pixel = Polygon((transform * (col, row),
-                         transform * (col + 1, row),
-                         transform * (col + 1, row + 1),
-                         transform * (col, row + 1)))
+        # Direct affine-coefficient evaluation avoids the deprecated Affine
+        # multiplication API while supporting older affine releases without @.
+        def corner(x: int, y: int) -> tuple[float, float]:
+            return (transform.a * x + transform.b * y + transform.c,
+                    transform.d * x + transform.e * y + transform.f)
+
+        pixel = Polygon((corner(col, row), corner(col + 1, row),
+                         corner(col + 1, row + 1), corner(col, row + 1)))
         cell_overlap = sum(
             parcels.geometry.iloc[int(i)].intersection(pixel).area
             for i in spatial_index.query(pixel, predicate='intersects')

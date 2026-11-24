@@ -1,4 +1,5 @@
 from __future__ import annotations
+from basin_bmp_sim.config.settings import apply_config_defaults
 
 import pandas as pd
 import pytest
@@ -44,7 +45,7 @@ class _NullScope:
 def test_apply_config_defaults_disables_deterministic_parcel_order() -> None:
     cfg = {}
 
-    input_config.apply_config_defaults(cfg)
+    apply_config_defaults(cfg)
 
     assert cfg[CFG_DETERMINISTIC_PARCEL_ORDER] is False
     assert cfg[CFG_DETERMINISTIC_BMP_TYPE_ORDER] is False

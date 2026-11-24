@@ -44,7 +44,8 @@ class MonteCarloDriverBmi(BmiArrayComponent):
             if not config_file:
                 raise ValueError("Initialize the BMI driver with a YAML config path")
             from basin_bmp_sim.common.io import read_config
-            from basin_bmp_sim.config.loading import load_and_validate_all, normalize_config, resolve_config_paths
+            from basin_bmp_sim.config.loading import load_and_validate_all
+            from basin_bmp_sim.config.settings import normalize_config, resolve_config_paths
             from basin_bmp_sim.config.validation import validate_config
             from basin_bmp_sim.common.logging import make_logger
             from basin_bmp_sim.execution.monte_carlo_driver import Model

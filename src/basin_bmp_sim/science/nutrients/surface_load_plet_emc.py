@@ -6,7 +6,7 @@ from basin_bmp_sim.domain.constants import (RUSLE_REQUIRED_INPUTS as _REQUIRED_R
     PLET_REQUIRED_RESOLVED_INPUTS as _REQUIRED_RESOLVED_PLET,
     PLET_PATHWAY_VALUES as PLET_PATHWAY_NAMES,
     INCH_OVER_HA_TO_LITERS)
-from basin_bmp_sim.config.loading import apply_plet_parameter_defaults
+from basin_bmp_sim.science.plet_defaults import apply_plet_parameter_defaults
 from basin_bmp_sim.config.validation import NONNEGATIVE_DOMAIN, validate_parameter_value, validate_scalar_in_domain
 from basin_bmp_sim.science.hydrology.runoff_plet_curve_number import plet_annual_surface_runoff_in
 from basin_bmp_sim.science.hydrology.infiltration_plet_balance import plet_annual_infiltration_in

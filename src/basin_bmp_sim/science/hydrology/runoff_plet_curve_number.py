@@ -1,7 +1,7 @@
 """PLET curve-number annual runoff and rainfall-correction equations."""
 from __future__ import annotations
 from typing import Any, Mapping, Tuple
-from basin_bmp_sim.config.loading import apply_plet_parameter_defaults
+from basin_bmp_sim.science.plet_defaults import apply_plet_parameter_defaults
 from basin_bmp_sim.config.validation import NONNEGATIVE_DOMAIN, validate_parameter_value, validate_scalar_in_domain
 
 

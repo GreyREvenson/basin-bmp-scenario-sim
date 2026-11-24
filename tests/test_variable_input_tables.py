@@ -1,4 +1,5 @@
 from __future__ import annotations
+from basin_bmp_sim.config.settings import normalize_config
 
 import sqlite3
 from pathlib import Path
@@ -112,7 +113,7 @@ def test_delivery_ratio_tables_support_global_default_and_exact_override(tmp_pat
 
 
 def test_old_hydrology_path_config_is_rejected() -> None:
-    cfg = input_config.normalize_config(
+    cfg = normalize_config(
         {"n_scenarios": 1, "load_generation": {"mode": "plet_rusle", "hydrology_lookup": "old.csv"}}
     )
     with pytest.raises(ValueError, match="hydrology_lookup"):

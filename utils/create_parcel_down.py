@@ -18,6 +18,11 @@ import geopandas as gpd
 import rasterio
 from rasterio import features
 
+try:
+    from .atomic_files import replace_with_windows_retry
+except ImportError:  # Direct execution as python utils/create_parcel_down.py
+    from atomic_files import replace_with_windows_retry
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -461,7 +466,7 @@ def main():
             gpkg_updated = True
             logging.info('Atomically replaced parcel_down in %s (%d rows)', args.parcels, count)
         for label, destination in destinations.items():
-            os.replace(staged[label], destination)
+            replace_with_windows_retry(staged[label], destination)
             logging.info('Published %s output to %s', label, destination)
     except Exception as exc:
         if gpkg_updated:

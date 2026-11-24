@@ -10,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
 import numpy as np
-from basin_bmp_sim.science.afo import apply_afo_feedlot_manure_effect
+from basin_bmp_sim.science.afo.recovery import apply_afo_feedlot_manure_effect
 from basin_bmp_sim.science.formulations.formulation_builder import ScientificMethodPlan, build_method_plan
 from basin_bmp_sim.domain.constants import (
     OUTPUT_TREATED, OUTPUT_REMOVED, OUTPUT_COST_USD, OUTPUT_IMPACTED_PIDS,

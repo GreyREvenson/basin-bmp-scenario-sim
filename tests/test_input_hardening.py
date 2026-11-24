@@ -1,4 +1,5 @@
 from __future__ import annotations
+from basin_bmp_sim.config.settings import normalize_config
 
 import sqlite3
 from pathlib import Path
@@ -9,15 +10,8 @@ import pytest
 from shapely.geometry import Point, box
 
 from basin_bmp_sim.config import loading as input_config
-from basin_bmp_sim.config.loading import (
-    _ensure_projected,
-    _load_cps,
-    _load_plet_hydrology_lookup,
-    _merge_csvs,
-    _normalize_integer_identifier_value,
-    _plet_parameter_defaults,
-    _validate_input_package_schema,
-)
+from basin_bmp_sim.config.loading import _ensure_projected, _load_cps, _load_plet_hydrology_lookup, _merge_csvs, _normalize_integer_identifier_value, _validate_input_package_schema
+from basin_bmp_sim.science.plet_defaults import _plet_parameter_defaults
 from basin_bmp_sim.common.io import MissingInputTableError, read_geopackage_table, read_geopackage_table_info
 
 
@@ -174,7 +168,7 @@ def test_clipped_structural_relationships_are_filtered_but_true_unknown_ids_erro
 def test_validate_config_rejects_unknown_keys() -> None:
     from basin_bmp_sim.config.validation import validate_config
 
-    cfg = input_config.normalize_config({"n_scenarios": 1, "mdoe": "plet_rusle"})
+    cfg = normalize_config({"n_scenarios": 1, "mdoe": "plet_rusle"})
     with pytest.raises(ValueError, match="Unknown configuration key.*mdoe"):
         validate_config(cfg)
 
@@ -182,7 +176,7 @@ def test_validate_config_rejects_unknown_keys() -> None:
 def test_validate_config_rejects_unknown_load_generation_keys() -> None:
     from basin_bmp_sim.config.validation import validate_config
 
-    cfg = input_config.normalize_config(
+    cfg = normalize_config(
         {"n_scenarios": 1, "load_generation": {"mode": "plet_rusle", "mdoe": "x"}}
     )
     with pytest.raises(ValueError, match="Unknown load_generation key.*mdoe"):

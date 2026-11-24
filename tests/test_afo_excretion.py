@@ -11,8 +11,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from basin_bmp_sim.science.afo import animal_production, load_afo_inputs, mass_afo_realization, reference_excretion_factors
-from basin_bmp_sim.config.loading import load_and_validate_all, resolve_config_paths
+from basin_bmp_sim.science.afo.excretion import animal_production, reference_excretion_factors
+from basin_bmp_sim.science.afo.inputs import load_afo_inputs
+from basin_bmp_sim.science.afo.manure import mass_afo_realization
+from basin_bmp_sim.config.loading import load_and_validate_all
+from basin_bmp_sim.config.settings import resolve_config_paths
 from basin_bmp_sim.execution.monte_carlo_driver import Model
 from test_afo import _package, _parcels, _state
 from test_afo_mass import _load, _mass_package
@@ -302,7 +305,7 @@ def test_mass_realization_uses_loaded_reference_and_preserves_nutrients(tmp_path
     def unexpected_read(*args, **kwargs):
         pytest.fail("Reference CSV must not be read inside a realization")
 
-    monkeypatch.setattr("basin_bmp_sim.science.afo.reference_excretion_factors", unexpected_read)
+    monkeypatch.setattr("basin_bmp_sim.science.afo.inputs.reference_excretion_factors", unexpected_read)
     _, ledger = mass_afo_realization(ctx, state=state)
     for generated, applied, retained in [
         ("animal_n_produced_kg", "tn_applied_kg", .8 * .9 * .7),
@@ -354,7 +357,7 @@ def test_concentration_increment_does_not_load_excretion_csv(tmp_path, monkeypat
     def unexpected_read(*args, **kwargs):
         pytest.fail("Concentration-increment mode does not use excretion rates")
 
-    monkeypatch.setattr("basin_bmp_sim.science.afo.reference_excretion_factors", unexpected_read)
+    monkeypatch.setattr("basin_bmp_sim.science.afo.inputs.reference_excretion_factors", unexpected_read)
     load_afo_inputs(_package(tmp_path / "legacy.gpkg"), _parcels(), ["TN", "TP"])
 
 

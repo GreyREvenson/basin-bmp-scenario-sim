@@ -28,7 +28,7 @@ from basin_bmp_sim.scenarios.generator import (
 )
 from basin_bmp_sim.science.formulations.formulation_registry import validate_formulation_selection
 from basin_bmp_sim.scenarios.costs import _estimate_costs_for_probabilities, _get_bmp_cost, _select_cost_rate_median
-from basin_bmp_sim.science.afo import feedlot_bmp_cost_quantities
+from basin_bmp_sim.science.afo.feedlot import feedlot_bmp_cost_quantities
 from basin_bmp_sim.common.io import _write_parquet_atomic, _flatten_plot_records
 from basin_bmp_sim.config.distributions import sample_group_key
 from basin_bmp_sim.common.logging import make_worker_logger, log_scope

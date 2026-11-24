@@ -1,7 +1,8 @@
 """Annual PLET/RUSLE baseline generation with original numerical behavior."""
 from __future__ import annotations
 from basin_bmp_sim.science.plet_rusle import initialize_plet_rusle_state
-from basin_bmp_sim.science.afo import apply_afo_baseline, mass_afo_realization
+from basin_bmp_sim.science.afo.feedlot import apply_afo_baseline
+from basin_bmp_sim.science.afo.manure import mass_afo_realization
 
 
 def initialize_plet_rusle_baseline(ctx, logger, *, process_methods=None):

@@ -8,7 +8,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from basin_bmp_sim.science.afo import feedlot_bmp_cost_quantities, load_afo_inputs, animal_production
+from basin_bmp_sim.science.afo.feedlot import feedlot_bmp_cost_quantities
+from basin_bmp_sim.science.afo.inputs import load_afo_inputs
+from basin_bmp_sim.science.afo.excretion import animal_production
 from basin_bmp_sim.scenarios.costs import _estimate_costs_for_probabilities, _get_bmp_cost
 from basin_bmp_sim.config.validation import validate_stats_rows, validate_named_parameter_stats
 from test_afo import _package, _parcels
@@ -227,7 +229,7 @@ def test_scenario_bmp_record_uses_feedlot_cost_area_not_host_parcel(inputs, tmp_
 def test_legacy_concentration_mode_samples_prefixed_animal_count(tmp_path):
     """Legacy PLET load calculation uses the sampled count, not a NULL base."""
     from test_afo import _ctx, _state
-    from basin_bmp_sim.science.afo import apply_afo_baseline
+    from basin_bmp_sim.science.afo.feedlot import apply_afo_baseline
 
     package = _package(tmp_path/'legacy.gpkg')
     _alter(package, 'afo_animals', 'count', None)

@@ -12,7 +12,7 @@ from basin_bmp_sim.domain.constants import (
     CFG_OUTLETS,
     CFG_PLET_FORCING,
 )
-from basin_bmp_sim.config.loading import normalize_config, resolve_config_paths
+from basin_bmp_sim.config.settings import normalize_config, resolve_config_paths
 from basin_bmp_sim.common.io import read_config
 
 

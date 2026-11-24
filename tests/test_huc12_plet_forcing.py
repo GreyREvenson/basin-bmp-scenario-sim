@@ -1,4 +1,5 @@
 from __future__ import annotations
+from basin_bmp_sim.config.settings import resolve_config_paths
 
 import sqlite3
 from pathlib import Path
@@ -316,7 +317,7 @@ def test_resolve_config_paths_resolves_plet_forcing(tmp_path: Path) -> None:
     cfg_path.parent.mkdir(parents=True)
     cfg_path.write_text("n_scenarios: 1\n", encoding="utf-8")
     cfg = {"plet_forcing": "../plet/plet_inputs.gpkg"}
-    input_config.resolve_config_paths(cfg, cfg_path)
+    resolve_config_paths(cfg, cfg_path)
     assert Path(cfg["plet_forcing"]) == (tmp_path / "plet" / "plet_inputs.gpkg").resolve()
 
 

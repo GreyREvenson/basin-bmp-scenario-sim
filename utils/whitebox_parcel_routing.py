@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import csv
 import logging
-import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -22,8 +21,10 @@ import rasterio
 
 try:
     from .rasterio_compat import read_band, read_mask
+    from .atomic_files import replace_with_windows_retry
 except ImportError:  # Direct execution of utils/create_parcel_down.py
     from rasterio_compat import read_band, read_mask
+    from atomic_files import replace_with_windows_retry
 
 # Clockwise from NE, as documented for the default, non-ESRI Whitebox D8
 # pointer convention. 0 means no downstream cell, not north/south/etc.
@@ -416,7 +417,7 @@ def write_candidate_diagnostics(path: str | Path, rows: list[dict]) -> None:
                 writer.writerow({**row, 'downstream_pid':
                                 'OUTSIDE' if row['downstream_pid'] is None
                                 else row['downstream_pid']})
-        os.replace(temp, path)
+        replace_with_windows_retry(temp, path)
     finally:
         if temp is not None and temp.exists():
             temp.unlink()

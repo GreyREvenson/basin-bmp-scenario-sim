@@ -1,7 +1,7 @@
 """Filesystem and serialization helpers for model inputs and outputs.
 
 This module deliberately avoids model-specific defaults, aliases, and domain
-validation. Defaults and normalization live in :mod:`basin_bmp_sim.config.loading`;
+validation. Defaults and normalization live in :mod:`basin_bmp_sim.config.settings`;
 validation policy lives in :mod:`basin_bmp_sim.config.validation`.
 """
 

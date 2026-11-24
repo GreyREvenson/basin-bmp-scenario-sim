@@ -33,11 +33,8 @@ from basin_bmp_sim.config.distributions import (
     sample_group_key,
     stats_from_row,
 )
-from basin_bmp_sim.config.loading import (
-    _load_plet_hydrology_records,
-    _rows_for_pid,
-    apply_plet_parameter_defaults,
-)
+from basin_bmp_sim.config.loading import _load_plet_hydrology_records, _rows_for_pid
+from basin_bmp_sim.science.plet_defaults import apply_plet_parameter_defaults
 from basin_bmp_sim.config.validation import (
     NONNEGATIVE_DOMAIN,
     sampling_kind_for_parameter,
