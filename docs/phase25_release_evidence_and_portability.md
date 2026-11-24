@@ -47,8 +47,8 @@ For a backend whose scientific data includes `backend_domain.json`:
 
 ```bash
 python -m pip install -e ".[bmi]"
-python -m src.interfaces.bmi.acceptance selection.json acceptance.json --input-file backend_domain.json
-python -m src.interfaces.bmi.portability selection.json windows.json --n-scenarios 2 --n-jobs 2 --input-file backend_domain.json
+python -m basin_bmp_sim.certification.acceptance selection.json acceptance.json --input-file backend_domain.json
+python -m basin_bmp_sim.certification.portability selection.json windows.json --n-scenarios 2 --n-jobs 2 --input-file backend_domain.json
 ```
 
 Run the same portability command on Linux, producing `linux.json`. The
@@ -60,7 +60,7 @@ selection, startup and model YAML bytes on both platforms.
 Finally:
 
 ```bash
-python -m src.interfaces.bmi.release_gate --acceptance acceptance.json --windows windows.json --linux linux.json --report readiness.json --require-ready
+python -m basin_bmp_sim.certification.release_gate --acceptance acceptance.json --windows windows.json --linux linux.json --report readiness.json --require-ready
 ```
 
 The gate still reports `pending_evidence` when inputs are absent. Its highest

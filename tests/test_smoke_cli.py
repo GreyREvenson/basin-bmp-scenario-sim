@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 
 from model_test_cases import make_plet_rusle_case, make_statistical_case
-from src.model import Model
+from basin_bmp_sim.execution.monte_carlo_driver import Model
 
 
 def _capture_model_writes(monkeypatch):
@@ -25,7 +25,7 @@ def _capture_model_writes(monkeypatch):
         del logger
         written[Path(path).relative_to(Path(path).parents[1])] = df.copy()
 
-    monkeypatch.setattr("src.model._write_parquet_atomic", capture)
+    monkeypatch.setattr("basin_bmp_sim.execution.monte_carlo_driver._write_parquet_atomic", capture)
     return written
 
 

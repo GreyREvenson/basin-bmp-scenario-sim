@@ -11,17 +11,17 @@ import logging
 import numpy as np
 import pytest
 
-from src.driver.bmi_coupling import (
+from basin_bmp_sim.execution.bmi_coupling import (
     AnnualBmiScenarioCoupler, get_bmi_value, validate_bmi_index_contract,
 )
-from src.driver.monte_carlo_driver import _ScenarioContext
-from src.interfaces.bmi.array_component import BmiArrayComponent
-from src.interfaces.bmi.live_scenario_generator_bmi import LiveScenarioGeneratorBmi
-from src.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
-from src.interfaces.domain_index_contract import index_contract_values, index_manifest
-from src.interfaces.exchange_variables import ExchangeVariable, EXCHANGE_SCHEMA_VERSION
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.interfaces.bmi.array_component import BmiArrayComponent
+from basin_bmp_sim.interfaces.bmi.live_scenario_generator_bmi import LiveScenarioGeneratorBmi
+from basin_bmp_sim.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
+from basin_bmp_sim.interfaces.domain_index_contract import index_contract_values, index_manifest
+from basin_bmp_sim.interfaces.exchange_variables import ExchangeVariable, EXCHANGE_SCHEMA_VERSION
 from test_phase2_scenario_generation import _case
-from src.models.model_context import ScenarioModelContext as _ScenarioModelContext
+from basin_bmp_sim.science.model_context import ScenarioModelContext as _ScenarioModelContext
 
 
 # Required BMI 2.0 methods (not the optional get_bmi_version extension).
@@ -60,7 +60,7 @@ class _ArrayFixture(BmiArrayComponent):
 
 
 def test_required_bmi2_surface_and_item_counts():
-    from src.interfaces.bmi import (
+    from basin_bmp_sim.interfaces.bmi import (
         MonteCarloDriverBmi, StochasticScenarioBmi,
         LiveScenarioGeneratorBmi, WatershedModelBmi,
     )
@@ -84,8 +84,8 @@ def test_required_bmi2_surface_and_item_counts():
 def test_indexed_getter_setter_and_dynamic_extent():
     component = _ArrayFixture()
     component.initialize()
-    src = np.array([7, 8], dtype=np.int64)
-    component.set_value_at_indices("test__input", np.array([0, 2], dtype=np.int64), src)
+    basin_bmp_sim = np.array([7, 8], dtype=np.int64)
+    component.set_value_at_indices("test__input", np.array([0, 2], dtype=np.int64), basin_bmp_sim)
     values = np.empty(3, dtype=np.int64)
     component.get_value("test__input", values)
     np.testing.assert_array_equal(values, [7, 2, 8])

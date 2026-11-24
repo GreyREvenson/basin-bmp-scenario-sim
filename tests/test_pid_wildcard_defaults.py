@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     COL_NDR_F_TO_S,
     COL_NDR_S_TO_O,
     COL_OID,
@@ -13,8 +13,8 @@ from src.constants import (
     COL_SDR_F_TO_S,
     COL_SDR_S_TO_O,
 )
-import src.input_config as input_config
-from src.input_config import (
+import basin_bmp_sim.config.loading as input_config
+from basin_bmp_sim.config.loading import (
     _build_parcel_down_map,
     _complete_delivery_ratio_defaults,
 )

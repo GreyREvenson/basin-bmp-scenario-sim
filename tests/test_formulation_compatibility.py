@@ -1,8 +1,8 @@
 """Approved formulations reject arbitrary, scientifically unreviewed mixes."""
 from __future__ import annotations
 import pytest
-from src.formulations.formulation_registry import validate_formulation_selection
-from src.bmp.bmp_response_registry import resolve_practice, response_family
+from basin_bmp_sim.science.formulations.formulation_registry import validate_formulation_selection
+from basin_bmp_sim.bmp.practice_registry import resolve_practice, response_family
 
 
 @pytest.mark.parametrize("mode,identifier", [

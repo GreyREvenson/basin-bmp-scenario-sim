@@ -12,7 +12,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     CFG_BMP_COST,
     CFG_BMP_FAIL_RATE,
     CFG_BMP_FAIL_REDUCTION,

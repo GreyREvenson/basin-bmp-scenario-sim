@@ -11,10 +11,10 @@ from xml.etree import ElementTree
 
 import pytest
 
-from src.driver.ensemble_runner import ensemble_worker_seeds
-from src.driver.ensemble_comparison import StrategyComparisonConfig
-from src.driver.ensemble_analysis import DecisionSupportConfig
-from src.driver.strategy_uncertainty import (
+from basin_bmp_sim.execution.ensemble_runner import ensemble_worker_seeds
+from basin_bmp_sim.analysis.ensemble_comparison import StrategyComparisonConfig
+from basin_bmp_sim.analysis.ensemble_analysis import DecisionSupportConfig
+from basin_bmp_sim.analysis.strategy_uncertainty import (
     UncertaintyConfig, _single_realization_win_probability,
     analyze_strategy_uncertainty, write_strategy_uncertainty,
 )
@@ -221,7 +221,7 @@ def test_destinations_are_protected_and_cli_operates(tmp_path):
     with pytest.raises(ValueError, match="must not overwrite"):
         write_strategy_uncertainty(selection, targets, settings, tmp_path / "fine.json", chart_path=paths[0])
     output = tmp_path / "uncertainty_result.json"
-    cmd = [sys.executable, "-m", "src.driver.strategy_uncertainty", str(selection),
+    cmd = [sys.executable, "-m", "basin_bmp_sim.analysis.strategy_uncertainty", str(selection),
            str(targets), str(settings), str(output), "--chart", str(tmp_path / "intervals.svg")]
     subprocess.run(cmd, check=True, capture_output=True, text=True)
     assert json.loads(output.read_text())["sampling_design"] == "independent"

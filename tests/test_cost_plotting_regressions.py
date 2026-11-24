@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     CFG_BMP_COST,
     COL_CPS,
     COL_OID,
@@ -19,8 +19,8 @@ from src.constants import (
     XAXIS_COST,
     YAXIS_TOTAL,
 )
-from src.cost import _get_bmp_cost, _select_cost_rate_median
-from src.plotting import _build_line_segments, make_summary_plots
+from basin_bmp_sim.scenarios.costs import _get_bmp_cost, _select_cost_rate_median
+from basin_bmp_sim.results.plotting import _build_line_segments, make_summary_plots
 
 
 class DummyLogger:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.sampling import (
+from basin_bmp_sim.scenarios.sampling import (
     _piecewise_quantile_sample,
     _sample_from_stats,
     _trunc_normal,

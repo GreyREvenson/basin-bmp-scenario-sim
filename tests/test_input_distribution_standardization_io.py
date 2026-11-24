@@ -6,14 +6,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import src.sampling as sampling
-from src.input_config import (
+import basin_bmp_sim.scenarios.sampling as sampling
+from basin_bmp_sim.config.loading import (
     _expand_pollutant_load_rate_defaults,
     _load_plet_hydrology_lookup,
     _load_plet_parameter_table,
 )
-from src.input_validation import validate_numeric_distribution_rows
-from src.plet_rusle import (
+from basin_bmp_sim.config.validation import validate_numeric_distribution_rows
+from basin_bmp_sim.science.plet_rusle import (
     PLET_HSG_VALUES,
     PLET_LAND_COVERS,
     _sample_parameter_table,

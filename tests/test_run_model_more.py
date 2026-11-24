@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import run_model
-from src.constants import CFG_OUTPUTS, CFG_RANDOM_SEED, CFG_VERBOSE
+from basin_bmp_sim.execution import cli as run_model
+from basin_bmp_sim.domain.constants import CFG_OUTPUTS, CFG_RANDOM_SEED, CFG_VERBOSE
 
 
 class DummyLogger:
@@ -30,7 +30,7 @@ def test_main_uses_config_path_as_path_object_in_read_config(tmp_path, monkeypat
     seen: dict[str, object] = {}
     logger = DummyLogger()
 
-    monkeypatch.setattr("sys.argv", ["run_model.py", str(tmp_path / "config.yaml")])
+    monkeypatch.setattr("sys.argv", ["basin-bmp-sim", str(tmp_path / "config.yaml")])
 
     def fake_read_config(path):
         seen["path"] = path
@@ -63,7 +63,7 @@ def test_main_passes_outputs_dir_path_to_make_summary_plots(tmp_path, monkeypatc
         CFG_VERBOSE: False,
     }
 
-    monkeypatch.setattr("sys.argv", ["run_model.py", str(tmp_path / "config.yaml")])
+    monkeypatch.setattr("sys.argv", ["basin-bmp-sim", str(tmp_path / "config.yaml")])
     monkeypatch.setattr(run_model, "read_config", lambda path: dict(cfg))
     monkeypatch.setattr(run_model, "normalize_config", lambda raw: dict(raw))
     monkeypatch.setattr(run_model, "validate_config", lambda cfg: None)
@@ -107,7 +107,7 @@ def test_main_creates_outputs_directory_before_logger_setup(tmp_path, monkeypatc
         CFG_VERBOSE: False,
     }
 
-    monkeypatch.setattr("sys.argv", ["run_model.py", str(tmp_path / "config.yaml")])
+    monkeypatch.setattr("sys.argv", ["basin-bmp-sim", str(tmp_path / "config.yaml")])
     monkeypatch.setattr(run_model, "read_config", lambda path: dict(cfg))
     monkeypatch.setattr(run_model, "normalize_config", lambda raw: dict(raw))
     monkeypatch.setattr(run_model, "validate_config", lambda cfg: None)
@@ -135,7 +135,7 @@ def test_main_logs_config_and_completion_messages(tmp_path, monkeypatch) -> None
         CFG_VERBOSE: True,
     }
 
-    monkeypatch.setattr("sys.argv", ["run_model.py", str(tmp_path / "config.yaml")])
+    monkeypatch.setattr("sys.argv", ["basin-bmp-sim", str(tmp_path / "config.yaml")])
     monkeypatch.setattr(run_model, "read_config", lambda path: dict(cfg))
     monkeypatch.setattr(run_model, "normalize_config", lambda raw: dict(raw))
     monkeypatch.setattr(run_model, "validate_config", lambda cfg: None)
@@ -169,7 +169,7 @@ def test_main_preserves_cli_seed_override_into_model_cfg(tmp_path, monkeypatch) 
 
     monkeypatch.setattr(
         "sys.argv",
-        ["run_model.py", str(tmp_path / "config.yaml"), "--seed", "999"],
+        ["basin-bmp-sim", str(tmp_path / "config.yaml"), "--seed", "999"],
     )
     monkeypatch.setattr(run_model, "read_config", lambda path: dict(cfg))
     monkeypatch.setattr(run_model, "normalize_config", lambda raw: dict(raw))

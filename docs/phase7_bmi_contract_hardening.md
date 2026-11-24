@@ -57,7 +57,7 @@ fingerprints and manifests *before* applying any BMP. Incompatible ordering
 now raises a `ValueError` rather than producing a plausible but incorrectly
 indexed simulation.
 
-The manifest contract is in `src/interfaces/domain_index_contract.py`.
+The manifest contract is in `basin_bmp_sim/interfaces/domain_index_contract.py`.
 It does **not** describe polygons, parcel hydrologic connectivity, pollutant
 mass-transfer equations, or model capabilities. The current components still
 share the same validated in-memory watershed domain. Matching index manifests

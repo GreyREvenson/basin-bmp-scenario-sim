@@ -50,11 +50,11 @@ Save a UTF-8 JSON file, for example `scenario_1_bmi.json`:
 ## Standard BMI component lifecycle
 
 ```python
-from src.interfaces.bmi import LiveScenarioGeneratorBmi, WatershedModelBmi
-from src.driver.bmi_coupling import (
+from basin_bmp_sim.interfaces.bmi import LiveScenarioGeneratorBmi, WatershedModelBmi
+from basin_bmp_sim.execution.bmi_coupling import (
     get_bmi_value, transfer_bmi_value, validate_bmi_index_contract,
 )
-from src.interfaces.domain_exchange import DOMAIN_FIELDS
+from basin_bmp_sim.interfaces.domain_exchange import DOMAIN_FIELDS
 
 model = WatershedModelBmi()
 generator = LiveScenarioGeneratorBmi()
@@ -73,7 +73,7 @@ For a complete one-scenario application of the approved BMI-mediated protocol,
 use the lightweight coupler, which coordinates the existing explicit exchange:
 
 ```python
-from src.driver.bmi_coupling import AnnualBmiScenarioCoupler
+from basin_bmp_sim.execution.bmi_coupling import AnnualBmiScenarioCoupler
 
 coupler = AnnualBmiScenarioCoupler.from_manifest("scenario_1_bmi.json")
 coupler.initialize()
@@ -97,11 +97,11 @@ write the Monte Carlo driver's usual Parquet tables.
 
 ## Preparation code ownership
 
-`src/models/prepared_inputs.py` now owns model lookup preparation and the
+`basin_bmp_sim/models/prepared_inputs.py` now owns model lookup preparation and the
 validated worker payload used by `ScenarioModelContext`. The original
-`src.driver.monte_carlo_driver.Model` inherits these methods, preserving native
+`basin_bmp_sim.execution.monte_carlo_driver.Model` inherits these methods, preserving native
 imports, lookup semantics, and outputs. The independent loader in
-`src/interfaces/component_bootstrap.py` constructs `PreparedModelInputs`
+`basin_bmp_sim/interfaces/component_bootstrap.py` constructs `PreparedModelInputs`
 directly; it does not import or construct `Model` from the driver. Input
 validation remains in the existing project input-config/validation modules.
 

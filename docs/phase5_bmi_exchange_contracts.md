@@ -10,12 +10,12 @@ selected and validated through the Phase 4 formulation registry.
 
 | Python class | Location | Purpose |
 | --- | --- | --- |
-| `StochasticScenarioBmi` | `src/interfaces/bmi/stochastic_scenario_bmi.py` | Iterate **completed** saved `BMPScenario` JSON definitions without resampling |
-| `LiveScenarioGeneratorBmi` | `src/interfaces/bmi/live_scenario_generator_bmi.py` | Expose one live pre-response BMP placement per update and the committed cost after scientific response |
-| `WatershedModelBmi` | `src/interfaces/bmi/watershed_model_bmi.py` | Wrap one existing `AnnualModelRealization`, exposing baseline and treated load-rate vectors and delivered mass change |
-| `MonteCarloDriverBmi` | `src/interfaces/bmi/monte_carlo_driver_bmi.py` | Run one full stochastic realization per logical BMI `update()`, exporting its latest result |
-| `BmiArrayComponent` | `src/interfaces/bmi/array_component.py` | Implement array, variable metadata, logical time, and index-space grid methods |
-| `ExchangeVariable`, `scenario_arrays` | `src/interfaces/exchange_variables.py` | Local variable catalog and CSR exchange encoding |
+| `StochasticScenarioBmi` | `basin_bmp_sim/interfaces/bmi/stochastic_scenario_bmi.py` | Iterate **completed** saved `BMPScenario` JSON definitions without resampling |
+| `LiveScenarioGeneratorBmi` | `basin_bmp_sim/interfaces/bmi/live_scenario_generator_bmi.py` | Expose one live pre-response BMP placement per update and the committed cost after scientific response |
+| `WatershedModelBmi` | `basin_bmp_sim/interfaces/bmi/watershed_model_bmi.py` | Wrap one existing `AnnualModelRealization`, exposing baseline and treated load-rate vectors and delivered mass change |
+| `MonteCarloDriverBmi` | `basin_bmp_sim/interfaces/bmi/monte_carlo_driver_bmi.py` | Run one full stochastic realization per logical BMI `update()`, exporting its latest result |
+| `BmiArrayComponent` | `basin_bmp_sim/interfaces/bmi/array_component.py` | Implement array, variable metadata, logical time, and index-space grid methods |
+| `ExchangeVariable`, `scenario_arrays` | `basin_bmp_sim/interfaces/exchange_variables.py` | Local variable catalog and CSR exchange encoding |
 
 All four public adapters provide the BMI 2.0 lifecycle, info, time,
 getter/setter, and grid method signatures. This patch does **not** add a
@@ -64,7 +64,7 @@ in a dependency-equipped environment before asserting formal conformity.
 
 ## Exchange variables
 
-`src/interfaces/exchange_variables.py` is the canonical catalog. Names
+`basin_bmp_sim/interfaces/exchange_variables.py` is the canonical catalog. Names
 listed below are **project-local provisional names**, *not* reviewed CSDMS
 Standard Names. A future published coupling contract needs name review,
 standardization, and compatibility testing.

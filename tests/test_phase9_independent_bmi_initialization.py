@@ -9,12 +9,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.driver.bmi_coupling import AnnualBmiScenarioCoupler, validate_bmi_index_contract
-from src.driver.monte_carlo_driver import _ScenarioContext, Model
-from src.interfaces.bmi.live_scenario_generator_bmi import LiveScenarioGeneratorBmi
-from src.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
-from src.interfaces.component_bootstrap import ComponentStartup
-from src.models.prepared_inputs import PreparedModelInputs
+from basin_bmp_sim.execution.bmi_coupling import AnnualBmiScenarioCoupler, validate_bmi_index_contract
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext, Model
+from basin_bmp_sim.interfaces.bmi.live_scenario_generator_bmi import LiveScenarioGeneratorBmi
+from basin_bmp_sim.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
+from basin_bmp_sim.interfaces.component_bootstrap import ComponentStartup
+from basin_bmp_sim.science.prepared_inputs import PreparedModelInputs
 from test_phase2_scenario_generation import _case
 
 
@@ -69,7 +69,7 @@ def _mocked_config_inputs(monkeypatch, tmp_path, case):
     fixture or optional parquet dependency is required for these interface
     tests. Both component owners still construct independent model contexts.
     """
-    from src.interfaces import component_bootstrap as bootstrap
+    from basin_bmp_sim.interfaces import component_bootstrap as bootstrap
     shared, cfg, seed = _case(case, tmp_path)
     manifest = _manifest(tmp_path, worker_seed=seed)
     monkeypatch.setattr(bootstrap, 'read_config', lambda _: {'fixture': case})

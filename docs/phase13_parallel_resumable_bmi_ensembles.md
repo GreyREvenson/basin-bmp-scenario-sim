@@ -51,7 +51,7 @@ job count. When running on a small machine, start with `n_jobs: 2`.
 Invoke the existing CLI:
 
 ```bash
-python run_model.py --backend-selection selection_v3.json --coupled-result outputs/ensemble.json
+basin-bmp-sim --backend-selection selection_v3.json --coupled-result outputs/ensemble.json
 ```
 
 If a worker fails or execution is interrupted, a previously published result
@@ -82,7 +82,7 @@ stale lock, verify no previous run is active before manually deleting it.
 The final result remains a standard Phase 12 ensemble JSON, compatible with:
 
 ```bash
-python -m src.driver.ensemble_runner outputs/ensemble.json outputs/replays
+python -m basin_bmp_sim.execution.ensemble_runner outputs/ensemble.json outputs/replays
 ```
 
 Final assembly reads full BMP histories **one scenario at a time** from disk,

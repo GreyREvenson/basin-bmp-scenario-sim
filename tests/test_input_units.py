@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.input_distributions import stats_from_row
-from src.input_units import canonical_cost_unit, convert_cost_value
-from src.sampling import _sample_from_stats
+from basin_bmp_sim.config.distributions import stats_from_row
+from basin_bmp_sim.config.units import canonical_cost_unit, convert_cost_value
+from basin_bmp_sim.scenarios.sampling import _sample_from_stats
 
 
 def test_plet_precipitation_mm_per_year_converts_to_inches_per_year() -> None:

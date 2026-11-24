@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import run_model
+from basin_bmp_sim.execution import cli as run_model
 
 
 def test_user_supplied_yaml_runs_end_to_end(model_config_path: Path, tmp_path: Path) -> None:

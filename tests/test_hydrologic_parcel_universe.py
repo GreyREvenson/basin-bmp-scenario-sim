@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     CFG_BUFFER_DEPTH_FT,
     CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
     DATA_AVG_AREA_HA,
@@ -20,8 +20,8 @@ from src.constants import (
     OUTPUT_TREATED,
     OUTPUT_WETLAND_AREA,
 )
-from src.plet_rusle import initialize_plet_rusle_state
-from src.model import Model, _ScenarioContext
+from basin_bmp_sim.science.plet_rusle import initialize_plet_rusle_state
+from basin_bmp_sim.execution.monte_carlo_driver import Model, _ScenarioContext
 
 
 def _model_with_nonselectable_upstream_parcels() -> Model:
@@ -200,7 +200,7 @@ def test_grassed_design_respects_config(
 
 
 def test_plet_initialization_uses_full_hydrologic_parcel_universe(monkeypatch) -> None:
-    import src.plet_rusle as lg
+    import basin_bmp_sim.science.plet_rusle as lg
 
     ctx = SimpleNamespace(
         parcel_ids=["A", "B", "C"],

@@ -12,13 +12,13 @@ import logging
 import numpy as np
 import pytest
 
-from src.driver.bmi_coupling import AnnualBmiScenarioCoupler, get_bmi_value
-from src.driver.monte_carlo_driver import _ScenarioContext
-from src.interfaces.coupling_lifecycle import (
+from basin_bmp_sim.execution.bmi_coupling import AnnualBmiScenarioCoupler, get_bmi_value
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.interfaces.coupling_lifecycle import (
     CouplerPhase, LIFECYCLE_SCHEMA_VERSION, LIFECYCLE_VARIABLE,
     REPLAY_VARIABLE, negotiate_lifecycle,
 )
-from src.interfaces.bmi.live_scenario_generator_bmi import LiveScenarioGeneratorBmi
+from basin_bmp_sim.interfaces.bmi.live_scenario_generator_bmi import LiveScenarioGeneratorBmi
 from test_phase2_scenario_generation import _case
 from test_phase9_independent_bmi_initialization import _mocked_config_inputs
 

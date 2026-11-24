@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.interfaces.bmi import portability
+from basin_bmp_sim.certification import portability
 
 
 def _selection(tmp_path: Path) -> Path:
@@ -155,7 +155,7 @@ def test_real_spawn_pool_uses_two_independent_worker_processes():
     # science test below is opt-in so default unit tests have no data burden.
     from concurrent.futures import ProcessPoolExecutor
     from multiprocessing import get_context
-    from src.driver.ensemble_checkpoints import _digest
+    from basin_bmp_sim.execution.ensemble_checkpoints import _digest
 
     payloads = [{"scenario_id": 1}, {"scenario_id": 2}]
     with ProcessPoolExecutor(max_workers=2, mp_context=get_context("spawn")) as pool:
@@ -164,7 +164,7 @@ def test_real_spawn_pool_uses_two_independent_worker_processes():
 
 
 def test_model_neutral_external_outputs_do_not_write_native_parquet(monkeypatch, tmp_path):
-    from src.driver.backend_selection import run_backend_selection
+    from basin_bmp_sim.execution.backend_selection import run_backend_selection
     from test_phase19_public_interoperability import _fixture
 
     _, selection, _, _ = _fixture(monkeypatch, tmp_path)

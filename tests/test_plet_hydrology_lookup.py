@@ -5,9 +5,9 @@ import logging
 import pandas as pd
 import pytest
 
-from src.input_config import _load_plet_hydrology_lookup, _load_plet_parameter_table
-from src.plet_rusle import plet_hydrology_from_classifications
-from src.input_validation import validate_plet_input_table
+from basin_bmp_sim.config.loading import _load_plet_hydrology_lookup, _load_plet_parameter_table
+from basin_bmp_sim.science.plet_rusle import plet_hydrology_from_classifications
+from basin_bmp_sim.config.validation import validate_plet_input_table
 
 PLET_REFERENCE_VALUES = {
     ("urban", "A"): (83.0, 0.360),

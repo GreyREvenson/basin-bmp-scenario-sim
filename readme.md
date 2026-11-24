@@ -75,13 +75,27 @@ Numeric inputs use a common value/distribution convention. Depending on the tabl
 
 Parcel-indexed inputs may use `pid IS NULL` as a default and provide parcel-specific integer-PID overrides. This can greatly reduce duplication when many parcels share assumptions.
 
+## Installation and CLI
+
+Install the project into the active Python environment (including a re-install
+after moving from the old package layout):
+
+```bash
+python -m pip install -e .
+```
+
+The importable package is `basin_bmp_sim`, with its source at
+`src/basin_bmp_sim/`. Use the installed `basin-bmp-sim` command, or
+`python -m basin_bmp_sim.execution.cli`. The previous root-level
+`run_model.py` entry point and `src.*` imports have been removed.
+
 ## Quick start
 
 A model run requires common spatial and routing inputs, pollutant and BMP definitions, a BMP-efficiency table, a load-generation configuration, and at least one scenario stopping condition.
 
 Example command:
 
-    python run_model.py config.yaml
+    basin-bmp-sim config.yaml
 
 Both modes use consolidated parcel and outlet GeoPackages:
 

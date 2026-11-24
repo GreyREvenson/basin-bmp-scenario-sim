@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import src.sampling as sampling
-from src.plet_rusle import (
+import basin_bmp_sim.scenarios.sampling as sampling
+from basin_bmp_sim.science.plet_rusle import (
     PLET_HSG_VALUES,
     PLET_LAND_COVERS,
     PLET_PATHWAY_NAMES,

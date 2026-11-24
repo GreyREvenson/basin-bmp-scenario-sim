@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.constants import CFG_BMP_EFFICIENCY
-from src.input_config import _complete_plet_bmp_efficiency_coverage
-from src.input_validation import validate_stats_rows
+from basin_bmp_sim.domain.constants import CFG_BMP_EFFICIENCY
+from basin_bmp_sim.config.loading import _complete_plet_bmp_efficiency_coverage
+from basin_bmp_sim.config.validation import validate_stats_rows
 
 
 class _ListLogger:

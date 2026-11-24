@@ -12,7 +12,7 @@ or ensemble results**. It closes an evidence-management gap: previously a
 public interface audit and a process portability command existed, but their
 results were not tied to one another or checked in a single release gate.
 
-The new `src.interfaces.bmi.release_gate` checks that a public-contract audit,
+The new `basin_bmp_sim.certification.release_gate` checks that a public-contract audit,
 external-backend acceptance report, and **real** Windows and Linux process-
 spawn portability reports have been completed for the same source
 configuration and public contract. Without reports, the gate says
@@ -27,20 +27,20 @@ configuration and public contract. Without reports, the gate says
 3. Generate the independent-model public-interface report:
 
    ```bash
-   python -m src.interfaces.bmi.acceptance backend_selection.json acceptance.json
+   python -m basin_bmp_sim.certification.acceptance backend_selection.json acceptance.json
    ```
 
 4. On **Windows**, run the two-scenario spawned-process check:
 
    ```bash
-   python -m src.interfaces.bmi.portability backend_selection.json windows.json --n-scenarios 2 --n-jobs 2
+   python -m basin_bmp_sim.certification.portability backend_selection.json windows.json --n-scenarios 2 --n-jobs 2
    ```
 
 5. Run the identical selection on **Linux**, saving as `linux.json`.
 6. Put the evidence files together and evaluate:
 
    ```bash
-   python -m src.interfaces.bmi.release_gate --acceptance acceptance.json --windows windows.json --linux linux.json --report release_readiness.json --require-ready
+   python -m basin_bmp_sim.certification.release_gate --acceptance acceptance.json --windows windows.json --linux linux.json --report release_readiness.json --require-ready
    ```
 
 Without all three reports, omit the corresponding arguments to get an honest

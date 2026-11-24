@@ -38,12 +38,16 @@ bmi = ["bmipy>=2.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 addopts = "-q"
 python_files = ["test_*.py"]
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src", "src.*", "reference_backend", "reference_backend.*"]
+where = ["src"]
+include = ["basin_bmp_sim*", "reference_backend*"]
 
 [tool.setuptools.package-data]
-src = ["data/afo/manure_excretion_reference.csv", "interfaces/bmi/public_contract_v1.json"]
+basin_bmp_sim = ["data/afo/manure_excretion_reference.csv", "interfaces/bmi/public_contract_v1.json"]
+
+[project.scripts]
+basin-bmp-sim = "basin_bmp_sim.execution.cli:main"

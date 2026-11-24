@@ -36,10 +36,10 @@ def write_drainage_manifest(path: str | Path, *, parcels, id_field: str,
                             edges: list[tuple[int,int]], parameters: dict,
                             summary: dict, diagnostics_path: str | Path) -> None:
     """Write after a successful run; path is atomically replaced on success."""
-    with rasterio.open(dem_path) as src:
-        raster = {'crs': str(src.crs), 'transform': list(src.transform)[:6],
-                  'width': src.width, 'height': src.height,
-                  'bounds': list(src.bounds), 'nodata': src.nodata}
+    with rasterio.open(dem_path) as basin_bmp_sim:
+        raster = {'crs': str(basin_bmp_sim.crs), 'transform': list(basin_bmp_sim.transform)[:6],
+                  'width': basin_bmp_sim.width, 'height': basin_bmp_sim.height,
+                  'bounds': list(basin_bmp_sim.bounds), 'nodata': basin_bmp_sim.nodata}
     try:
         import whitebox
         wbt_version = str(getattr(whitebox, '__version__', 'unknown'))

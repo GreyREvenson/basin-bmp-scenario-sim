@@ -13,10 +13,10 @@ import numpy as np
 import pytest
 
 from reference_backend.annual_linear import LinearAnnualBackend, make_backend
-from src.driver.backend_selection import run_backend_selection
-from src.interfaces.annual_model_contract import AnnualBMPPlacement
-from src.interfaces.bmi.acceptance import accept_backend
-from src.driver.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.execution.backend_selection import run_backend_selection
+from basin_bmp_sim.interfaces.annual_model_contract import AnnualBMPPlacement
+from basin_bmp_sim.certification.acceptance import accept_backend
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
 from test_phase10_model_neutral_exchange import _domain
 from test_phase9_independent_bmi_initialization import _mocked_config_inputs
 
@@ -139,7 +139,7 @@ def test_file_schema_or_domain_mismatch_fails_before_replacing_results(monkeypat
 
 def test_signed_reference_annual_response_is_not_clipped(monkeypatch, tmp_path):
     manifest, _, domain_file, rows = _fixture(monkeypatch, tmp_path)
-    from src.interfaces.component_bootstrap import ComponentStartup
+    from basin_bmp_sim.interfaces.component_bootstrap import ComponentStartup
     bundle = make_backend(startup=ComponentStartup.read(manifest),
                           options={"domain_file": str(domain_file)})
     backend = bundle.backend
@@ -165,7 +165,7 @@ def test_signed_reference_annual_response_is_not_clipped(monkeypatch, tmp_path):
 
 def test_acceptance_cli_writes_an_atomic_machine_readable_report(monkeypatch, tmp_path):
     import sys
-    from src.interfaces.bmi.acceptance import main
+    from basin_bmp_sim.certification.acceptance import main
     _, selection, _, _ = _fixture(monkeypatch, tmp_path)
     dest = tmp_path / "reports" / "acceptance.json"
     monkeypatch.setattr(sys, "argv", ["annual_bmi_acceptance", str(selection), str(dest)])

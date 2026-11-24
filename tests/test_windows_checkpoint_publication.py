@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.driver import ensemble_checkpoints as checkpoints
+from basin_bmp_sim.execution import ensemble_checkpoints as checkpoints
 
 
 def _windows_permission_error(code: int = 5) -> PermissionError:

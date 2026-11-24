@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import box, mapping
 
-from src import input_config
+from basin_bmp_sim.config import loading as input_config
 from utils import download_wbd_huc12 as wbd
 
 

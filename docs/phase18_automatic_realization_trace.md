@@ -60,7 +60,7 @@ explanation; the original ensemble remains unaffected.
 Use a completed Phase 12 or Phase 13 model-neutral ensemble JSON:
 
 ```bash
-python -m src.driver.realization_trace \
+python -m basin_bmp_sim.analysis.realization_trace \
     outputs/ensemble.json \
     outputs/bmp_realization_trace.json \
     --ledger outputs/bmp_realization_ledger.json
@@ -69,7 +69,7 @@ python -m src.driver.realization_trace \
 Or write the files automatically when the selected BMI ensemble finishes:
 
 ```bash
-python run_model.py \
+basin-bmp-sim \
     --backend-selection ensemble_selection.json \
     --coupled-result outputs/ensemble.json \
     --input-trace-result outputs/bmp_realization_trace.json \
@@ -92,7 +92,7 @@ trace provenance. It is not a statistical independence test.
 ## Use the trace with Phase 17
 
 ```bash
-python -m src.driver.input_sensitivity \
+python -m basin_bmp_sim.analysis.input_sensitivity \
     outputs/ensemble.json \
     outputs/bmp_realization_trace.json \
     decision_support.json \

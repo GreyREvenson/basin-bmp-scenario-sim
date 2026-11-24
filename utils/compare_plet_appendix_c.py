@@ -46,10 +46,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.input_config import load_and_validate_all, normalize_config, resolve_config_paths
-from src.logging_utils import make_logger
-from src.model import Model
-from src.plet_rusle import (
+from basin_bmp_sim.config.loading import load_and_validate_all, normalize_config, resolve_config_paths
+from basin_bmp_sim.common.logging import make_logger
+from basin_bmp_sim.execution.monte_carlo_driver import Model
+from basin_bmp_sim.science.plet_rusle import (
     calculate_plet_pathway_load_rates,
     calculate_load_diagnostics,
 )

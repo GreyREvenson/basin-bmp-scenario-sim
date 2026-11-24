@@ -11,7 +11,7 @@ import os
 
 import pytest
 
-from src.interfaces.bmi.portability import certify_portability
+from basin_bmp_sim.certification.portability import certify_portability
 
 
 @pytest.mark.skipif(

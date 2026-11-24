@@ -141,7 +141,7 @@ manure_loading:
 ```
 
 Omit `excretion_factors` to use the bundled
-`src/data/afo/manure_excretion_reference.csv`. A custom CSV replaces this
+`basin_bmp_sim/data/afo/manure_excretion_reference.csv`. A custom CSV replaces this
 reference and its path is relative to the YAML file. Both use long-form
 `species, parameter, value/mean/sd/...` rows for TN and TP production
 rates in kg per 1,000 kg live animal mass per day, plus a required

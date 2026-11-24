@@ -12,7 +12,7 @@ persistence, plotting trajectories, and ensemble outputs.
 
 ## Versioned exchange and stable ordering
 
-`src/interfaces/placement_exchange.py` is the transport schema. The generator
+`basin_bmp_sim/interfaces/placement_exchange.py` is the transport schema. The generator
 encodes one placement into typed arrays and the watershed adapter reconstructs
 a native `RealizedBMPPlacement` **internally**, for the existing scientific
 kernels. The coupler never passes such Python objects across the component

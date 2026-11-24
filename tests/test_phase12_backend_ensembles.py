@@ -10,15 +10,15 @@ from types import ModuleType
 import numpy as np
 import pytest
 
-import run_model
-from src.driver.backend_selection import BackendSelection, run_backend_selection, run_selected_scenario
-from src.driver.ensemble_runner import (
+from basin_bmp_sim.execution import cli as run_model
+from basin_bmp_sim.execution.backend_selection import BackendSelection, run_backend_selection, run_selected_scenario
+from basin_bmp_sim.execution.ensemble_runner import (
     ENSEMBLE_SEED_POLICY, ensemble_worker_seeds, summarize_ensemble,
     export_ensemble_replays,
 )
-from src.driver.monte_carlo_driver import _ScenarioContext
-from src.interfaces.backend_capabilities import AnnualBackendCapabilities, ExternalBackendBundle
-from src.scenarios.stochastic_scenario_generator import BMPScenario
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.interfaces.backend_capabilities import AnnualBackendCapabilities, ExternalBackendBundle
+from basin_bmp_sim.scenarios.generator import BMPScenario
 from test_phase9_independent_bmi_initialization import _mocked_config_inputs
 from test_phase10_model_neutral_exchange import IndependentToyBackend, _domain
 
@@ -194,7 +194,7 @@ def test_external_ensemble_uses_fresh_backends_and_cli(monkeypatch, tmp_path):
     calls = _plugin(monkeypatch, shared, cfg, seed)
     selection = _selection(tmp_path, manifest, backend="external", n=3)
     output = tmp_path / "external_ensemble.json"
-    monkeypatch.setattr(sys, "argv", ["run_model.py", "--backend-selection",
+    monkeypatch.setattr(sys, "argv", ["basin-bmp-sim", "--backend-selection",
                                        str(selection), "--coupled-result", str(output)])
     run_model.main()
     result = json.loads(output.read_text(encoding="utf-8"))

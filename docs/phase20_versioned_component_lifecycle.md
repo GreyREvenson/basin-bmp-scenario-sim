@@ -68,7 +68,7 @@ partially generated live scenario when there is no pending placement.
 ## Migration and compatibility
 
 - **Native CLI and native diagnostics:** unaffected, including legacy
-  `src.model` imports and the native context used by result writers.
+  `basin_bmp_sim.execution.monte_carlo_driver` imports and the native context used by result writers.
 - **Startup manifests and backend-selection JSON:** unchanged.
 - **Replay JSON schema:** unchanged. The BMI byte output is only a transport.
 - **Independent backend adapters:** `ExternalWatershedModelBmi` publishes the

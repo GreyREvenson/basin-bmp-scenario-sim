@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.input_validation import (
+from basin_bmp_sim.config.validation import (
     validate_bmp_selection_table,
     validate_numeric_distribution_rows,
 )

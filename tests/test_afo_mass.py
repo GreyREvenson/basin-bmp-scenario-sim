@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.afo import (
+from basin_bmp_sim.science.afo import (
     _draw, animal_production, manure_surface_export_kg,
     load_afo_inputs, mass_afo_realization, reference_excretion_factors,
 )

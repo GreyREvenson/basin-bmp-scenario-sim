@@ -10,9 +10,9 @@ import sys
 
 import pytest
 
-from src.interfaces.bmi import release_gate
-from src.interfaces.bmi.release_evidence import public_contract_sha256, sha256_file
-from src.interfaces.bmi.acceptance import accept_backend
+from basin_bmp_sim.certification import release_gate
+from basin_bmp_sim.certification.release_evidence import public_contract_sha256, sha256_file
+from basin_bmp_sim.certification.acceptance import accept_backend
 from test_phase19_public_interoperability import _fixture
 
 
@@ -185,11 +185,11 @@ def test_import_audit_only_accepts_documented_reference_surface():
     result = release_gate.audit_public_reference_backend()
     assert result["passed"]
     assert set(result["project_imports"]) == {
-        "src.interfaces.annual_model_contract", "src.interfaces.backend_capabilities"}
+        "basin_bmp_sim.interfaces.annual_model_contract", "basin_bmp_sim.interfaces.backend_capabilities"}
     with pytest.raises(ValueError, match="unpublished model APIs"):
-        release_gate.audit_public_reference_backend("from src.models.assemblies import something")
+        release_gate.audit_public_reference_backend("from basin_bmp_sim.science.assemblies import something")
     with pytest.raises(ValueError, match="unpublished model APIs"):
-        release_gate.audit_public_reference_backend("import src.driver.monte_carlo_driver")
+        release_gate.audit_public_reference_backend("import basin_bmp_sim.execution.monte_carlo_driver")
 
 
 def test_real_external_acceptance_is_bound_to_source_file_hashes(tmp_path, monkeypatch):

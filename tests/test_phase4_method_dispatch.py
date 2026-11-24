@@ -6,20 +6,20 @@ import logging
 
 import pytest
 
-from src.bmp.response_method_registry import (
+from basin_bmp_sim.bmp.response_method_registry import (
     BMPResponseMethod, RESPONSE_IMPLEMENTATIONS, response_method_for_cps,
 )
-from src.formulations.formulation_builder import (
+from basin_bmp_sim.science.formulations.formulation_builder import (
     build_method_plan, validate_registered_formulation,
 )
-from src.formulations.formulation_registry import FORMULATIONS, validate_formulation_selection
-from src.models.process_method_registry import (
+from basin_bmp_sim.science.formulations.formulation_registry import FORMULATIONS, validate_formulation_selection
+from basin_bmp_sim.science.process_method_registry import (
     PROCESS_IMPLEMENTATIONS, ProcessImplementation,
     resolve_process_method, resolve_plet_process_methods,
 )
-from src.models.assemblies.annual_model_realization import AnnualModelRealization
-from src.driver.monte_carlo_driver import _ScenarioContext
-from src.scenarios.stochastic_scenario_generator import StochasticScenarioGenerator
+from basin_bmp_sim.science.assemblies.annual_model_realization import AnnualModelRealization
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.scenarios.generator import StochasticScenarioGenerator
 from test_phase2_scenario_generation import _case
 
 

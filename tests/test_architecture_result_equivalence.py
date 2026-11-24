@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import src.model as model
+import basin_bmp_sim.execution.monte_carlo_driver as model
 from test_plet_end_to_end_regression import (
     _config, _shared_payload, _single_mass_afo_payload,
 )

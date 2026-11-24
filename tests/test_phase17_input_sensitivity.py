@@ -10,11 +10,11 @@ from xml.etree import ElementTree
 import numpy as np
 import pytest
 
-from src.driver.input_sensitivity import (
+from basin_bmp_sim.analysis.input_sensitivity import (
     SensitivityConfig, _average_ranks, _spearman, analyze_input_sensitivity,
     write_input_sensitivity,
 )
-from src.driver.ensemble_analysis import DecisionSupportConfig
+from basin_bmp_sim.analysis.ensemble_analysis import DecisionSupportConfig
 from test_phase14_ensemble_decision_support import _analysis_config, _synthetic_ensemble
 
 
@@ -189,7 +189,7 @@ def test_cli_matches_direct_api(tmp_path):
     expected = tmp_path / "expected.json"
     actual = tmp_path / "actual.json"
     write_input_sensitivity(source, trace, targets, config, expected)
-    subprocess.run([sys.executable, "-m", "src.driver.input_sensitivity",
+    subprocess.run([sys.executable, "-m", "basin_bmp_sim.analysis.input_sensitivity",
                     str(source), str(trace), str(targets), str(config), str(actual)],
                    check=True, capture_output=True, text=True)
     assert actual.read_bytes() == expected.read_bytes()

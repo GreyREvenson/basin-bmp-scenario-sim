@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     CFG_BMP_COST,
     CFG_BMP_EFFICIENCY,
     CFG_BMP_FAIL_RATE,
@@ -20,9 +20,9 @@ from src.constants import (
     CFG_POLLUTANT_LOAD_RATE,
     LOAD_CONCENTRATIONS,
 )
-from src.input_validation import validate_config, validate_stats_rows
-from src.plet_rusle import plet_runoff_depth_in, rusle_sediment_load_rate_kg_ha_yr
-from src import sampling
+from basin_bmp_sim.config.validation import validate_config, validate_stats_rows
+from basin_bmp_sim.science.plet_rusle import plet_runoff_depth_in, rusle_sediment_load_rate_kg_ha_yr
+from basin_bmp_sim.scenarios import sampling
 
 
 class DummySampler:
@@ -193,7 +193,7 @@ def test_rusle_rejects_negative_factor_instead_of_clipping():
 
 
 def test_delivery_ratio_nan_is_rejected():
-    from src.input_config import _complete_delivery_ratio_defaults
+    from basin_bmp_sim.config.loading import _complete_delivery_ratio_defaults
 
     table = pd.DataFrame(
         [{
@@ -210,8 +210,8 @@ def test_delivery_ratio_nan_is_rejected():
 
 
 def test_aggregate_pathway_fraction_nan_is_rejected():
-    from src.constants import CFG_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS
-    from src.input_config import _resolve_aggregate_pathway_fractions
+    from basin_bmp_sim.domain.constants import CFG_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS
+    from basin_bmp_sim.config.loading import _resolve_aggregate_pathway_fractions
 
     cfg = {
         CFG_POLLUTANT_LOAD_RATE_PATHWAY_FRACTIONS: {

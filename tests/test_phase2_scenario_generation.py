@@ -15,8 +15,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import src.model as model
-from src.scenarios.stochastic_scenario_generator import BMPScenario
+import basin_bmp_sim.execution.monte_carlo_driver as model
+from basin_bmp_sim.scenarios.generator import BMPScenario
 from test_architecture_result_equivalence import _compare_values
 from test_plet_end_to_end_regression import _shared_payload, _single_mass_afo_payload, _config
 
@@ -116,7 +116,7 @@ def test_phase2_matches_unmodified_branch_and_replays(case, tmp_path, monkeypatc
     assert realization == BMPScenario.from_dict(realization.to_dict())
 
     # Replay must not run any placement-selection or design sampling.
-    from src.scenarios import stochastic_scenario_generator as generator_module
+    from basin_bmp_sim.scenarios import generator as generator_module
     with monkeypatch.context() as scope:
         scope.setattr(generator_module.StochasticScenarioGenerator, "next_placement",
                       lambda *args: (_ for _ in ()).throw(AssertionError("resampled placement")))
@@ -129,11 +129,11 @@ def test_phase2_matches_unmodified_branch_and_replays(case, tmp_path, monkeypatc
 
 def test_replay_rejects_wrong_seed_and_domain(tmp_path, monkeypatch):
     _, realization = _capture(monkeypatch, tmp_path / "generated", "mixed_budget")
-    from src.driver.monte_carlo_driver import _ScenarioContext
+    from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
     import logging
     payload, cfg, seed = _case("mixed_budget", tmp_path / "another")
     ctx = _ScenarioContext(cfg, payload, logging.getLogger("replay_test"), seed)
-    from src.scenarios.stochastic_scenario_generator import StochasticScenarioGenerator
+    from basin_bmp_sim.scenarios.generator import StochasticScenarioGenerator
     wrong_seed = replace(realization, seed=42)
     with pytest.raises(ValueError, match="ID/seed"):
         StochasticScenarioGenerator(ctx, cfg, replay=wrong_seed).validate_replay(ctx, 1, seed)

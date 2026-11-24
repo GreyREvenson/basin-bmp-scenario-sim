@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from src.io_utils import read_config, read_csv_table, read_csv_tables
+from basin_bmp_sim.common.io import read_config, read_csv_table, read_csv_tables
 
 
 def test_read_config_accepts_string_path_argument(tmp_path) -> None:

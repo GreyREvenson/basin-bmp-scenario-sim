@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.logging_utils import make_logger
+from basin_bmp_sim.common.logging import make_logger
 
 
 def test_make_logger_uses_logs_subdirectory(tmp_path) -> None:

@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src import input_config
-from src.input_validation import validate_config
+from basin_bmp_sim.config import loading as input_config
+from basin_bmp_sim.config.validation import validate_config
 
 
 class Logger:

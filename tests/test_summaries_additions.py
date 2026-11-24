@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.summaries import BMPSummaryCollector, _compute_statistics
+from basin_bmp_sim.results.bmp_summary import BMPSummaryCollector, _compute_statistics
 
 
 def test_compute_statistics_returns_nan_summary_for_empty_input() -> None:

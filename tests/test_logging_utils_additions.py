@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.logging_utils import make_logger
+from basin_bmp_sim.common.logging import make_logger
 
 
 def test_make_logger_without_scenario_id_writes_top_level_log_file(tmp_path) -> None:

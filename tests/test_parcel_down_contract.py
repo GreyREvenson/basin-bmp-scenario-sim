@@ -12,7 +12,7 @@ import rasterio
 from rasterio.transform import from_origin
 from shapely.geometry import box
 
-from src.input_config import _build_parcel_down_map, _load_parcel_graph
+from basin_bmp_sim.config.loading import _build_parcel_down_map, _load_parcel_graph
 from utils.parcel_down_graph import validate_direct_edges, write_gpkg_parcel_down
 from utils.drainage_validation import validate_dem_coverage, validate_parcel_overlaps
 from utils.drainage_manifest import write_drainage_manifest, parcel_geometry_sha256
@@ -158,7 +158,7 @@ def test_manifest_geometry_hash_changes_only_with_geometry_or_ids(tmp_path):
 def test_model_reverses_downstream_links_for_wetland_traversal(tmp_path):
     """A/B both drain into C; C drains into D; wetland traverses the reverse."""
     import logging
-    from src.model import Model, _ScenarioContext
+    from basin_bmp_sim.execution.monte_carlo_driver import Model, _ScenarioContext
     from model_test_cases import make_statistical_case
     cfg, data = make_statistical_case(tmp_path, n_scenarios=1)
     # P1 and P2 converge to P3. The model has exactly one downstream per PID.

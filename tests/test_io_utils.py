@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from src.io_utils import read_config, read_csv_table, read_csv_tables
+from basin_bmp_sim.common.io import read_config, read_csv_table, read_csv_tables
 
 
 def test_read_config_returns_empty_mapping_for_empty_yaml(tmp_path) -> None:
@@ -81,7 +81,7 @@ def test_read_csv_tables_preserves_input_order_for_multiple_paths(tmp_path) -> N
 def test_read_geopackage_table_reads_attribute_table(tmp_path) -> None:
     import sqlite3
 
-    from src.io_utils import read_geopackage_table
+    from basin_bmp_sim.common.io import read_geopackage_table
 
     path = tmp_path / "inputs.gpkg"
     with sqlite3.connect(path) as conn:
@@ -100,7 +100,7 @@ def test_read_geopackage_table_reads_attribute_table(tmp_path) -> None:
 def test_read_geopackage_table_rejects_missing_table(tmp_path) -> None:
     import sqlite3
 
-    from src.io_utils import read_geopackage_table
+    from basin_bmp_sim.common.io import read_geopackage_table
 
     path = tmp_path / "inputs.gpkg"
     with sqlite3.connect(path):

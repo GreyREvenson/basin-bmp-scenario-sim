@@ -57,7 +57,7 @@ conventions, and include methodological citations. For instance:
 There are **no `input_column_guide`, `input_record_notes`, or other custom
 explanation tables**. Normal GeoPackage `gpkg_*` infrastructure tables remain
 because they are required by the file format. Explanatory columns are ignored
-by `src/afo.py`, including when loading the legacy concentration-increment
+by `basin_bmp_sim/afo.py`, including when loading the legacy concentration-increment
 method, and do not change simulations.
 
 The methods documented in notes are primarily the

@@ -370,10 +370,10 @@ def main():
         dem_path, wb_dir, method=conditioning,
         breach_dist=args.whitebox_breach_dist, exe=args.whitebox_exe,
     )
-    with rasterio.open(args.dem) as src:
-        dem_crs = src.crs
-        transform = src.transform
-        dem_shape = src.shape
+    with rasterio.open(args.dem) as basin_bmp_sim:
+        dem_crs = basin_bmp_sim.crs
+        transform = basin_bmp_sim.transform
+        dem_shape = basin_bmp_sim.shape
         if dem_crs is None or not dem_crs.is_projected:
             raise ValueError('DEM must have a projected CRS for D8 and parcel area calculations')
         unit_factor = float(dem_crs.linear_units_factor[1])

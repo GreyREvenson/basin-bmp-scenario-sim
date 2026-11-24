@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     COL_CPS,
     COL_PROBABILITY,
     COL_UNIT,
@@ -18,7 +18,7 @@ from src.constants import (
     DATA_BMP_COST,
     DATA_CPS,
 )
-from src.cost import _estimate_costs_for_probabilities, _select_cost_rate_median
+from basin_bmp_sim.scenarios.costs import _estimate_costs_for_probabilities, _select_cost_rate_median
 
 
 class DummyLogger:

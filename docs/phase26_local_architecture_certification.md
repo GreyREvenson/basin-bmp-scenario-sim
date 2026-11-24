@@ -31,7 +31,7 @@ without a replay file. Pass each backend-specific scientific data file with
 `--input-file` (paths relative to the selection JSON). Run on **Windows**:
 
 ```bash
-python -m src.interfaces.bmi.local_certification selection.json evidence --input-file backend_domain.json --n-scenarios 2 --n-jobs 2
+python -m basin_bmp_sim.certification.local_certification selection.json evidence --input-file backend_domain.json --n-scenarios 2 --n-jobs 2
 ```
 
 It writes `evidence/acceptance.json` and `evidence/windows.json` only after
@@ -48,7 +48,7 @@ collect the reports separately and combine them afterward.
 Run the existing release gate using all three files:
 
 ```bash
-python -m src.interfaces.bmi.release_gate --acceptance evidence/acceptance.json --windows evidence/windows.json --linux evidence/linux.json --report evidence/readiness.json --require-ready
+python -m basin_bmp_sim.certification.release_gate --acceptance evidence/acceptance.json --windows evidence/windows.json --linux evidence/linux.json --report evidence/readiness.json --require-ready
 ```
 
 A complete result is `ready_for_architecture_release_review`, **not** CSDMS

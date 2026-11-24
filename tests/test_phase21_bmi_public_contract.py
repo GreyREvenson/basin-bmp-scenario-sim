@@ -14,12 +14,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from src.constants import DATA_N_SCENARIOS
-from src.driver.bmi_coupling import AnnualBmiScenarioCoupler, get_bmi_value
-from src.driver.monte_carlo_driver import _ScenarioContext
-from src.interfaces.bmi import MonteCarloDriverBmi, StochasticScenarioBmi
-from src.interfaces.bmi import public_contract as contract_module
-from src.interfaces.bmi.public_contract import (
+from basin_bmp_sim.domain.constants import DATA_N_SCENARIOS
+from basin_bmp_sim.execution.bmi_coupling import AnnualBmiScenarioCoupler, get_bmi_value
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.interfaces.bmi import MonteCarloDriverBmi, StochasticScenarioBmi
+from basin_bmp_sim.interfaces.bmi import public_contract as contract_module
+from basin_bmp_sim.interfaces.bmi.public_contract import (
     BMI_2_0_METHODS, PUBLIC_COMPONENTS, PROJECT_EXTENSIONS, public_contract,
     verify_component, verify_public_contract,
 )

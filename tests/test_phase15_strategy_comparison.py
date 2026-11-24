@@ -9,11 +9,11 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from src.driver.ensemble_comparison import (
+from basin_bmp_sim.analysis.ensemble_comparison import (
     StrategyComparisonConfig, _load_and_compare, _pareto_flags,
     write_strategy_comparison,
 )
-from src.driver.ensemble_analysis import DecisionSupportConfig
+from basin_bmp_sim.analysis.ensemble_analysis import DecisionSupportConfig
 from test_phase14_ensemble_decision_support import _analysis_config, _synthetic_ensemble
 
 
@@ -211,7 +211,7 @@ def test_rejects_output_collision_with_source_or_chart(tmp_path):
 
 def test_comparison_is_post_processing_and_does_not_initialize_models(tmp_path, monkeypatch):
     selection, targets, _ = _strategy_data(tmp_path)
-    import src.driver.backend_selection as selector
+    import basin_bmp_sim.execution.backend_selection as selector
     monkeypatch.setattr(selector, "run_selected_scenario", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("model run")))
     result = tmp_path / "compare.json"
     write_strategy_comparison(selection, targets, result)
@@ -223,7 +223,7 @@ def test_cli_writes_comparison_and_two_charts(tmp_path):
     import subprocess
     import sys
     output, charts = tmp_path / "result.json", tmp_path / "charts"
-    completed = subprocess.run([sys.executable, "-m", "src.driver.ensemble_comparison",
+    completed = subprocess.run([sys.executable, "-m", "basin_bmp_sim.analysis.ensemble_comparison",
                                 str(selection), str(targets), str(output),
                                 "--charts-dir", str(charts)],
                                cwd=Path(__file__).resolve().parents[1],

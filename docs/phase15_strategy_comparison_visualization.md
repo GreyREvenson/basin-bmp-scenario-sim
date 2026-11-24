@@ -59,7 +59,7 @@ comparison configuration file**:
 Run **without rerunning scientific simulations**:
 
 ```bash
-python -m src.driver.ensemble_comparison \
+python -m basin_bmp_sim.analysis.ensemble_comparison \
     strategies.json \
     decision_support.json \
     outputs/strategy_comparison.json \

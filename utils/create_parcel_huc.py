@@ -13,7 +13,7 @@ import pandas as pd
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.input_scopes import assign_parcels_to_hucs
+from basin_bmp_sim.config.scopes import assign_parcels_to_hucs
 from utils.create_parcel_huc12 import _read_parcels
 
 

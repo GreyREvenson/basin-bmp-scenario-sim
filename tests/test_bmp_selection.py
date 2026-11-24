@@ -7,9 +7,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from src.bmp_selection import BMPEligibilityPool
-from src.constants import CFG_DETERMINISTIC_PARCEL_ORDER
-from src.parcel import _sample_parcel_index
+from basin_bmp_sim.scenarios.eligibility import BMPEligibilityPool
+from basin_bmp_sim.domain.constants import CFG_DETERMINISTIC_PARCEL_ORDER
+from basin_bmp_sim.domain.parcel import _sample_parcel_index
 
 
 class _Logger:

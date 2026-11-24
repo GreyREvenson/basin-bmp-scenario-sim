@@ -7,12 +7,12 @@ import logging
 import numpy as np
 import pytest
 
-from src.driver.bmi_coupling import AnnualBmiScenarioCoupler, get_bmi_value, transfer_bmi_value
-from src.driver.monte_carlo_driver import _ScenarioContext
-from src.interfaces.bmi.live_scenario_generator_bmi import LiveScenarioGeneratorBmi
-from src.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
-from src.interfaces.placement_exchange import PLACEMENT_FIELDS, placement_arrays, placement_from_arrays
-from src.scenarios.stochastic_scenario_generator import StochasticScenarioGenerator
+from basin_bmp_sim.execution.bmi_coupling import AnnualBmiScenarioCoupler, get_bmi_value, transfer_bmi_value
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.interfaces.bmi.live_scenario_generator_bmi import LiveScenarioGeneratorBmi
+from basin_bmp_sim.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
+from basin_bmp_sim.interfaces.placement_exchange import PLACEMENT_FIELDS, placement_arrays, placement_from_arrays
+from basin_bmp_sim.scenarios.generator import StochasticScenarioGenerator
 from test_phase2_scenario_generation import _case, _capture
 
 

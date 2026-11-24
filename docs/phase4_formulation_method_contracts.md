@@ -7,17 +7,17 @@ to select scientific implementations at runtime.
 
 ## Boundary and method selection
 
-- `src/formulations/formulation_registry.py` remains the scientific approval
+- `basin_bmp_sim/formulations/formulation_registry.py` remains the scientific approval
   authority. There are still exactly two approved formulations:
   `plet_rusle_annual_v1` and `statistical_annual_v1`.
-- `src/formulations/formulation_builder.py` validates the worker's mode and
+- `basin_bmp_sim/formulations/formulation_builder.py` validates the worker's mode and
   config, checks that each formulation's methods exist in executable registries,
   and builds an immutable per-realization `ScientificMethodPlan`.
-- `src/models/process_method_registry.py` binds PLET runoff, infiltration,
+- `basin_bmp_sim/models/process_method_registry.py` binds PLET runoff, infiltration,
   RUSLE sediment, and PLET concentration-based loading to their actual callable
   kernels. `calculate_plet_pathway_load_rates` accepts an optional resolved
   process-method bundle; its legacy direct-call behavior is unchanged.
-- `src/bmp/response_method_registry.py` resolves a CPS to its practice family
+- `basin_bmp_sim/bmp/response_method_registry.py` resolves a CPS to its practice family
   and then to the approved response implementation. The scientific model no
   longer branches on wetland, grassed-waterway and in-field response families.
 - The statistical assembly remains an approved, distinct baseline assembly and

@@ -11,8 +11,8 @@ from test_reproducibility_helpers import (
     assert_outputs_equal,
     read_canonical_outputs,
 )
-from src.model import Model
-from src.constants import (
+from basin_bmp_sim.execution.monte_carlo_driver import Model
+from basin_bmp_sim.domain.constants import (
     CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
     CFG_DETERMINISTIC_BMP_TYPE_ORDER,
     CFG_DETERMINISTIC_PARCEL_ORDER,

@@ -378,7 +378,7 @@ scenario RNG unless the input table/source provides a deliberate grouping.
 
 ### Starting animal excretion distributions
 
-The default [manure excretion CSV](../src/data/afo/manure_excretion_reference.csv)
+The default [manure excretion CSV](../basin_bmp_sim/data/afo/manure_excretion_reference.csv)
 uses the same [inline distribution schema](input_distributions.md) as other
 numeric model inputs: **one row per species and parameter**, not separate
 parameter-specific mean/SD columns. Its required identifiers are `species`
@@ -414,7 +414,7 @@ and is not used by `concentration_increment` mode.
 #### D384.1 source and conversion assumptions
 
 Means and SDs come from **ASAE D384.1 FEB03, Table 1, pp. 683-684** in
-[ASAE_D384.1.pdf](../src/data/afo/ASAE_D384.1.pdf), not the separate D384.2
+[ASAE_D384.1.pdf](../basin_bmp_sim/data/afo/ASAE_D384.1.pdf), not the separate D384.2
 document. The source reports total Kjeldahl N (TKN) and elemental P excreted
 in fresh whole manure (feces and urine combined) per 1,000 kg live animal mass
 per day. The CSV retains these native nutrient mean/SD values. The simulation draws the rates
@@ -558,7 +558,7 @@ calibrated defaults.
 From the repository root:
 
 ```bash
-python run_model.py examples/east_fork/inputs/config/east_fork_afo_mass_demo.yaml
+basin-bmp-sim examples/east_fork/inputs/config/east_fork_afo_mass_demo.yaml
 ```
 
 The supplied PLET-specific `afo_mass_example_generated.gpkg` contains
@@ -581,7 +581,7 @@ runoff inputs and configure the positive reference runoff depth.
 Run the default statistical (Option A) example with:
 
 ```bash
-python run_model.py examples/east_fork/inputs/config/east_fork_afo_mass_statistical_demo.yaml
+basin-bmp-sim examples/east_fork/inputs/config/east_fork_afo_mass_statistical_demo.yaml
 ```
 
 It explicitly sets `manure_loading.surface_pathway: surface` and partitions

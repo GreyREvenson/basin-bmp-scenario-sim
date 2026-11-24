@@ -2,35 +2,35 @@
 
 This branch patch is **phase 1**, not the completed BMI framework. It establishes
 real package boundaries and a numerical regression gate while preserving the
-public `src.model`, `src.bmp`, `src.plet_rusle`, `src.summaries` and
-`src.plotting` import paths. The legacy driver uses the newly separated modules
+public `basin_bmp_sim.execution.monte_carlo_driver`, `basin_bmp_sim.bmp`, `basin_bmp_sim.science.plet_rusle`, `basin_bmp_sim.results.bmp_summary` and
+`basin_bmp_sim.results.plotting` import paths. The legacy driver uses the newly separated modules
 for core calculations, but still performs BMP-response application and expense
 sampling in its monolithic scenario loop.
 
 ## Implemented in this patch
 
-- `src/bmp/` contains separate PLET-style response implementations for wetlands,
+- `basin_bmp_sim/bmp/` contains separate PLET-style response implementations for wetlands,
   grassed waterways and generic in-field BMPs; sampling and pathway calculations
   have their own modules. Files with explicit CPS names describe the currently
   supported practices; a registry resolves their response family. Existing
   unrecognized CPS codes retain the original generic in-field fallback for now.
-- `src/models/assemblies/` contains the existing annual statistical and
+- `basin_bmp_sim/models/assemblies/` contains the existing annual statistical and
   PLET/RUSLE baseline assemblies. PLET hydrology, infiltration, RUSLE sediment
   and concentration-based nutrient equations have separate modules in
-  `src/models/`; original `src.plet_rusle` names remain available.
-- `src/scenarios/stochastic_scenario_generator.py` owns the eligibility and
+  `basin_bmp_sim/models/`; original `basin_bmp_sim.science.plet_rusle` names remain available.
+- `basin_bmp_sim/scenarios/stochastic_scenario_generator.py` owns the eligibility and
   placement selection state, currently preserving the original shared RNG draw
   order. It **does not yet generate a fully independent, serializable scenario**.
-- `src/driver/monte_carlo_driver.py` owns orchestration and the
-  `src/driver/results/` package now owns plot preparation, BMP summaries and
+- `basin_bmp_sim/driver/monte_carlo_driver.py` owns orchestration and the
+  `basin_bmp_sim/driver/results/` package now owns plot preparation, BMP summaries and
   outlet-trajectory collection. Physical parcel/outlet calculations remain in
   the scientific execution loop until further extraction.
-- `src/formulations/formulation_registry.py` defines two initial approved
+- `basin_bmp_sim/formulations/formulation_registry.py` defines two initial approved
   formulation IDs: `plet_rusle_annual_v1` and `statistical_annual_v1`.
   The optional YAML `simulation.formulation` and `simulation.bmp_methods`
   selections are preflight-validated. Unsupported overrides are rejected,
   rather than ignored. Legacy configuration remains supported.
-- Package discovery is updated for nested `src.*` Python packages.
+- Package discovery is updated for nested `basin_bmp_sim.*` Python packages.
 
 ## Not yet completed (separate, incremental patches recommended)
 
@@ -85,9 +85,9 @@ For a full end-to-end before/after test on the *same environment* with the same
 config, seed, scenario count and worker settings:
 
 ```bash
-python run_model.py path/to/config.yaml --outputs before --seed 43812
+basin-bmp-sim path/to/config.yaml --outputs before --seed 43812
 # Apply patch, install updated code, run in another directory:
-python run_model.py path/to/config.yaml --outputs after --seed 43812
+basin-bmp-sim path/to/config.yaml --outputs after --seed 43812
 python scripts/compare_model_results.py before after
 ```
 
@@ -129,12 +129,12 @@ PLET/RUSLE, statistical, wetland-routing or AFO-response equations.
 
 ## What changed
 
-- `src/scenarios/bmp_designs.py` owns model-independent *physical* design
+- `basin_bmp_sim/scenarios/bmp_designs.py` owns model-independent *physical* design
   sampling for wetlands, grassed waterways, and in-field practices. Each
   frozen `BMPDesign` records affected hydrologic parcel indices, treatment
   fractions, cost geometry, and associated output metadata. Wetland designs
   still use the full upstream graph and preserve its deterministic tie order.
-- `src/scenarios/stochastic_scenario_generator.py` owns eligible placement
+- `basin_bmp_sim/scenarios/stochastic_scenario_generator.py` owns eligible placement
   selection, stochastic BMP efficiencies, BMP failure draws, sampled physical
   designs, per-placement cost draws and stopping bookkeeping. It now provides
   frozen `RealizedBMPPlacement` and `BMPScenario` data classes.
@@ -149,8 +149,8 @@ PLET/RUSLE, statistical, wetland-routing or AFO-response equations.
   inputs. From the command line:
 
   ```console
-  python run_model.py path/to/config.yaml --outputs before --seed 43812
-  python run_model.py path/to/config.yaml --outputs after --seed 43812 --scenario-replay-dir before/scenario_definitions
+  basin-bmp-sim path/to/config.yaml --outputs before --seed 43812
+  basin-bmp-sim path/to/config.yaml --outputs after --seed 43812 --scenario-replay-dir before/scenario_definitions
   python scripts/compare_model_results.py before after
   ```
 
@@ -208,7 +208,7 @@ BMP methods, PLET/RUSLE equations, or statistical sampling algorithms.
 
 ## Separation of responsibilities
 
-- `src/models/assemblies/annual_model_realization.py` owns one independent
+- `basin_bmp_sim/models/assemblies/annual_model_realization.py` owns one independent
   realization of annual scientific model state, using an explicit dataclass.
   `initialize()` selects the supported PLET/RUSLE or statistical baseline
   assembly. `apply_placement()` performs scientific BMP and AFO responses;
@@ -216,22 +216,22 @@ BMP methods, PLET/RUSLE equations, or statistical sampling algorithms.
   pollutant delivery to linked outlets. These two placement calls straddle
   generator-owned cost sampling **on purpose** to preserve the original RNG
   stream and exact Phase 2 replay behavior.
-- `src/models/accounting/bmp_mass.py` owns physical mass calculations and
-  before/after parcel deltas. `src/models/routing/outlet_delivery.py` owns
+- `basin_bmp_sim/models/accounting/bmp_mass.py` owns physical mass calculations and
+  before/after parcel deltas. `basin_bmp_sim/models/routing/outlet_delivery.py` owns
   scientific parcel-to-outlet delivery. The driver no longer applies their
   equations itself; it reads accumulated outlet-reduction values.
-- `src/models/accounting/afo_accounting.py` owns manure operation budget
+- `basin_bmp_sim/models/accounting/afo_accounting.py` owns manure operation budget
   calculations, conservation checks, and AFO component-load records.
-  `src/models/diagnostics/load_parameter_records.py` owns the PLET/RUSLE
+  `basin_bmp_sim/models/diagnostics/load_parameter_records.py` owns the PLET/RUSLE
   numerical diagnostics. The **driver** still writes all output files.
-- `src/models/model_context.py` replaces repeated per-instance
+- `basin_bmp_sim/models/model_context.py` replaces repeated per-instance
   `types.MethodType` binding with statically declared Python helper methods.
   It offers an isolated `ScenarioModelContext` and validates required worker
-  fields; `src.model._ScenarioContext` remains a backwards-compatible alias.
-- `src/scenarios/deterministic_selection.py` owns the legacy deterministic
-  BMP-selection helper. Existing `src.model` imports of old private helpers
+  fields; `basin_bmp_sim.execution.monte_carlo_driver._ScenarioContext` remains a backwards-compatible alias.
+- `basin_bmp_sim/scenarios/deterministic_selection.py` owns the legacy deterministic
+  BMP-selection helper. Existing `basin_bmp_sim.execution.monte_carlo_driver` imports of old private helpers
   are preserved for downstream tools and unit tests.
-- `src/driver/monte_carlo_driver.py` now coordinates the generator and model,
+- `basin_bmp_sim/driver/monte_carlo_driver.py` now coordinates the generator and model,
   requests cost draws, manages output records and delegates to its
   `driver/results/` collectors. It does not implement BMP response equations,
   AFO-induced loads, or scientific delivery calculations.
@@ -268,7 +268,7 @@ python -m pytest tests
 
 ## Explicit limits / future phases
 
-This is **not yet a BMI implementation**. `src/interfaces/bmi/` is unchanged.
+This is **not yet a BMI implementation**. `basin_bmp_sim/interfaces/bmi/` is unchanged.
 `AnnualModelRealization` provides the first concrete native Python scientific
 execution boundary; a future BMI adapter should wrap it without copying its
 scientific logic. Historical process kernels still accept a mutable context
@@ -308,8 +308,8 @@ validation commands, and the exact before/after numerical evidence.
 
 # Phase 6: BMI-mediated live execution
 
-The active `src/driver/monte_carlo_driver.py` worker now invokes
-`src/driver/bmi_coupling.py`, a BMI-mediated placement/response mediator.
+The active `basin_bmp_sim/driver/monte_carlo_driver.py` worker now invokes
+`basin_bmp_sim/driver/bmi_coupling.py`, a BMI-mediated placement/response mediator.
 Generator-to-model designs/efficiencies, model-to-generator AFO recovery gains,
 and generator-to-model costs are copied through named BMI arrays. Delivered
 outlet reductions, parcel load rates, and the serialized BMP record are
@@ -356,7 +356,7 @@ matches, SHA-256 `1b63916915012a41120cf61a2e33ff76bc4372e5904a8a3d1f5d7a142cb7c2
 
 See [phase9_independent_component_initialization.md](phase9_independent_component_initialization.md).
 Model input lookup/preparation and the per-worker payload now live in reusable
-`src/models/prepared_inputs.py` rather than inside the Monte Carlo driver.
+`basin_bmp_sim/models/prepared_inputs.py` rather than inside the Monte Carlo driver.
 The existing driver inherits that preparation service unchanged. Scientific
 and generator BMI components can each separately load a versioned JSON
 startup manifest and validate/prepare project inputs from the model YAML,
@@ -464,7 +464,7 @@ RNG, replay, checkpoints, output schemas and calculations are unchanged.
 
 ### Phase 17 — trace-aligned exploratory input sensitivity
 
-Added optional `src/driver/input_sensitivity.py` to analyze explicitly logged,
+Added optional `basin_bmp_sim/driver/input_sensitivity.py` to analyze explicitly logged,
 scenario-aligned feature draws against signed annual outlet mass removals,
 target-attainment indicators, and implementation costs. It publishes
 reproducible tie-aware Spearman correlations, aligned-row bootstrap percentile

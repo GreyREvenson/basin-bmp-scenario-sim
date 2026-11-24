@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from src.driver import ensemble_checkpoints as checkpoints
-from src.driver.backend_selection import BackendSelection, run_backend_selection
-from src.driver.input_provenance import scientific_input_manifest
+from basin_bmp_sim.execution import ensemble_checkpoints as checkpoints
+from basin_bmp_sim.execution.backend_selection import BackendSelection, run_backend_selection
+from basin_bmp_sim.execution.input_provenance import scientific_input_manifest
 from test_phase13_checkpointed_ensembles import _v3
 from test_phase9_independent_bmi_initialization import _mocked_config_inputs
 
@@ -31,7 +31,7 @@ def _add_declared_extra(selection_file: Path, filename: str) -> None:
 
 
 def test_input_inventory_tracks_known_paths_without_tracking_outputs(tmp_path):
-    (tmp_path / "src.csv").write_text("1\n", encoding="utf-8")
+    (tmp_path / "basin_bmp_sim.csv").write_text("1\n", encoding="utf-8")
     (tmp_path / "factors.csv").write_text("2\n", encoding="utf-8")
     (tmp_path / "shape.shp").write_bytes(b"geometry")
     (tmp_path / "shape.dbf").write_bytes(b"attributes")
@@ -41,14 +41,14 @@ def test_input_inventory_tracks_known_paths_without_tracking_outputs(tmp_path):
     config = tmp_path / "model.yaml"
     config.write_text(
         "parcels: shape.shp\n"
-        "outlets: [src.csv, folder]\n"
+        "outlets: [basin_bmp_sim.csv, folder]\n"
         "manure_loading:\n  excretion_factors: factors.csv\n"
         "outputs: never-created-output\n", encoding="utf-8",
     )
     inventory = scientific_input_manifest(config)
     paths = {Path(item["path"]).name: item for item in inventory["files"]}
     assert inventory["schema_version"] == 1
-    assert set(paths) == {"src.csv", "factors.csv", "shape.shp", "shape.dbf",
+    assert set(paths) == {"basin_bmp_sim.csv", "factors.csv", "shape.shp", "shape.dbf",
                           "shape.SHX", "data.txt"}
     assert paths["shape.dbf"]["labels"] == ["parcels"]
     assert paths["data.txt"]["labels"] == ["outlets[1]"]

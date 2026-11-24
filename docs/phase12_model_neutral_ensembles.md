@@ -5,7 +5,7 @@
 Phase 12 extends the **opt-in** selected-backend path introduced in Phase 11
 from one realization to a deterministic, **serial ensemble**. Each realization
 initializes a fresh stochastic generator and a fresh native or external
-watershed-model adapter. The existing native `python run_model.py model.yaml`
+watershed-model adapter. The existing native `basin-bmp-sim model.yaml`
 execution path, scientific formulations, native ensemble worker seeds,
 Parquet/plot outputs, and Phase 1–11 replay formats are unchanged.
 
@@ -53,7 +53,7 @@ third-party factories must construct fresh model objects for each call.
 Run either mode through the existing opt-in CLI:
 
 ```bash
-python run_model.py --backend-selection ensemble_selection.json --coupled-result outputs/ensemble.json
+basin-bmp-sim --backend-selection ensemble_selection.json --coupled-result outputs/ensemble.json
 ```
 
 The generator still initializes from the **native model YAML**, using the
@@ -136,7 +136,7 @@ Every scenario result contains its complete original Phase 2 replay definition.
 To export individual `BMPScenario.load()`-compatible files:
 
 ```bash
-python -m src.driver.ensemble_runner outputs/ensemble.json outputs/replays
+python -m basin_bmp_sim.execution.ensemble_runner outputs/ensemble.json outputs/replays
 ```
 
 The command writes `s1.json`, `s2.json`, etc., with the actual scenario IDs.

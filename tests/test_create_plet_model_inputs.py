@@ -18,7 +18,7 @@ from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
 from shapely.geometry import box
 
-from src import input_config
+from basin_bmp_sim.config import loading as input_config
 from utils import create_plet_model_inputs as utility
 
 
@@ -359,8 +359,8 @@ def test_nlcd_dominant_cover_and_unmapped_code():
                for note in classified["notes"])
     def unmapped(bounds):
         with MemoryFile(_raster(bounds).data) as mem:
-            with mem.open() as src:
-                profile = src.profile
+            with mem.open() as basin_bmp_sim:
+                profile = basin_bmp_sim.profile
             with MemoryFile() as dest:
                 with dest.open(**profile) as raster:
                     raster.write(np.full((10, 20), 11, dtype="uint8"), 1)

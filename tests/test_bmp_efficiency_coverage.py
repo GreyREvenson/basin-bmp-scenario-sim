@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from src.bmp import _sample_efficiency_map
-from src.constants import CFG_BMP_EFFICIENCY, PATHWAY_VALUES
-from src.input_config import _load_bmp_efficiency
+from basin_bmp_sim.bmp.sampling.efficiency import _sample_efficiency_map
+from basin_bmp_sim.domain.constants import CFG_BMP_EFFICIENCY, PATHWAY_VALUES
+from basin_bmp_sim.config.loading import _load_bmp_efficiency
 
 
 class RecordingLogger:

@@ -3,8 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-import src.input_config as input_config
-from src.constants import (
+import basin_bmp_sim.config.loading as input_config
+from basin_bmp_sim.domain.constants import (
     CFG_CPS,
     CFG_DETERMINISTIC_BMP_DESIGN_PARAMETERS,
     CFG_DETERMINISTIC_BMP_TYPE_ORDER,

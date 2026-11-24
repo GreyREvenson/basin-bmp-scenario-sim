@@ -8,12 +8,12 @@ import sys
 import numpy as np
 import pytest
 
-import run_model
-from src.driver.backend_selection import run_backend_selection
-from src.driver.ensemble_analysis import (
+from basin_bmp_sim.execution import cli as run_model
+from basin_bmp_sim.execution.backend_selection import run_backend_selection
+from basin_bmp_sim.analysis.ensemble_analysis import (
     DecisionSupportConfig, ReductionTarget, analyze_ensemble, write_ensemble_analysis,
 )
-from src.driver.ensemble_runner import ENSEMBLE_SEED_POLICY, ensemble_worker_seeds
+from basin_bmp_sim.execution.ensemble_runner import ENSEMBLE_SEED_POLICY, ensemble_worker_seeds
 from test_phase12_backend_ensembles import _plugin, _selection
 from test_phase13_checkpointed_ensembles import _v3
 from test_phase9_independent_bmi_initialization import _mocked_config_inputs
@@ -207,7 +207,7 @@ def test_real_selected_ensemble_analysis_leaves_science_results_unchanged(monkey
     actual = tmp_path / "with_analysis.json"
     report = tmp_path / "report.json"
     monkeypatch.setattr(sys, "argv", [
-        "run_model.py", "--backend-selection", str(selected), "--coupled-result", str(actual),
+        "basin-bmp-sim", "--backend-selection", str(selected), "--coupled-result", str(actual),
         "--analysis-config", str(cfgpath), "--analysis-result", str(report),
     ])
     run_model.main()
@@ -246,7 +246,7 @@ def test_cli_rejects_analysis_on_single_scenario_or_missing_pair(monkeypatch, tm
     selected = _selection(tmp_path, manifest, n=2)
     cfg = _analysis_config(tmp_path)
     result = tmp_path / "result.json"
-    monkeypatch.setattr(sys, "argv", ["run_model.py", "--backend-selection", str(selected),
+    monkeypatch.setattr(sys, "argv", ["basin-bmp-sim", "--backend-selection", str(selected),
                                         "--coupled-result", str(result), "--analysis-config", str(cfg)])
     with pytest.raises(SystemExit) as exc:
         run_model.main()
@@ -256,7 +256,7 @@ def test_cli_rejects_analysis_on_single_scenario_or_missing_pair(monkeypatch, tm
     raw["schema_version"] = 1
     del raw["ensemble"]
     selected.write_text(json.dumps(raw))
-    monkeypatch.setattr(sys, "argv", ["run_model.py", "--backend-selection", str(selected),
+    monkeypatch.setattr(sys, "argv", ["basin-bmp-sim", "--backend-selection", str(selected),
                                         "--coupled-result", str(result), "--analysis-config", str(cfg),
                                         "--analysis-result", str(tmp_path / "report.json")])
     with pytest.raises(SystemExit) as exc:

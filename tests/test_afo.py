@@ -10,9 +10,9 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from src.afo import load_afo_inputs, apply_afo_baseline, _feedlot_runoff_kg
-from src.bmp import _get_pathway_load_rates, _apply_pathway_reduction
-from src.plet_rusle import plet_annual_surface_runoff_in
+from basin_bmp_sim.science.afo import load_afo_inputs, apply_afo_baseline, _feedlot_runoff_kg
+from basin_bmp_sim.bmp.pathways.plet_pathway_efficiency import _get_pathway_load_rates, _apply_pathway_reduction
+from basin_bmp_sim.science.plet_rusle import plet_annual_surface_runoff_in
 
 
 def _parcels():

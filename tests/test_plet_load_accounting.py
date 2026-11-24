@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.constants import INCH_OVER_HA_TO_LITERS
-from src.plet_rusle import (
+from basin_bmp_sim.domain.constants import INCH_OVER_HA_TO_LITERS
+from basin_bmp_sim.science.plet_rusle import (
     calculate_plet_pathway_load_rates,
     plet_annual_infiltration_in,
     plet_annual_surface_runoff_in,

@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import run_model
-from src.constants import CFG_OUTPUTS, CFG_RANDOM_SEED, CFG_VERBOSE
+from basin_bmp_sim.execution import cli as run_model
+from basin_bmp_sim.domain.constants import CFG_OUTPUTS, CFG_RANDOM_SEED, CFG_VERBOSE
 
 
 class DummyLogger:
@@ -39,7 +39,7 @@ class DummyModel:
 
 
 def test_parse_args_parses_required_config(monkeypatch) -> None:
-    monkeypatch.setattr("sys.argv", ["run_model.py", "config.yaml"])
+    monkeypatch.setattr("sys.argv", ["basin-bmp-sim", "config.yaml"])
 
     args = run_model.parse_args()
 
@@ -53,7 +53,7 @@ def test_parse_args_parses_optional_overrides(monkeypatch) -> None:
     monkeypatch.setattr(
         "sys.argv",
         [
-            "run_model.py",
+            "basin-bmp-sim",
             "config.yaml",
             "--outputs",
             "custom_outputs",
@@ -72,7 +72,7 @@ def test_parse_args_parses_optional_overrides(monkeypatch) -> None:
 
 
 def test_parse_args_version_exits_cleanly(monkeypatch, capsys) -> None:
-    monkeypatch.setattr("sys.argv", ["run_model.py", "--version"])
+    monkeypatch.setattr("sys.argv", ["basin-bmp-sim", "--version"])
 
     with pytest.raises(SystemExit) as excinfo:
         run_model.parse_args()
@@ -83,7 +83,7 @@ def test_parse_args_version_exits_cleanly(monkeypatch, capsys) -> None:
 
 
 def test_main_prints_error_and_exits_on_missing_file(monkeypatch, capsys) -> None:
-    monkeypatch.setattr("sys.argv", ["run_model.py", "missing.yaml"])
+    monkeypatch.setattr("sys.argv", ["basin-bmp-sim", "missing.yaml"])
     monkeypatch.setattr(run_model, "read_config", lambda path: (_ for _ in ()).throw(FileNotFoundError("no such file")))
 
     with pytest.raises(SystemExit) as excinfo:
@@ -97,7 +97,7 @@ def test_main_prints_error_and_exits_on_missing_file(monkeypatch, capsys) -> Non
 def test_main_prints_error_and_exits_on_validation_failure(monkeypatch, capsys) -> None:
     cfg = {CFG_OUTPUTS: "outputs", CFG_VERBOSE: False}
 
-    monkeypatch.setattr("sys.argv", ["run_model.py", "bad.yaml"])
+    monkeypatch.setattr("sys.argv", ["basin-bmp-sim", "bad.yaml"])
     monkeypatch.setattr(run_model, "read_config", lambda path: {"raw": "cfg"})
     monkeypatch.setattr(run_model, "normalize_config", lambda raw: cfg)
     monkeypatch.setattr(run_model, "validate_config", lambda normalized: (_ for _ in ()).throw(ValueError("invalid config")))
@@ -174,7 +174,7 @@ def test_main_applies_cli_overrides_creates_outputs_and_runs_pipeline(tmp_path, 
     monkeypatch.setattr(
         "sys.argv",
         [
-            "run_model.py",
+            "basin-bmp-sim",
             str(tmp_path / "config.yaml"),
             "--outputs",
             str(override_outputs),
@@ -248,7 +248,7 @@ def test_main_passes_console_false_when_quiet(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         "sys.argv",
         [
-            "run_model.py",
+            "basin-bmp-sim",
             str(tmp_path / "config.yaml"),
             "--quiet",
         ],
@@ -291,7 +291,7 @@ def test_main_uses_config_verbose_flag_for_file_logging_not_quiet_flag(tmp_path,
     monkeypatch.setattr(
         "sys.argv",
         [
-            "run_model.py",
+            "basin-bmp-sim",
             str(tmp_path / "config.yaml"),
             "--quiet",
         ],
@@ -325,7 +325,7 @@ def test_main_without_cli_overrides_uses_config_values(tmp_path, monkeypatch) ->
     calls: dict[str, object] = {}
     logger = DummyLogger()
 
-    monkeypatch.setattr("sys.argv", ["run_model.py", str(tmp_path / "config.yaml")])
+    monkeypatch.setattr("sys.argv", ["basin-bmp-sim", str(tmp_path / "config.yaml")])
     monkeypatch.setattr(run_model, "read_config", lambda path: {"raw": "cfg"})
     monkeypatch.setattr(run_model, "normalize_config", lambda raw: dict(cfg))
     monkeypatch.setattr(run_model, "validate_config", lambda normalized: None)

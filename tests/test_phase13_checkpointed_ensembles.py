@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from src.driver.backend_selection import BackendSelection, run_backend_selection
-from src.driver import ensemble_checkpoints as checkpoint
+from basin_bmp_sim.execution.backend_selection import BackendSelection, run_backend_selection
+from basin_bmp_sim.execution import ensemble_checkpoints as checkpoint
 from test_phase12_backend_ensembles import _plugin, _selection
 from test_phase9_independent_bmi_initialization import _mocked_config_inputs
 

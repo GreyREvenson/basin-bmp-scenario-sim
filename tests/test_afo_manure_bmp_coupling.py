@@ -7,9 +7,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.afo import apply_afo_feedlot_manure_effect, load_afo_inputs, mass_afo_realization
-from src.bmp import _apply_pathway_reduction
-from src.model import _run_one_scenario
+from basin_bmp_sim.science.afo import apply_afo_feedlot_manure_effect, load_afo_inputs, mass_afo_realization
+from basin_bmp_sim.bmp.pathways.plet_pathway_efficiency import _apply_pathway_reduction
+from basin_bmp_sim.execution.monte_carlo_driver import _run_one_scenario
 from test_afo import _ctx, _parcels
 from test_afo_mass import _mass_package, _load
 from test_plet_end_to_end_regression import _config, _single_mass_afo_payload
@@ -115,7 +115,7 @@ def test_duplicate_effects_and_legacy_mode_rejected(tmp_path):
 def test_scenario_recovery_offsets_feedlot_removal_and_updates_budgets(
         tmp_path, monkeypatch, statistical):
     written = {}
-    monkeypatch.setattr('src.model._write_parquet_atomic',
+    monkeypatch.setattr('basin_bmp_sim.execution.monte_carlo_driver._write_parquet_atomic',
                         lambda df, path, logger: written.setdefault((path.parent.name, path.name), df.copy()))
     payload = _single_mass_afo_payload(statistical=statistical)
     payload['afo_inputs']['management'][0]['collection_fraction'] = 0.5
@@ -143,11 +143,11 @@ def test_scenario_recovery_offsets_feedlot_removal_and_updates_budgets(
 
 def test_recovery_field_load_is_delivered_from_receiver_not_host(tmp_path, monkeypatch):
     from shapely.geometry import box
-    from src.constants import (
+    from basin_bmp_sim.domain.constants import (
         COL_NDR_F_TO_S, COL_NDR_S_TO_O, COL_SDR_F_TO_S, COL_SDR_S_TO_O,
     )
     written = {}
-    monkeypatch.setattr('src.model._write_parquet_atomic',
+    monkeypatch.setattr('basin_bmp_sim.execution.monte_carlo_driver._write_parquet_atomic',
                         lambda df, path, logger: written.setdefault((path.parent.name, path.name), df.copy()))
     payload = _single_mass_afo_payload(statistical=True)
     payload['afo_inputs']['management'][0]['collection_fraction'] = 0.5

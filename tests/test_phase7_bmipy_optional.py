@@ -10,7 +10,7 @@ import pytest
 
 def test_adapters_cover_bmipy_abstract_method_names():
     bmipy = pytest.importorskip("bmipy", reason="install project[bmi] for BMI comparison")
-    from src.interfaces.bmi import (
+    from basin_bmp_sim.interfaces.bmi import (
         LiveScenarioGeneratorBmi, StochasticScenarioBmi,
         WatershedModelBmi, MonteCarloDriverBmi, ExternalWatershedModelBmi,
     )

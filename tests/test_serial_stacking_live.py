@@ -3,8 +3,8 @@ import logging
 import numpy as np
 import pandas as pd
 
-from src.model import Model
-from src.constants import (
+from basin_bmp_sim.execution.monte_carlo_driver import Model
+from basin_bmp_sim.domain.constants import (
     DATA_RANDOM_SEED,
     DATA_PARCELS,
     DATA_POLLUTANTS,

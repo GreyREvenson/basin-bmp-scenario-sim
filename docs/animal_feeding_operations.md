@@ -253,7 +253,7 @@ The two mass-based demos use distinct, purpose-specific GeoPackages; see
 [the example GeoPackage reference](afo_example_geopackage_reference.md). Run:
 
 ```bash
-python run_model.py examples/east_fork/inputs/config/east_fork_afo_demo.yaml
+basin-bmp-sim examples/east_fork/inputs/config/east_fork_afo_demo.yaml
 ```
 
 The demonstration assigns AFOs to example East Fork parcel IDs *solely to

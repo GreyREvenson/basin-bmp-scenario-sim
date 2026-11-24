@@ -5,11 +5,11 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from src.bmp import _get_bmp_selection_probs
-from src.constants import DATA_CPS, DATA_PARCELS
-import src.input_config as input_config
-from src.input_config import _build_parcel_down_map
-from src.model import Model
+from basin_bmp_sim.bmp.sampling.selection import _get_bmp_selection_probs
+from basin_bmp_sim.domain.constants import DATA_CPS, DATA_PARCELS
+import basin_bmp_sim.config.loading as input_config
+from basin_bmp_sim.config.loading import _build_parcel_down_map
+from basin_bmp_sim.execution.monte_carlo_driver import Model
 
 
 class DummyLogger:
@@ -119,7 +119,7 @@ def test_prepare_lookup_tables_rejects_duplicate_parcel_ids() -> None:
 
 
 def test_config_rejects_legacy_per_file_parcel_and_outlet_keys() -> None:
-    from src.input_validation import validate_config
+    from basin_bmp_sim.config.validation import validate_config
 
     cfg = {
         "n_scenarios": 1,
@@ -133,7 +133,7 @@ def test_config_rejects_legacy_per_file_parcel_and_outlet_keys() -> None:
 
 
 def test_config_rejects_legacy_plet_file_keys() -> None:
-    from src.input_validation import validate_config
+    from basin_bmp_sim.config.validation import validate_config
 
     cfg = {
         "n_scenarios": 1,

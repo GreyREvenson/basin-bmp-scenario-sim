@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from src.input_validation import validate_stats_rows
+from basin_bmp_sim.config.validation import validate_stats_rows
 from utils import create_plet_vary_inputs as utility
 
 
@@ -132,12 +132,12 @@ def test_synthetic_inputs_are_copied_and_use_valid_distributions(tmp_path: Path)
     assert summary["huc12s"]["input_avg_rain_in"] == 1
     assert summary["huc12s"]["input_rusle_r"] == 4
 
-    for src, dst, spatial in (
+    for basin_bmp_sim, dst, spatial in (
         (parcel_source, parcels, "parcels"),
         (huc_source, hucs, "huc12"),
     ):
-        assert _sql(src, f'SELECT COUNT(*) FROM "{spatial}"') == _sql(dst, f'SELECT COUNT(*) FROM "{spatial}"')
-        with sqlite3.connect(src) as con_src, sqlite3.connect(dst) as con_dst:
+        assert _sql(basin_bmp_sim, f'SELECT COUNT(*) FROM "{spatial}"') == _sql(dst, f'SELECT COUNT(*) FROM "{spatial}"')
+        with sqlite3.connect(basin_bmp_sim) as con_src, sqlite3.connect(dst) as con_dst:
             tables_src = {x[0] for x in con_src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             tables_dst = {x[0] for x in con_dst.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             assert tables_src == tables_dst
@@ -166,7 +166,7 @@ def test_synthetic_inputs_are_copied_and_use_valid_distributions(tmp_path: Path)
     assert groups == [("123456789001", 1)]
 
     # Distinct outcomes are produced by the actual shared sampler.
-    from src import sampling
+    from basin_bmp_sim.scenarios import sampling
     import numpy as np
     class SampleCtx:
         rng = np.random.default_rng(7)

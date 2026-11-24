@@ -5,11 +5,11 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from src.model import (
+from basin_bmp_sim.execution.monte_carlo_driver import (
     _add_mass_metrics_to_bmp_record,
     _baseline_mass_before_bmp_kg,
 )
-from src.summaries import BMPSummaryCollector
+from basin_bmp_sim.results.bmp_summary import BMPSummaryCollector
 
 
 def test_wetland_baseline_mass_includes_all_impacted_hydrologic_parcels() -> None:

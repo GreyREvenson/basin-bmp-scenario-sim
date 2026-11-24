@@ -4,7 +4,7 @@
 
 This phase introduces a **file-configured, importable external scientific backend**
 (`reference_backend.annual_linear:make_backend`) and a **public-BMI-method
-acceptance probe** (`src.interfaces.bmi.acceptance`). It exercises the already
+acceptance probe** (`basin_bmp_sim.certification.acceptance`). It exercises the already
 published Phase 10–13 external backend path without importing any private
 PLET/RUSLE, AFO, Monte Carlo driver, or scenario-generator context into the
 reference scientific backend. It does **not** alter scientific methods,
@@ -77,7 +77,7 @@ contract check before any BMP executes.
 ## Runnable black-box acceptance check
 
 ```bash
-python -m src.interfaces.bmi.acceptance \
+python -m basin_bmp_sim.certification.acceptance \
     external_selection.json outputs/bmi_acceptance.json
 ```
 

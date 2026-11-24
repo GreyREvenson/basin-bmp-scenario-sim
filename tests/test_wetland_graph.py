@@ -8,15 +8,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     OUTPUT_CATCHMENT_RATIO,
     OUTPUT_IMPACTED_PIDS,
     OUTPUT_REMOVED,
     OUTPUT_TREATED,
 )
-from src.input_config import _build_parcel_down_map
-from src.model import _ScenarioContext
-from src.parcel_graph import iter_full_upstream_by_distance
+from basin_bmp_sim.config.loading import _build_parcel_down_map
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.domain.parcel_graph import iter_full_upstream_by_distance
 from test_hydrologic_parcel_universe import _model_with_nonselectable_upstream_parcels
 
 

@@ -10,9 +10,11 @@ import pandas as pd
 import pytest
 from shapely.geometry import box, mapping
 
-from src import input_config, sampling
-from src.logging_utils import make_logger
-from src.plet_rusle import _sample_parameter_table
+from basin_bmp_sim.config import loading as input_config
+
+from basin_bmp_sim.scenarios import sampling
+from basin_bmp_sim.common.logging import make_logger
+from basin_bmp_sim.science.plet_rusle import _sample_parameter_table
 from utils import download_wbd_huc12 as wbd
 from utils.create_parcel_huc12 import assign_parcels_to_huc12, write_parcel_huc12
 

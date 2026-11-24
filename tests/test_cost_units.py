@@ -1,8 +1,8 @@
 import math
 import pandas as pd
 
-from src.cost import _get_bmp_cost, _estimate_costs_for_probabilities
-from src.constants import (
+from basin_bmp_sim.scenarios.costs import _get_bmp_cost, _estimate_costs_for_probabilities
+from basin_bmp_sim.domain.constants import (
     COL_CPS,
     COL_COST_COMPONENT,
     COL_PROBABILITY,
@@ -58,7 +58,7 @@ class DummyModel:
         raise AssertionError(f"Unexpected stats for deterministic test: {stats}")
 
     def _select_cost_rate_median(self, row, cps=None):
-        from src.cost import _select_cost_rate_median
+        from basin_bmp_sim.scenarios.costs import _select_cost_rate_median
         return _select_cost_rate_median(self, row, cps=cps)
 
 

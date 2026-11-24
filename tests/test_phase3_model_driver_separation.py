@@ -7,9 +7,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.driver.monte_carlo_driver import _ScenarioContext
-from src.models.assemblies.annual_model_realization import AnnualModelRealization
-from src.scenarios.stochastic_scenario_generator import StochasticScenarioGenerator
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.science.assemblies.annual_model_realization import AnnualModelRealization
+from basin_bmp_sim.scenarios.generator import StochasticScenarioGenerator
 from test_phase2_scenario_generation import _case
 
 

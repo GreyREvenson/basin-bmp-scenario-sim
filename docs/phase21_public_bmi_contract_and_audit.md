@@ -7,9 +7,9 @@ annual-model coupling API. It does **not** change the stochastic simulation,
 scientific formulations, RNG order, scenario definitions, checkpoint files,
 or the Phase 14–18 decision-support reports.
 
-The executable public contract is `src/interfaces/bmi/public_contract.py`,
+The executable public contract is `basin_bmp_sim/interfaces/bmi/public_contract.py`,
 with a deliberately frozen JSON snapshot at
-`src/interfaces/bmi/public_contract_v1.json`. The snapshot is included in the
+`basin_bmp_sim/interfaces/bmi/public_contract_v1.json`. The snapshot is included in the
 installed Python package. It records, in declared order, the published BMI
 variable names, intent, data type, units, rank, resizable-input designation,
 CSDMS BMI 2.0 method names, and the separately versioned local protocol.
@@ -33,13 +33,13 @@ From the repository root:
 
 ```bash
 # Verify the published API still matches the frozen v1 contract.
-python -m src.interfaces.bmi.public_contract
+python -m basin_bmp_sim.interfaces.bmi.public_contract
 
 # Inspect the current public contract, with variable order and units.
-python -m src.interfaces.bmi.public_contract --show
+python -m basin_bmp_sim.interfaces.bmi.public_contract --show
 
 # Test a complete independent backend through the public interface.
-python -m src.interfaces.bmi.acceptance backend_selection.json acceptance_report.json
+python -m basin_bmp_sim.certification.acceptance backend_selection.json acceptance_report.json
 
 # Run the contract and interoperability regression tests.
 python -m pytest tests/test_phase21_bmi_public_contract.py tests/test_phase19_public_interoperability.py

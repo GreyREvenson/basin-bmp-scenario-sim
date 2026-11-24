@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     CFG_BMP_COST,
     CFG_BMP_FAIL_RATE,
     CFG_BMP_FAIL_REDUCTION,
@@ -25,7 +25,7 @@ from src.constants import (
     INCH_OVER_HA_TO_LITERS,
     TON_PER_ACRE_TO_KG_PER_HA,
 )
-from src.model import _run_one_scenario
+from basin_bmp_sim.execution.monte_carlo_driver import _run_one_scenario
 
 
 def _fixed_plet_tables() -> tuple[
@@ -190,7 +190,7 @@ def test_deterministic_plet_scenario_matches_golden_reference(
         del logger
         written[(path.parent.name, path.name)] = df.copy()
 
-    monkeypatch.setattr("src.model._write_parquet_atomic", capture_parquet)
+    monkeypatch.setattr("basin_bmp_sim.execution.monte_carlo_driver._write_parquet_atomic", capture_parquet)
 
     records = _run_one_scenario(
         _shared_payload(),
@@ -338,7 +338,7 @@ def test_afo_integrated_scenario_keeps_feedlot_and_field_bmps_separate(
     def capture(frame: pd.DataFrame, path: Path, *, logger):
         written[(path.parent.name, path.name)] = frame.copy()
 
-    monkeypatch.setattr("src.model._write_parquet_atomic", capture)
+    monkeypatch.setattr("basin_bmp_sim.execution.monte_carlo_driver._write_parquet_atomic", capture)
     _run_one_scenario(base, _config(tmp_path / "afo"), sidx=0, seed=123, outputs_dir=tmp_path / "afo")
 
     allocations = written[("afo_manure_assignments", "s1.parquet")]
@@ -369,7 +369,7 @@ def test_afo_integrated_scenario_keeps_feedlot_and_field_bmps_separate(
 
 def _single_mass_afo_payload(*, statistical: bool) -> dict:
     from shapely.geometry import box
-    from src.afo import reference_excretion_factors
+    from basin_bmp_sim.science.afo import reference_excretion_factors
     payload = _shared_payload()
     payload["afo_inputs"] = {
         "method": "mass_based",
@@ -404,7 +404,7 @@ def _single_mass_afo_payload(*, statistical: bool) -> dict:
 def test_mass_based_integrated_baseline_bmp_and_outputs(tmp_path, monkeypatch, statistical):
     """Both modes conserve nutrient masses and omit wet-manure accounting."""
     written = {}
-    monkeypatch.setattr("src.model._write_parquet_atomic",
+    monkeypatch.setattr("basin_bmp_sim.execution.monte_carlo_driver._write_parquet_atomic",
                         lambda df, path, logger: written.setdefault((path.parent.name, path.name), df.copy()))
     payload = _single_mass_afo_payload(statistical=statistical)
     _run_one_scenario(payload, _config(tmp_path), sidx=0, seed=1234, outputs_dir=tmp_path)
@@ -440,7 +440,7 @@ def test_merge_accounting_includes_induced_manure_receiving_parcels():
     """Feedlot treatment and manure transfer use their own outlet memberships."""
     from collections import defaultdict
     from types import SimpleNamespace
-    from src.model import (
+    from basin_bmp_sim.execution.monte_carlo_driver import (
         _accumulate_delivered_bmp_reductions,
         _removed_mass_by_parcel_kg,
     )
@@ -475,7 +475,7 @@ def test_merge_wetland_reductions_use_upstream_parcel_delivery_factors():
     """An upstream wetland change cannot be delivered using host-only factors."""
     from collections import defaultdict
     from types import SimpleNamespace
-    from src.model import (
+    from basin_bmp_sim.execution.monte_carlo_driver import (
         _accumulate_delivered_bmp_reductions,
         _removed_mass_by_parcel_kg,
     )

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     CFG_BMP_COST,
     COL_MEAN,
     COL_OID,
@@ -19,7 +19,7 @@ from src.constants import (
     YAXIS_TARGET,
     YAXIS_TOTAL,
 )
-from src.plotting import _build_line_segments, make_summary_plots
+from basin_bmp_sim.results.plotting import _build_line_segments, make_summary_plots
 
 
 class DummyLogger:

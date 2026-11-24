@@ -6,16 +6,16 @@ import logging
 import numpy as np
 import pytest
 
-from src.driver.bmi_coupling import (
+from basin_bmp_sim.execution.bmi_coupling import (
     AnnualBmiScenarioCoupler, get_bmi_value, transfer_bmi_value,
     validate_annual_model_bmi,
 )
-from src.driver.monte_carlo_driver import _ScenarioContext
-from src.interfaces.annual_model_contract import (
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.interfaces.annual_model_contract import (
     AnnualBMPPlacement, AnnualLoadSnapshot, AnnualModelDomain,
 )
-from src.interfaces.bmi import ExternalWatershedModelBmi, LiveScenarioGeneratorBmi
-from src.interfaces.placement_exchange import PLACEMENT_FIELDS
+from basin_bmp_sim.interfaces.bmi import ExternalWatershedModelBmi, LiveScenarioGeneratorBmi
+from basin_bmp_sim.interfaces.placement_exchange import PLACEMENT_FIELDS
 from test_phase2_scenario_generation import _case
 from test_phase9_independent_bmi_initialization import _mocked_config_inputs
 

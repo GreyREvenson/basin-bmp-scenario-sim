@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from src.logging_utils import VERBOSE_LEVEL_NUM, make_logger
+from basin_bmp_sim.common.logging import VERBOSE_LEVEL_NUM, make_logger
 
 
 def test_make_logger_without_console_attaches_only_file_handler(tmp_path) -> None:

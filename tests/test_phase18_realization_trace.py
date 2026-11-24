@@ -7,10 +7,10 @@ import sys
 
 import pytest
 
-import run_model
-from src.driver.backend_selection import run_backend_selection
-from src.driver.input_sensitivity import write_input_sensitivity
-from src.driver.realization_trace import (
+from basin_bmp_sim.execution import cli as run_model
+from basin_bmp_sim.execution.backend_selection import run_backend_selection
+from basin_bmp_sim.analysis.input_sensitivity import write_input_sensitivity
+from basin_bmp_sim.analysis.realization_trace import (
     extract_realization_trace, write_realization_trace,
 )
 from test_phase12_backend_ensembles import _selection
@@ -88,7 +88,7 @@ def test_cli_opt_in_writes_sidecars_without_changing_ensemble(monkeypatch, tmp_p
     selection, original = _ensemble(monkeypatch, tmp_path, n=3)
     copied = tmp_path / "cli_ensemble.json"
     trace, ledger = tmp_path / "cli_trace.json", tmp_path / "cli_ledger.json"
-    monkeypatch.setattr(sys, "argv", ["run_model.py", "--backend-selection", str(selection),
+    monkeypatch.setattr(sys, "argv", ["basin-bmp-sim", "--backend-selection", str(selection),
                  "--coupled-result", str(copied), "--input-trace-result", str(trace),
                  "--input-ledger-result", str(ledger)])
     run_model.main()

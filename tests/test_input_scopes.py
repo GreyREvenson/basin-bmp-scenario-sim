@@ -10,16 +10,18 @@ import pandas as pd
 import pytest
 from shapely.geometry import Point, box
 
-from src import input_config, sampling
-from src.input_scopes import (
+from basin_bmp_sim.config import loading as input_config
+
+from basin_bmp_sim.scenarios import sampling
+from basin_bmp_sim.config.scopes import (
     assign_parcels_to_hucs,
     load_scoped_input_tables,
     normalize_huc_id,
     validate_huc_polygons,
 )
-from src.input_validation import validate_config
-from src.model import Model
-from src.plet_rusle import _sample_parameter_table, _sample_plet_hydrology
+from basin_bmp_sim.config.validation import validate_config
+from basin_bmp_sim.execution.monte_carlo_driver import Model
+from basin_bmp_sim.science.plet_rusle import _sample_parameter_table, _sample_plet_hydrology
 from utils.create_parcel_huc import write_parcel_huc
 
 
@@ -429,7 +431,7 @@ def write_registered_domain_inputs(path):
     Registering the tables as GeoPackage attributes verifies their physical
     format without depending on shipped project data.
     """
-    from src.input_schema import INPUT_VARIABLE_SPECS
+    from basin_bmp_sim.config.schema import INPUT_VARIABLE_SPECS
 
     rows_by_table = {
         "input_hsg": [{"value": "B", "units": "classification"}],
@@ -475,7 +477,7 @@ def write_registered_domain_inputs(path):
 
 def test_synthetic_domain_tables_follow_registry_and_geopackage_format(inputs):
     """Generated domain tables use the registered model schema and GPKG format."""
-    from src.input_schema import INPUT_VARIABLE_SPECS
+    from basin_bmp_sim.config.schema import INPUT_VARIABLE_SPECS
 
     _, paths, _, _ = inputs
     expected_tables = write_registered_domain_inputs(paths["domain"])

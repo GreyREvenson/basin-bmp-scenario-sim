@@ -19,16 +19,16 @@ remains a separate optional check.
 
 ## New modules
 
-- `src/interfaces/annual_model_contract.py`: immutable, validated physical
+- `basin_bmp_sim/interfaces/annual_model_contract.py`: immutable, validated physical
   `AnnualModelDomain`, annual `AnnualLoadSnapshot`, generic
   `AnnualBMPPlacement` (constructed only from numeric BMI input arrays), and
   `AnnualWatershedBackend` Python protocol. **No project-specific science
   modules are imported** by this contract.
-- `src/interfaces/bmi/external_watershed_model_bmi.py`:
+- `basin_bmp_sim/interfaces/bmi/external_watershed_model_bmi.py`:
   `ExternalWatershedModelBmi(domain, backend, rng)` wraps any implementation
   of the backend protocol and exposes the exact existing `MODEL_VARIABLES`
   BMI interface. No native scenario/model context is required.
-- `src/driver/bmi_coupling.py`:
+- `basin_bmp_sim/driver/bmi_coupling.py`:
   `AnnualBmiScenarioCoupler.from_components(...)` accepts separate generator
   and model BMI instances. `validate_annual_model_bmi` checks all variable
   names, directions, units, dtypes, grid ranks, finite flattened load
@@ -113,8 +113,8 @@ versioned contract extension, not ad-hoc Python metadata exchange.
 
 ```python
 import numpy as np
-from src.driver.bmi_coupling import AnnualBmiScenarioCoupler
-from src.interfaces.bmi import ExternalWatershedModelBmi, LiveScenarioGeneratorBmi
+from basin_bmp_sim.execution.bmi_coupling import AnnualBmiScenarioCoupler
+from basin_bmp_sim.interfaces.bmi import ExternalWatershedModelBmi, LiveScenarioGeneratorBmi
 
 # `domain` is a validated AnnualModelDomain supplied by the new model;
 # `backend` implements AnnualWatershedBackend with its own scientific rules.

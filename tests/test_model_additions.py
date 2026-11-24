@@ -5,18 +5,18 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     CFG_DETERMINISTIC_BMP_TYPE_ORDER,
     CFG_DETERMINISTIC_PARCEL_ORDER,
     OUTPUT_IMPACTED_PIDS,
 )
-from src.model import (
+from basin_bmp_sim.execution.monte_carlo_driver import (
     _add_mass_metrics_to_bmp_record,
     _baseline_mass_before_bmp_kg,
     _bmp_impacted_parcel_indices,
     _next_deterministic_bmp_type,
 )
-from src.parcel import _sample_parcel_index
+from basin_bmp_sim.domain.parcel import _sample_parcel_index
 
 
 def test_bmp_impacted_parcel_indices_defaults_to_focal_parcel_when_field_missing() -> None:

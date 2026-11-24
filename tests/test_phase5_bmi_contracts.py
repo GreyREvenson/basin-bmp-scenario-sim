@@ -8,13 +8,13 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from src.constants import DATA_N_SCENARIOS, XAXIS_COUNT, YAXIS_TOTAL
-from src.driver.monte_carlo_driver import _ScenarioContext, _run_one_scenario
-from src.interfaces.bmi import (
+from basin_bmp_sim.domain.constants import DATA_N_SCENARIOS, XAXIS_COUNT, YAXIS_TOTAL
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext, _run_one_scenario
+from basin_bmp_sim.interfaces.bmi import (
     MonteCarloDriverBmi, StochasticScenarioBmi, LiveScenarioGeneratorBmi, WatershedModelBmi,
 )
-from src.interfaces.exchange_variables import scenario_arrays
-from src.scenarios.stochastic_scenario_generator import BMPScenario, StochasticScenarioGenerator
+from basin_bmp_sim.interfaces.exchange_variables import scenario_arrays
+from basin_bmp_sim.scenarios.generator import BMPScenario, StochasticScenarioGenerator
 from test_phase2_scenario_generation import _case, _capture
 
 
@@ -140,7 +140,7 @@ def test_watershed_bmi_uses_existing_scientific_kernels(tmp_path, case):
 
 
 def test_driver_bmi_reproduces_native_worker_trajectory(tmp_path, monkeypatch):
-    from src.driver import monte_carlo_driver as module
+    from basin_bmp_sim.execution import monte_carlo_driver as module
     payload, cfg, _ = _case("mixed_budget", tmp_path / "driver")
     written = {}
 
@@ -176,7 +176,7 @@ def test_driver_bmi_reproduces_native_worker_trajectory(tmp_path, monkeypatch):
     replay1 = BMPScenario.load(tmp_path / "driver" / "scenario_definitions" / "s1.json")
     replay2 = BMPScenario.load(tmp_path / "direct" / "scenario_definitions" / "s1.json")
     assert replay1 == replay2
-    monkeypatch.setattr("src.driver.results.trajectory_output_manager.collect_and_write_trajectories", lambda *a, **kw: {})
+    monkeypatch.setattr("basin_bmp_sim.results.trajectory_output_manager.collect_and_write_trajectories", lambda *a, **kw: {})
     bmi.finalize()
 
 
@@ -199,7 +199,7 @@ def test_bmi_rejects_invalid_writes_and_unknown_variables(tmp_path, monkeypatch)
 @pytest.mark.parametrize("case", ["mixed_budget", "statistical_multi", "afo_recovery"])
 def test_live_generator_bmi_matches_native_rng_and_scientific_response(tmp_path, case):
     """The two adapters retain the exact interleaved generator/model RNG order."""
-    from src.models.assemblies.annual_model_realization import AnnualModelRealization
+    from basin_bmp_sim.science.assemblies.annual_model_realization import AnnualModelRealization
     payload, cfg, seed = _case(case, tmp_path)
     logger = logging.getLogger("p5.live." + case)
 

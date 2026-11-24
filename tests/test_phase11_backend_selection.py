@@ -9,15 +9,15 @@ from types import ModuleType
 import numpy as np
 import pytest
 
-import run_model
-from src.driver.backend_selection import (
+from basin_bmp_sim.execution import cli as run_model
+from basin_bmp_sim.execution.backend_selection import (
     BackendSelection, build_selected_coupler, run_backend_selection,
 )
-from src.driver.monte_carlo_driver import _ScenarioContext
-from src.interfaces.backend_capabilities import (
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.interfaces.backend_capabilities import (
     AnnualBackendCapabilities, ExternalBackendBundle,
 )
-from src.interfaces.component_bootstrap import ComponentStartup
+from basin_bmp_sim.interfaces.component_bootstrap import ComponentStartup
 from test_phase10_model_neutral_exchange import IndependentToyBackend, _domain
 from test_phase9_independent_bmi_initialization import _mocked_config_inputs
 
@@ -175,17 +175,17 @@ def test_legacy_cli_kept_and_selection_route_explicit(monkeypatch, tmp_path):
         selection=selection, output=output))
     path = tmp_path / "selection.json"
     dest = tmp_path / "coupled.json"
-    monkeypatch.setattr(sys, "argv", ["run_model.py", "--backend-selection", str(path),
+    monkeypatch.setattr(sys, "argv", ["basin-bmp-sim", "--backend-selection", str(path),
                                         "--coupled-result", str(dest)])
     run_model.main()
     assert captured == {"selection": path, "output": dest}
-    monkeypatch.setattr(sys, "argv", ["run_model.py", "config.yaml",
+    monkeypatch.setattr(sys, "argv", ["basin-bmp-sim", "config.yaml",
                                         "--backend-selection", str(path),
                                         "--coupled-result", str(dest)])
     with pytest.raises(SystemExit) as exc:
         run_model.main()
     assert exc.value.code == 1
-    monkeypatch.setattr(sys, "argv", ["run_model.py", "--backend-selection", str(path)])
+    monkeypatch.setattr(sys, "argv", ["basin-bmp-sim", "--backend-selection", str(path)])
     with pytest.raises(SystemExit) as exc:
         run_model.main()
     assert exc.value.code == 1
@@ -198,7 +198,7 @@ def test_external_selection_is_reproducible_and_cli_executes_it(monkeypatch, tmp
     first = tmp_path / "first.json"
     second = tmp_path / "second.json"
     run_backend_selection(selection, first)
-    monkeypatch.setattr(sys, "argv", ["run_model.py", "--backend-selection", str(selection),
+    monkeypatch.setattr(sys, "argv", ["basin-bmp-sim", "--backend-selection", str(selection),
                                         "--coupled-result", str(second)])
     run_model.main()
     assert first.read_bytes() == second.read_bytes()

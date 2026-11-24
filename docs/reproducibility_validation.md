@@ -10,7 +10,7 @@ Set a base seed in YAML:
 
 or override it on the command line:
 
-    python run_model.py config.yaml --seed 12345
+    basin-bmp-sim config.yaml --seed 12345
 
 The model uses the base seed to create scenario-specific child seeds. Repeating a run with the same code, input files, configuration, seed, and compatible software environment should reproduce the stochastic sequence used by the scenario simulation.
 
@@ -39,7 +39,7 @@ Parallel execution should not be treated as a substitute for recording the seed 
 
 The runner currently has no `--validate-only` option. A normal run starts with input validation:
 
-    python run_model.py config.yaml
+    basin-bmp-sim config.yaml
 
 This validates the configuration, GeoPackages, distributions,
 physical domains, foreign keys, and coverage before any scenarios begin. When

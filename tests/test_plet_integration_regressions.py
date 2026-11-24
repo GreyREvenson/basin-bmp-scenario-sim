@@ -8,10 +8,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.constants import OUTPUT_IMPACTED_PIDS
-from src.input_config import _build_parcel_down_map
-from src.input_validation import validate_plet_runtime_inputs
-from src.model import _bmp_impacted_parcel_indices
+from basin_bmp_sim.domain.constants import OUTPUT_IMPACTED_PIDS
+from basin_bmp_sim.config.loading import _build_parcel_down_map
+from basin_bmp_sim.config.validation import validate_plet_runtime_inputs
+from basin_bmp_sim.execution.monte_carlo_driver import _bmp_impacted_parcel_indices
 
 
 def test_normalized_downstream_edges_are_all_resolved() -> None:
@@ -60,7 +60,7 @@ def test_wetland_baseline_mass_inputs_can_preserve_originating_parcels() -> None
 
 def _patch_loader_preamble(monkeypatch) -> None:
     """Bypass unrelated file I/O so load-generation config errors are isolated."""
-    import src.input_config as input_config
+    import basin_bmp_sim.config.loading as input_config
 
     monkeypatch.setattr(input_config, "normalize_config", lambda cfg: cfg)
     monkeypatch.setattr(input_config, "validate_config", lambda cfg: None)
@@ -107,7 +107,7 @@ def test_removed_pathway_mode_key_is_rejected(monkeypatch) -> None:
 
     import pytest
 
-    from src.input_config import load_and_validate_all
+    from basin_bmp_sim.config.loading import load_and_validate_all
 
     _patch_loader_preamble(monkeypatch)
     cfg = {
@@ -127,7 +127,7 @@ def test_unknown_load_generation_mode_is_rejected(monkeypatch) -> None:
 
     import pytest
 
-    from src.input_config import load_and_validate_all
+    from basin_bmp_sim.config.loading import load_and_validate_all
 
     _patch_loader_preamble(monkeypatch)
     cfg = {"load_generation": {"mode": "plet_rusel"}}

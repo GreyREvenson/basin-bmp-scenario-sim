@@ -6,15 +6,15 @@ import logging
 import numpy as np
 import pytest
 
-from src.driver.bmi_coupling import AnnualBmiScenarioCoupler, get_bmi_value
-from src.driver.monte_carlo_driver import _ScenarioContext
-from src.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
-from src.interfaces.domain_exchange import (
+from basin_bmp_sim.execution.bmi_coupling import AnnualBmiScenarioCoupler, get_bmi_value
+from basin_bmp_sim.execution.monte_carlo_driver import _ScenarioContext
+from basin_bmp_sim.interfaces.bmi.watershed_model_bmi import WatershedModelBmi
+from basin_bmp_sim.interfaces.domain_exchange import (
     DOMAIN_FIELDS, export_placement_domain, install_placement_domain,
     validate_placement_domain,
 )
-from src.interfaces.rng_exchange import encode_rng_state, restore_rng_state
-from src.interfaces.exchange_variables import EXCHANGE_SCHEMA_VERSION
+from basin_bmp_sim.interfaces.rng_exchange import encode_rng_state, restore_rng_state
+from basin_bmp_sim.interfaces.exchange_variables import EXCHANGE_SCHEMA_VERSION
 from test_phase2_scenario_generation import _case, _capture
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.interfaces.bmi import local_certification as local
+from basin_bmp_sim.certification import local_certification as local
 from test_phase24_release_readiness import _acceptance, _identity, _portability
 
 

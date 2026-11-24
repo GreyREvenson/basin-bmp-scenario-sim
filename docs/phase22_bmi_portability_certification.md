@@ -8,7 +8,7 @@ stochastic generator, random-number sequence, backend-selection schema,
 checkpoint format, or native Parquet output path. The previous public BMI v1
 contract and all exchange variable names remain unchanged.
 
-The new tool, `src.interfaces.bmi.portability`, checks three conditions:
+The new tool, `basin_bmp_sim.certification.portability`, checks three conditions:
 
 1. The frozen Phase 21 project contract is still present and unchanged.
 2. All five bundled BMI adapters satisfy the abstract-method requirements of
@@ -42,7 +42,7 @@ may be native or external, and may be single-scenario or ensemble: the
 certification gate creates its own two-realization test schedule.
 
 ```bash
-python -m src.interfaces.bmi.portability \
+python -m basin_bmp_sim.certification.portability \
     path/to/backend_selection.json \
     outputs/bmi_portability_report.json \
     --n-scenarios 2 --n-jobs 2

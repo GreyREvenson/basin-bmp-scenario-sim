@@ -117,7 +117,7 @@ mass targets and optional total implementation budget to each strategy.
 Run:
 
 ```bash
-python -m src.driver.strategy_uncertainty \
+python -m basin_bmp_sim.analysis.strategy_uncertainty \
     strategies.json \
     decision_support.json \
     uncertainty.json \

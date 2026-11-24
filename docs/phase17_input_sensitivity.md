@@ -153,7 +153,7 @@ multiplicity adjustment is attempted.
 ## 4. Run the optional analysis
 
 ```bash
-python -m src.driver.input_sensitivity \
+python -m basin_bmp_sim.analysis.input_sensitivity \
     outputs/ensemble.json \
     input_trace.json \
     decision_support.json \

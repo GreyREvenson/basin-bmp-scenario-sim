@@ -8,8 +8,8 @@ import pandas as pd
 import pytest
 from shapely.geometry import Point, box
 
-from src import input_config
-from src.input_config import (
+from basin_bmp_sim.config import loading as input_config
+from basin_bmp_sim.config.loading import (
     _ensure_projected,
     _load_cps,
     _load_plet_hydrology_lookup,
@@ -18,7 +18,7 @@ from src.input_config import (
     _plet_parameter_defaults,
     _validate_input_package_schema,
 )
-from src.io_utils import MissingInputTableError, read_geopackage_table, read_geopackage_table_info
+from basin_bmp_sim.common.io import MissingInputTableError, read_geopackage_table, read_geopackage_table_info
 
 
 class Logger:
@@ -172,7 +172,7 @@ def test_clipped_structural_relationships_are_filtered_but_true_unknown_ids_erro
 
 
 def test_validate_config_rejects_unknown_keys() -> None:
-    from src.input_validation import validate_config
+    from basin_bmp_sim.config.validation import validate_config
 
     cfg = input_config.normalize_config({"n_scenarios": 1, "mdoe": "plet_rusle"})
     with pytest.raises(ValueError, match="Unknown configuration key.*mdoe"):
@@ -180,7 +180,7 @@ def test_validate_config_rejects_unknown_keys() -> None:
 
 
 def test_validate_config_rejects_unknown_load_generation_keys() -> None:
-    from src.input_validation import validate_config
+    from basin_bmp_sim.config.validation import validate_config
 
     cfg = input_config.normalize_config(
         {"n_scenarios": 1, "load_generation": {"mode": "plet_rusle", "mdoe": "x"}}
@@ -268,7 +268,7 @@ def test_gpkg_reader_accepts_legacy_registry_wildcard_field(monkeypatch, tmp_pat
 
 def test_plet_validation_applies_null_classification_defaults_to_integer_pids() -> None:
     """Schema-v3 NULL defaults must satisfy classifications for every integer parcel."""
-    from src.input_validation import validate_plet_input_table
+    from basin_bmp_sim.config.validation import validate_plet_input_table
 
     table = pd.DataFrame(
         [
@@ -285,7 +285,7 @@ def test_plet_validation_applies_null_classification_defaults_to_integer_pids() 
 
 def test_plet_concentration_sampling_applies_null_defaults_to_integer_pids() -> None:
     """Runtime concentration sampling must honor schema-v3 NULL parcel defaults."""
-    from src.plet_rusle import _sample_concentrations
+    from basin_bmp_sim.science.plet_rusle import _sample_concentrations
 
     class FixedContext:
         @staticmethod

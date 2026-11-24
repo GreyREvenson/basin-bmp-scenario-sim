@@ -209,9 +209,9 @@ def _create_temp(source: Path, destination: Path, *, location: str) -> tuple[Pat
     os.close(fd)
     temp = Path(temp_name)
     try:
-        with closing(sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True)) as src:
+        with closing(sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True)) as basin_bmp_sim:
             with closing(sqlite3.connect(temp)) as out:
-                src.backup(out)
+                basin_bmp_sim.backup(out)
                 with out:
                     changed = _populate(out, location)
                 integrity = out.execute("PRAGMA quick_check").fetchone()[0]

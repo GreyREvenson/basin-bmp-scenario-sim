@@ -12,7 +12,7 @@ scenario:
   annual watershed backend, a validated domain, and a declaration of
   scientific capabilities. The generic `ExternalWatershedModelBmi` wraps it.
 
-The *existing* `python run_model.py config.yaml` CLI continues to use the
+The *existing* `basin-bmp-sim config.yaml` CLI continues to use the
 native Monte Carlo driver and writes its original Parquet results, diagnostic
 files and plots. Phase 11 adds `--backend-selection` and `--coupled-result` to
 that same CLI; this optional mode writes a **separate model-neutral JSON
@@ -70,13 +70,13 @@ For native BMI execution, instead specify:
 Run either configuration using:
 
 ```bash
-python run_model.py --backend-selection annual_backend.json --coupled-result outputs/one_scenario.json
+basin-bmp-sim --backend-selection annual_backend.json --coupled-result outputs/one_scenario.json
 ```
 
 The old CLI remains:
 
 ```bash
-python run_model.py model.yaml
+basin-bmp-sim model.yaml
 ```
 
 `--backend-selection` is deliberately incompatible with passing a native
@@ -92,7 +92,7 @@ There is no plugin sandbox or model-certification service.
 
 ```python
 import numpy as np
-from src.interfaces.backend_capabilities import (
+from basin_bmp_sim.interfaces.backend_capabilities import (
     AnnualBackendCapabilities, ExternalBackendBundle,
 )
 

@@ -74,7 +74,7 @@ assuming zero cost.
 ### Analyze an ensemble already on disk (no model rerun)
 
 ```bash
-python -m src.driver.ensemble_analysis outputs/ensemble.json decision_support.json outputs/decision_support.json
+python -m basin_bmp_sim.analysis.ensemble_analysis outputs/ensemble.json decision_support.json outputs/decision_support.json
 ```
 
 ### Generate an ensemble and analysis together
@@ -82,7 +82,7 @@ python -m src.driver.ensemble_analysis outputs/ensemble.json decision_support.js
 With an existing Phase 12/13 `--backend-selection` (schema v2/v3):
 
 ```bash
-python run_model.py \
+basin-bmp-sim \
   --backend-selection ensemble_selection.json \
   --coupled-result outputs/ensemble.json \
   --analysis-config decision_support.json \

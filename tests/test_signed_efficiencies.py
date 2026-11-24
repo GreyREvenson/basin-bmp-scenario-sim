@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from src.bmp import _apply_pathway_reduction
-from src.sampling import (
+from basin_bmp_sim.bmp.pathways.plet_pathway_efficiency import _apply_pathway_reduction
+from basin_bmp_sim.scenarios.sampling import (
     _piecewise_quantile_sample,
     _sample_from_stats,
     _trunc_normal,

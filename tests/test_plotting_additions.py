@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     CFG_BMP_COST,
     COL_MEAN,
     COL_OID,
@@ -22,7 +22,7 @@ from src.constants import (
     YAXIS_TARGET,
     YAXIS_TOTAL,
 )
-from src.plotting import _build_denominator_maps, make_summary_plots
+from basin_bmp_sim.results.plotting import _build_denominator_maps, make_summary_plots
 
 
 class DummyLogger:
@@ -85,7 +85,7 @@ def test_make_summary_plots_uses_in_memory_records_without_loading_canonical_tab
     def fail_if_called(*args, **kwargs):
         raise AssertionError("load_trajectory_records should not be called when in-memory records are provided")
 
-    monkeypatch.setattr("src.plotting.load_trajectory_records", fail_if_called)
+    monkeypatch.setattr("basin_bmp_sim.results.plotting.load_trajectory_records", fail_if_called)
 
     make_summary_plots(cfg, data, scenario_records, tmp_path, logger)
 
@@ -116,7 +116,7 @@ def test_make_summary_plots_loads_canonical_table_when_records_missing(tmp_path,
             ]
         }
 
-    monkeypatch.setattr("src.plotting.load_trajectory_records", fake_load_trajectory_records)
+    monkeypatch.setattr("basin_bmp_sim.results.plotting.load_trajectory_records", fake_load_trajectory_records)
 
     make_summary_plots(cfg, data, None, tmp_path, logger)
 
@@ -139,7 +139,7 @@ def test_make_summary_plots_warns_and_continues_when_canonical_load_fails(tmp_pa
     def boom(path: Path):
         raise RuntimeError("bad parquet")
 
-    monkeypatch.setattr("src.plotting.load_trajectory_records", boom)
+    monkeypatch.setattr("basin_bmp_sim.results.plotting.load_trajectory_records", boom)
 
     make_summary_plots(cfg, data, None, tmp_path, logger)
 

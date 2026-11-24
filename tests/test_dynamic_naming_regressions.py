@@ -5,16 +5,12 @@ from types import MethodType, SimpleNamespace
 import numpy as np
 import pytest
 
-from src.bmp import (
-    _apply_pathway_reduction,
-    _get_current_total_load_rate,
-    _get_pathway_load_rates,
-    _simulate_infield,
-)
-from src.constants import OUTPUT_REMOVED, OUTPUT_TREATED
-from src.plet_rusle import LoadState, calculate_plet_pathway_load_rates
-from src.parcel import _sample_load_rate
-from src.sampling import _sample_from_stats
+from basin_bmp_sim.bmp.pathways.plet_pathway_efficiency import _apply_pathway_reduction, _get_current_total_load_rate, _get_pathway_load_rates
+from basin_bmp_sim.bmp.infield.response.plet_pathway_efficiency import _simulate_infield
+from basin_bmp_sim.domain.constants import OUTPUT_REMOVED, OUTPUT_TREATED
+from basin_bmp_sim.science.plet_rusle import LoadState, calculate_plet_pathway_load_rates
+from basin_bmp_sim.domain.parcel import _sample_load_rate
+from basin_bmp_sim.scenarios.sampling import _sample_from_stats
 
 
 class _Logger:

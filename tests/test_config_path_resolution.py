@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from src.constants import (
+from basin_bmp_sim.domain.constants import (
     CFG_BMP_EFFICIENCY,
     CFG_DOMAIN,
     CFG_OUTPUTS,
@@ -12,8 +12,8 @@ from src.constants import (
     CFG_OUTLETS,
     CFG_PLET_FORCING,
 )
-from src.input_config import normalize_config, resolve_config_paths
-from src.io_utils import read_config
+from basin_bmp_sim.config.loading import normalize_config, resolve_config_paths
+from basin_bmp_sim.common.io import read_config
 
 
 def test_resolve_config_paths_uses_yaml_directory_not_cwd(tmp_path, monkeypatch) -> None:
@@ -106,7 +106,7 @@ def test_excretion_factors_default_does_not_depend_on_config_directory(tmp_path)
 
 
 def test_run_from_config_resolves_paths_before_model_is_constructed(tmp_path, monkeypatch) -> None:
-    import run_model
+    from basin_bmp_sim.execution import cli as run_model
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()

@@ -11,16 +11,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.afo import animal_production, load_afo_inputs, mass_afo_realization, reference_excretion_factors
-from src.input_config import load_and_validate_all, resolve_config_paths
-from src.model import Model
+from basin_bmp_sim.science.afo import animal_production, load_afo_inputs, mass_afo_realization, reference_excretion_factors
+from basin_bmp_sim.config.loading import load_and_validate_all, resolve_config_paths
+from basin_bmp_sim.execution.monte_carlo_driver import Model
 from test_afo import _package, _parcels, _state
 from test_afo_mass import _load, _mass_package
 from test_input_distribution_standardization import Ctx
 from test_input_scopes import Logger, inputs, write_tables
 
 
-REFERENCE = Path(__file__).resolve().parents[1] / "src" / "data" / "afo" / "manure_excretion_reference.csv"
+REFERENCE = Path(__file__).resolve().parents[1] / "src" / "basin_bmp_sim" / "data" / "afo" / "manure_excretion_reference.csv"
 PARAMETERS = ("tn_kg_1000kg_day", "tp_kg_1000kg_day")
 
 
@@ -302,7 +302,7 @@ def test_mass_realization_uses_loaded_reference_and_preserves_nutrients(tmp_path
     def unexpected_read(*args, **kwargs):
         pytest.fail("Reference CSV must not be read inside a realization")
 
-    monkeypatch.setattr("src.afo.reference_excretion_factors", unexpected_read)
+    monkeypatch.setattr("basin_bmp_sim.science.afo.reference_excretion_factors", unexpected_read)
     _, ledger = mass_afo_realization(ctx, state=state)
     for generated, applied, retained in [
         ("animal_n_produced_kg", "tn_applied_kg", .8 * .9 * .7),
@@ -354,7 +354,7 @@ def test_concentration_increment_does_not_load_excretion_csv(tmp_path, monkeypat
     def unexpected_read(*args, **kwargs):
         pytest.fail("Concentration-increment mode does not use excretion rates")
 
-    monkeypatch.setattr("src.afo.reference_excretion_factors", unexpected_read)
+    monkeypatch.setattr("basin_bmp_sim.science.afo.reference_excretion_factors", unexpected_read)
     load_afo_inputs(_package(tmp_path / "legacy.gpkg"), _parcels(), ["TN", "TP"])
 
 
