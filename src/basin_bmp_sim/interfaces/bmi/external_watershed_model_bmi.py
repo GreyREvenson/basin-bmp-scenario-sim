@@ -87,7 +87,7 @@ class ExternalWatershedModelBmi(BmiArrayComponent):
         })
         self._publish_snapshot()
 
-    def set_value(self, name: str, basin_bmp_sim: np.ndarray) -> None:
+    def set_value(self, name: str, src: np.ndarray) -> None:
         if not self._initialized:
             raise RuntimeError("Call initialize() before setting BMI variables")
         if name in PLACEMENT_FIELDS and self._pending:
@@ -97,13 +97,13 @@ class ExternalWatershedModelBmi(BmiArrayComponent):
         if name == "placement__cost":
             if not self._pending:
                 raise RuntimeError("BMP cost must follow scientific response")
-            cost = self._source(basin_bmp_sim, "float64")
+            cost = self._source(src, "float64")
             if cost.size != 1 or cost[0] < 0:
                 raise ValueError("Annual BMI BMP cost must be finite and nonnegative")
         if name == "coupling__generator_rng_state_utf8":
             # Validate before mutating either BMI buffers or the RNG.
-            state = decode_rng_state(basin_bmp_sim, self.rng)
-        super().set_value(name, basin_bmp_sim)
+            state = decode_rng_state(src, self.rng)
+        super().set_value(name, src)
         if name in PLACEMENT_FIELDS:
             self._received.add(name)
             if len(self._received) == len(PLACEMENT_FIELDS):

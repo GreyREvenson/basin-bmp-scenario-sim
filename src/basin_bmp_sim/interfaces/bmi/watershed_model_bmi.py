@@ -104,10 +104,10 @@ class WatershedModelBmi(BmiArrayComponent):
         self._scenario_id = int(scenario_id)
         self._end_time = self._time + 1.0
 
-    def set_value(self, name: str, basin_bmp_sim: np.ndarray) -> None:
+    def set_value(self, name: str, src: np.ndarray) -> None:
         """Accept BMI placement fields; reject partial/late state mutations."""
         if name == "coupling__generator_rng_state_utf8":
-            decode_rng_state(basin_bmp_sim, self._ctx.rng)
+            state = decode_rng_state(src, self._ctx.rng)
         if name in PLACEMENT_FIELDS and (self._pending is not None or self._queued is not None):
             raise RuntimeError("Cannot overwrite a queued or pending BMI placement")
         if name == "placement__cost" and self._pending is None:
@@ -115,16 +115,16 @@ class WatershedModelBmi(BmiArrayComponent):
         if name == "scenario__identifier" and (self._pending is not None or self._queued is not None):
             raise RuntimeError("Cannot change scenario identifier during BMP response")
         if name == "placement__cost":
-            cost_value = self._source(basin_bmp_sim, "float64")
+            cost_value = self._source(src, "float64")
             if cost_value.size != 1 or cost_value[0] < 0:
                 raise ValueError("BMI BMP cost must be finite and nonnegative")
-        super().set_value(name, basin_bmp_sim)
+        super().set_value(name, src)
         if name in PLACEMENT_FIELDS:
             self._received_placement_fields.add(name)
             if len(self._received_placement_fields) == len(PLACEMENT_FIELDS):
                 self._end_time = self._time + 1.0
         if name == "coupling__generator_rng_state_utf8":
-            self._ctx.rng.bit_generator.state = decode_rng_state(basin_bmp_sim, self._ctx.rng)
+            self._ctx.rng.bit_generator.state = state
         if name == "placement__cost":
             cost = float(self._read(name)[0])
             if not np.isfinite(cost) or cost < 0:

@@ -4,6 +4,8 @@ The driver consumes the resulting outlet reductions; it does not recompute
 parcel delivery factors or decide which outlets receive BMP benefits.
 """
 from __future__ import annotations
+from basin_bmp_sim.domain.parcel import _get_delivery_coeffs, _get_parcel_out_oids
+
 from typing import Any, Dict, List, Tuple
 import numpy as np
 from basin_bmp_sim.domain.constants import COL_SDR_F_TO_S, COL_SDR_S_TO_O, COL_NDR_F_TO_S, COL_NDR_S_TO_O
@@ -21,8 +23,8 @@ def _accumulate_delivered_bmp_reductions(
     """
     for idx, removed_mass_kg in changes:
         pid = str(ctx.parcel_ids[idx])
-        for oid in ctx._get_parcel_out_oids(idx):
-            dr = ctx._delivery_coeffs(pid, oid)
+        for oid in _get_parcel_out_oids(ctx, idx):
+            dr = _get_delivery_coeffs(ctx, pid, oid)
             for pol_idx, pol in enumerate(ctx.pollutants):
                 if pol == 'TSS':
                     factor = dr[COL_SDR_F_TO_S] * dr[COL_SDR_S_TO_O]

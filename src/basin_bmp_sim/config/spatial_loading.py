@@ -40,7 +40,7 @@ from basin_bmp_sim.common.io import (
 )
 from basin_bmp_sim.common.utils import ci_get
 from basin_bmp_sim.domain.constants import FRACTION_DOMAIN, NONNEGATIVE_DOMAIN, POSITIVE_DOMAIN
-from basin_bmp_sim.config.validation.statistics import require_columns, validate_unique_rows
+from basin_bmp_sim.domain.statistics_validation import require_columns, validate_unique_rows
 from basin_bmp_sim.domain.parameter_validation import validate_numeric_columns_in_domain
 from basin_bmp_sim.config.table_sources import (
     _normalize_identifier_columns,

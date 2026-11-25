@@ -128,6 +128,19 @@ class AnnualLoadSnapshot:
         return AnnualLoadSnapshot(baseline, current, outlet)
 
 
+class PlacementDomain(Protocol):
+    """Only the index identities needed to decode a placement."""
+
+    @property
+    def parcel_ids(self) -> Sequence[str]: ...
+    @property
+    def bmp_cps(self) -> Sequence[int]: ...
+    @property
+    def pollutants(self) -> Sequence[str]: ...
+    @property
+    def pathway_names(self) -> Sequence[str]: ...
+
+
 @dataclass(frozen=True)
 class AnnualBMPPlacement:
     """Complete model-neutral BMP *request*, decoded from numeric BMI inputs.
@@ -153,7 +166,7 @@ class AnnualBMPPlacement:
     recorded_recovery_gains: tuple[float, ...]
 
     @classmethod
-    def from_bmi(cls, values: Mapping[str, np.ndarray], domain: AnnualModelDomain) -> "AnnualBMPPlacement":
+    def from_bmi(cls, values: Mapping[str, np.ndarray], domain: PlacementDomain) -> "AnnualBMPPlacement":
         missing = set(PLACEMENT_FIELDS) - set(values)
         if missing:
             raise ValueError(f"Incomplete annual BMI placement request: {sorted(missing)}")

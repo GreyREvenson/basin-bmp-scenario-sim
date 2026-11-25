@@ -118,9 +118,9 @@ class BmiArrayComponent:
         return dest
 
     @staticmethod
-    def _source(basin_bmp_sim: np.ndarray, dtype: str) -> np.ndarray:
+    def _source(src: np.ndarray, dtype: str) -> np.ndarray:
         """Reject silent integer truncation, wrapping, and dtype coercion."""
-        arr = np.asarray(basin_bmp_sim)
+        arr = np.asarray(src)
         if arr.ndim != 1 or arr.dtype != np.dtype(dtype):
             raise ValueError(f"BMI source must be a 1-D array of dtype {np.dtype(dtype)}")
         if arr.dtype.kind == "f" and not np.all(np.isfinite(arr)):
@@ -146,12 +146,12 @@ class BmiArrayComponent:
         selected = value[self._indices(inds, len(value))]
         np.copyto(self._destination(dest, selected), selected)
 
-    def set_value(self, name: str, basin_bmp_sim: np.ndarray) -> None:
+    def set_value(self, name: str, src: np.ndarray) -> None:
         spec = self._meta(name)
         if spec.intent != "input":
             raise ValueError(f"BMI variable is read-only: {name}")
         old = self._read(name)
-        new = self._source(basin_bmp_sim, spec.dtype)
+        new = self._source(src, spec.dtype)
         if old.shape != new.shape:
             if not spec.resizable:
                 raise ValueError("Cannot change BMI input array extent with set_value")
@@ -160,13 +160,13 @@ class BmiArrayComponent:
         else:
             old[:] = new
 
-    def set_value_at_indices(self, name: str, inds: np.ndarray, basin_bmp_sim: np.ndarray) -> None:
+    def set_value_at_indices(self, name: str, inds: np.ndarray, src: np.ndarray) -> None:
         spec = self._meta(name)
         if spec.intent != "input":
             raise ValueError(f"BMI variable is read-only: {name}")
         arr = self._read(name)
         index = self._indices(inds, len(arr), unique=True)
-        vals = self._source(basin_bmp_sim, spec.dtype)
+        vals = self._source(src, spec.dtype)
         if len(index) != len(vals):
             raise ValueError("BMI indexed setter length mismatch")
         proposed = arr.copy()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from types import MethodType, SimpleNamespace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -41,9 +41,6 @@ def test_infield_bmp_does_not_treat_or_reduce_protected_groundwater() -> None:
         current_pathway_load_rates=np.array([[[10.0, 0.0, 0.0]]]),
         current_untreated_groundwater_load_rates=np.array([[4.0]]),
     )
-    model._get_pathway_load_rates = MethodType(_get_pathway_load_rates, model)
-    model._get_current_total_load_rate = MethodType(_get_current_total_load_rate, model)
-    model._apply_pathway_reduction = MethodType(_apply_pathway_reduction, model)
 
     load_rates = np.array([[14.0]])
     outputs = {

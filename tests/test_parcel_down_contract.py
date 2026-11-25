@@ -1,6 +1,8 @@
 """Strict parcel_down schema, safe migration, and spatial validation tests."""
 from __future__ import annotations
 
+from basin_bmp_sim.domain.parcel import _get_parcel_up_list
+
 import json
 import sqlite3
 
@@ -164,7 +166,7 @@ def test_model_reverses_downstream_links_for_wetland_traversal(tmp_path):
     # P1 and P2 converge to P3. The model has exactly one downstream per PID.
     data['parcel_down_map'] = {'P1':'P3','P2':'P3','P3':None}
     model = Model(cfg,data,logging.getLogger('parcel.down.reverse.test'))
-    assert model._get_parcel_up_list('P3') == ['P1','P2']
+    assert _get_parcel_up_list(model, 'P3') == ['P1','P2']
     assert model.parcel_up_idxs[model.pid_to_index['P3']] == [0,1]
     scenario = _ScenarioContext(cfg,model._shared_payload(),logging.getLogger('parcel.down.ctx'),123)
-    assert scenario._get_parcel_up_list('P3') == ['P1','P2']
+    assert _get_parcel_up_list(scenario, 'P3') == ['P1','P2']

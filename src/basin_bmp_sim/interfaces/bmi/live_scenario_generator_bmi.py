@@ -154,24 +154,24 @@ class LiveScenarioGeneratorBmi(BmiArrayComponent):
         install_placement_domain(self._ctx, {n: self._read(n) for n in DOMAIN_FIELDS})
         self._domain_ready = True
 
-    def set_value(self, name: str, basin_bmp_sim: np.ndarray) -> None:
+    def set_value(self, name: str, src: np.ndarray) -> None:
         if name in DOMAIN_FIELDS and (self._time or self._domain_ready and self._require_domain_import):
             raise RuntimeError("BMI parcel domain inputs are only accepted before sampling")
         if name == "coupling__model_rng_state_utf8":
-            decode_rng_state(basin_bmp_sim, self._ctx.rng)
+            state = decode_rng_state(src, self._ctx.rng)
         if name == "placement__recovery_gains" and self._pending is None:
             raise RuntimeError("Queue a placement before supplying AFO recovery gains")
         if name == "placement__recovery_gains":
-            gains = self._source(basin_bmp_sim, "float64")
+            gains = self._source(src, "float64")
             if np.any(gains < 0) or np.any(gains > 1):
                 raise ValueError("BMI AFO recovery gains must lie in [0, 1]")
-        super().set_value(name, basin_bmp_sim)
+        super().set_value(name, src)
         if name == "placement__recovery_gains":
             self._recovery_received = True
         elif name in DOMAIN_FIELDS:
             self._domain_received.add(name)
         elif name == "coupling__model_rng_state_utf8":
-            self._ctx.rng.bit_generator.state = decode_rng_state(basin_bmp_sim, self._ctx.rng)
+            self._ctx.rng.bit_generator.state = state
 
     def complete_pending(self, *, recovery_gains: tuple[float, ...] | None = None):
         """Complete after BMI recovery transfer; retain Phase 5 legacy override."""

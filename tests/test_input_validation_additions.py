@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from basin_bmp_sim.config.validation.selection import validate_bmp_selection_table
-from basin_bmp_sim.config.validation.statistics import validate_numeric_distribution_rows
+from basin_bmp_sim.domain.statistics_validation import validate_numeric_distribution_rows
 
 
 

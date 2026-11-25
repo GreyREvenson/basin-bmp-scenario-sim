@@ -34,7 +34,7 @@ from basin_bmp_sim.common.io import (
 from basin_bmp_sim.common.utils import ci_get, normalize_columns
 from basin_bmp_sim.common.distributions import statistic_columns, stats_from_row
 from basin_bmp_sim.domain.constants import FRACTION_DOMAIN
-from basin_bmp_sim.config.validation.statistics import (
+from basin_bmp_sim.domain.statistics_validation import (
     require_columns,
     validate_distribution_bounds,
     validate_stats_rows,

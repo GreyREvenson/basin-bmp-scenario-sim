@@ -34,7 +34,7 @@ from basin_bmp_sim.domain.constants import (
 )
 from basin_bmp_sim.common.utils import ci_get, normalize_pollutant_label
 from basin_bmp_sim.common.logging import log_scope
-from basin_bmp_sim.config.validation.statistics import validate_unique_rows
+from basin_bmp_sim.domain.statistics_validation import validate_unique_rows
 from basin_bmp_sim.config.validation.configuration import validate_config
 from basin_bmp_sim.config.validation.plet import validate_plet_runtime_inputs
 from basin_bmp_sim.config.validation.statistical import (

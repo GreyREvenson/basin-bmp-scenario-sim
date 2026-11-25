@@ -6,7 +6,7 @@ import pytest
 
 from basin_bmp_sim.domain.constants import CFG_BMP_EFFICIENCY
 from basin_bmp_sim.config.bmp_loading import _complete_plet_bmp_efficiency_coverage
-from basin_bmp_sim.config.validation.statistics import validate_stats_rows
+from basin_bmp_sim.domain.statistics_validation import validate_stats_rows
 
 
 class _ListLogger:

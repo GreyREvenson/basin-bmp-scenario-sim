@@ -1,3 +1,5 @@
+from basin_bmp_sim.bmp.pathways.plet_pathway_efficiency import _apply_pathway_reduction, _get_current_total_load_rate, _get_pathway_load_rates
+
 import math
 import logging
 import numpy as np
@@ -106,7 +108,7 @@ def test_apply_pathway_reduction_two_full_50_percent_reductions_produce_75_perce
     model = _make_model()
     _set_current_pathways(model, surface=50.0, shallow=25.0, deep=25.0)
 
-    baseline = model._get_current_total_load_rate(0, 0, 100.0)
+    baseline = _get_current_total_load_rate(model, 0, 0, 100.0)
     assert math.isclose(baseline, 100.0, rel_tol=0.0, abs_tol=1e-12)
 
     eff = {
@@ -115,11 +117,11 @@ def test_apply_pathway_reduction_two_full_50_percent_reductions_produce_75_perce
         "deep subsurface": 0.50,
     }
 
-    model._apply_pathway_reduction(0, 0, 1.0, eff)
-    after_first = model._get_current_total_load_rate(0, 0, 100.0)
+    _apply_pathway_reduction(model, 0, 0, 1.0, eff)
+    after_first = _get_current_total_load_rate(model, 0, 0, 100.0)
 
-    model._apply_pathway_reduction(0, 0, 1.0, eff)
-    after_second = model._get_current_total_load_rate(0, 0, 100.0)
+    _apply_pathway_reduction(model, 0, 0, 1.0, eff)
+    after_second = _get_current_total_load_rate(model, 0, 0, 100.0)
 
     assert math.isclose(after_first, 50.0, rel_tol=0.0, abs_tol=1e-12)
     assert math.isclose(after_second, 25.0, rel_tol=0.0, abs_tol=1e-12)
@@ -140,11 +142,11 @@ def test_apply_pathway_reduction_second_application_acts_on_remaining_load_not_o
         "deep subsurface": 0.25,
     }
 
-    model._apply_pathway_reduction(0, 0, 1.0, eff_1)
-    after_first = model._get_current_total_load_rate(0, 0, 100.0)
+    _apply_pathway_reduction(model, 0, 0, 1.0, eff_1)
+    after_first = _get_current_total_load_rate(model, 0, 0, 100.0)
 
-    model._apply_pathway_reduction(0, 0, 1.0, eff_2)
-    after_second = model._get_current_total_load_rate(0, 0, 100.0)
+    _apply_pathway_reduction(model, 0, 0, 1.0, eff_2)
+    after_second = _get_current_total_load_rate(model, 0, 0, 100.0)
 
     expected = 100.0 * (1.0 - 0.40) * (1.0 - 0.25)
 
@@ -163,8 +165,8 @@ def test_apply_pathway_reduction_partial_treatment_fraction_only_reduces_treated
         "deep subsurface": 0.40,
     }
 
-    model._apply_pathway_reduction(0, 0, 0.50, eff)
-    updated = model._get_current_total_load_rate(0, 0, 100.0)
+    _apply_pathway_reduction(model, 0, 0, 0.50, eff)
+    updated = _get_current_total_load_rate(model, 0, 0, 100.0)
 
     assert math.isclose(updated, 80.0, rel_tol=0.0, abs_tol=1e-12)
 
@@ -179,8 +181,8 @@ def test_apply_pathway_reduction_negative_efficiency_increases_load():
         "deep subsurface": -0.20,
     }
 
-    model._apply_pathway_reduction(0, 0, 1.0, eff)
-    updated = model._get_current_total_load_rate(0, 0, 100.0)
+    _apply_pathway_reduction(model, 0, 0, 1.0, eff)
+    updated = _get_current_total_load_rate(model, 0, 0, 100.0)
 
     assert math.isclose(updated, 120.0, rel_tol=0.0, abs_tol=1e-12)
 
@@ -199,8 +201,8 @@ def test_apply_pathway_reduction_failure_adjusted_efficiency_scales_before_appli
         "deep subsurface": effective_eff,
     }
 
-    model._apply_pathway_reduction(0, 0, 1.0, eff)
-    updated = model._get_current_total_load_rate(0, 0, 100.0)
+    _apply_pathway_reduction(model, 0, 0, 1.0, eff)
+    updated = _get_current_total_load_rate(model, 0, 0, 100.0)
 
     assert math.isclose(effective_eff, 0.125, rel_tol=0.0, abs_tol=1e-12)
     assert math.isclose(updated, 87.5, rel_tol=0.0, abs_tol=1e-12)
@@ -210,7 +212,7 @@ def test_get_pathway_load_rates_returns_tracked_live_pathways():
     model = _make_model()
     _set_current_pathways(model, surface=40.0, shallow=35.0, deep=25.0)
 
-    by_path = model._get_pathway_load_rates(0, 0, 100.0)
+    by_path = _get_pathway_load_rates(model, 0, 0, 100.0)
 
     assert set(by_path.keys()) == {"surface", "shallow subsurface", "deep subsurface"}
     assert math.isclose(by_path["surface"], 40.0, rel_tol=0.0, abs_tol=1e-12)
@@ -222,6 +224,6 @@ def test_get_current_total_load_rate_sums_current_tracked_pathways():
     model = _make_model()
     _set_current_pathways(model, surface=10.0, shallow=20.0, deep=30.0)
 
-    total = model._get_current_total_load_rate(0, 0, 999.0)
+    total = _get_current_total_load_rate(model, 0, 0, 999.0)
 
     assert math.isclose(total, 60.0, rel_tol=0.0, abs_tol=1e-12)

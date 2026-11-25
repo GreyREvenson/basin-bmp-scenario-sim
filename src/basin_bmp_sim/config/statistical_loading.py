@@ -16,7 +16,7 @@ from basin_bmp_sim.domain.constants import (
     GPKG_INPUT_POLLUTANT_LOAD_RATE,
 )
 from basin_bmp_sim.common.utils import ci_get
-from basin_bmp_sim.config.validation.statistics import (
+from basin_bmp_sim.domain.statistics_validation import (
     validate_stats_rows,
     validate_unique_rows,
 )

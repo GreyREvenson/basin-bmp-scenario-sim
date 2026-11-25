@@ -43,16 +43,17 @@ def test_native_model_api_preserves_response_and_replay(case, tmp_path):
     assert scenario.placements[0] == realized
 
 
-def test_context_helpers_are_statically_declared(tmp_path):
-    """Methods are descriptors on the class, not individually bound at runtime."""
+def test_context_exposes_sampling_not_fixed_science_services(tmp_path):
+    """Only stochastic operations remain on the context; science is called directly."""
     payload, cfg, seed = _case("mixed_budget", tmp_path)
     ctx = _ScenarioContext(cfg, payload, logging.getLogger("p3.context"), seed)
     for name in (
-        "_sample_from_stats", "_simulate_wetland", "_simulate_grassed",
+        "_simulate_wetland", "_simulate_grassed",
         "_simulate_infield", "_apply_pathway_reduction", "_delivery_coeffs",
     ):
         assert name not in vars(ctx)
-        assert callable(getattr(ctx, name))
+        assert not hasattr(ctx, name)
+    assert callable(ctx._sample_from_stats)
     assert ctx.afo_inputs is None
 
 

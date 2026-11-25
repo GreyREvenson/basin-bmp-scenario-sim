@@ -1,4 +1,4 @@
-"""Statistics for the configuration."""
+"""Shared statistical input validation, independent of file ingestion."""
 
 from __future__ import annotations
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple

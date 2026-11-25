@@ -9,7 +9,6 @@ Scientific methods, cost draws, and sampling remain in their original owners.
 from __future__ import annotations
 
 from collections.abc import Mapping
-import math
 
 import numpy as np
 
@@ -21,25 +20,11 @@ from basin_bmp_sim.domain.constants import (
 from basin_bmp_sim.scenarios.bmp_designs import BMPDesign
 from basin_bmp_sim.scenarios.generator import PlacementChoice, RealizedBMPPlacement
 
-# Same variable names on the producer and consumer; BMI getters/setters mediate
-# the values, while the context supplies the prevalidated domain/ID mapping.
-PLACEMENT_FIELDS = (
-    "placement__cps_code", "placement__host_parcel_index",
-    "placement__affected_parcel_index", "placement__affected_parcel_fraction",
-    "placement__efficiency", "placement__failed",
-    "placement__recovery_effect_scale", "placement__cost_quantity_ha",
-    "placement__wetland_area_ha", "placement__catchment_area_ratio",
-    "placement__buffer_length_m", "placement__buffer_area_ha",
-    "placement__portion_treated", "placement__recorded_recovery_gains",
-)
-
-SCALAR_FIELDS = set(PLACEMENT_FIELDS) - {
-    "placement__affected_parcel_index", "placement__affected_parcel_fraction",
-    "placement__efficiency", "placement__recorded_recovery_gains",
-}
+from basin_bmp_sim.interfaces.annual_model_contract import AnnualBMPPlacement, PLACEMENT_FIELDS
+from basin_bmp_sim.interfaces.exchange_variables import PLACEMENT_OUTPUT_VARIABLES, numeric_vector
 
 
-def placement_arrays(placement: RealizedBMPPlacement, ctx) -> dict[str, object]:
+def placement_arrays(placement: RealizedBMPPlacement, ctx) -> dict[str, np.ndarray]:
     """Encode one pending design/response draw with no numerical rounding."""
     d = placement.design
     metadata = d.record_fields()
@@ -49,7 +34,7 @@ def placement_arrays(placement: RealizedBMPPlacement, ctx) -> dict[str, object]:
         tuple(k for k, _ in pol) != expected_paths for pol in placement.efficiency_by_pollutant
     ):
         raise ValueError("BMI placement efficiency pathway ordering disagrees with model formulation")
-    return {
+    fields = {
         "placement__cps_code": placement.choice.cps,
         "placement__host_parcel_index": placement.choice.parcel_index,
         "placement__affected_parcel_index": [i for i, _ in d.treated],
@@ -67,6 +52,8 @@ def placement_arrays(placement: RealizedBMPPlacement, ctx) -> dict[str, object]:
                                              else list(placement.recovery_gains)),
     }
 
+    return {v.name: numeric_vector(fields[v.name], v.dtype) for v in PLACEMENT_OUTPUT_VARIABLES}
+
 
 def placement_from_arrays(values: Mapping[str, np.ndarray], ctx) -> RealizedBMPPlacement:
     """Rebuild the exact native placement object from BMI numerical values.
@@ -74,72 +61,28 @@ def placement_from_arrays(values: Mapping[str, np.ndarray], ctx) -> RealizedBMPP
     Reject mismatched array dimensions, invalid parcel indices, impossible
     practice geometry, and unsupported CPS *before* scientific execution.
     """
-    missing = set(PLACEMENT_FIELDS) - set(values)
-    if missing:
-        raise ValueError(f"Incomplete BMI placement exchange: {sorted(missing)}")
-
-    def scalar(name: str):
-        a = np.asarray(values[name])
-        if a.size != 1:
-            raise ValueError(f"BMI scalar {name} must contain one value")
-        return a.reshape(-1)[0].item()
-
-    def positive_int(name: str):
-        v = scalar(name)
-        if not isinstance(v, (int, np.integer)) or isinstance(v, (bool, np.bool_)):
-            raise ValueError(f"BMI {name} must be integer")
-        return int(v)
-
-    cps = positive_int("placement__cps_code")
-    idx = positive_int("placement__host_parcel_index")
-    if idx < 0 or idx >= len(ctx.parcel_ids):
-        raise ValueError("BMI host parcel index is outside the hydrologic parcel universe")
-    if cps not in ctx.bmp_cps:
-        raise ValueError(f"BMI placement CPS {cps} is not in the approved formulation")
+    request = AnnualBMPPlacement.from_bmi(values, ctx)
+    cps, idx = request.cps, request.host_parcel_index
     family = response_family(cps)
-    affected = np.asarray(values["placement__affected_parcel_index"])
-    fractions = np.asarray(values["placement__affected_parcel_fraction"], dtype=float)
-    if affected.ndim != 1 or fractions.ndim != 1 or not len(affected) or len(affected) != len(fractions):
-        raise ValueError("BMI placement affected-parcel vectors must be equally sized and nonempty")
-    if affected.dtype.kind not in "iu" or any(i < 0 or i >= len(ctx.parcel_ids) for i in affected):
-        raise ValueError("BMI placement affected parcel indices are invalid")
-    if int(affected[0]) != idx or len(set(affected.tolist())) != len(affected):
-        raise ValueError("BMI placement must treat host first, without duplicate parcels")
-    if not np.all(np.isfinite(fractions)) or np.any(fractions < 0) or np.any(fractions > 1):
-        raise ValueError("BMI placement treatment fractions must lie in [0, 1]")
-    treated = tuple((int(i), float(f)) for i, f in zip(affected, fractions))
-
-    eff = np.asarray(values["placement__efficiency"], dtype=float)
-    expected_n = len(ctx.pollutants) * len(ctx.pathway_names)
-    if eff.ndim != 1 or eff.size != expected_n or not np.all(np.isfinite(eff)) or np.any(eff > 1):
-        raise ValueError("BMI placement efficiencies do not match the approved pollutant/pathway layout")
+    treated = tuple(zip(request.affected_indices, request.affected_fractions))
     eff_rows = tuple(
         tuple((str(path), float(v)) for path, v in zip(ctx.pathway_names, row))
-        for row in eff.reshape(len(ctx.pollutants), len(ctx.pathway_names))
+        for row in request.efficiency
     )
-    failed = positive_int("placement__failed")
-    if failed not in (0, 1):
-        raise ValueError("BMI placement failure flag must be 0 or 1")
-    scale = float(scalar("placement__recovery_effect_scale"))
-    if not math.isfinite(scale) or not 0 <= scale <= 1:
-        raise ValueError("BMI recovery effect scale must be between zero and one")
-    cost_quantity = float(scalar("placement__cost_quantity_ha"))
-    if not math.isfinite(cost_quantity) or cost_quantity < 0:
-        raise ValueError("BMI design cost quantity must be finite and nonnegative")
 
     if family == "wetland":
-        area = float(scalar("placement__wetland_area_ha"))
-        ratio = float(scalar("placement__catchment_area_ratio"))
-        if not math.isfinite(area) or area <= 0 or not math.isfinite(ratio) or ratio < 0:
+        area = request.wetland_area_ha
+        ratio = request.catchment_area_ratio
+        if area <= 0:
             raise ValueError("BMI wetland area and catchment ratio are invalid")
         metadata = ((OUTPUT_WETLAND_AREA, area), (OUTPUT_CATCHMENT_RATIO, ratio),
-                    (OUTPUT_IMPACTED_PIDS, ",".join(str(ctx.parcel_ids[i]) for i in affected)
-                     if len(affected) > 1 else ""))
+                    (OUTPUT_IMPACTED_PIDS, ",".join(str(ctx.parcel_ids[i]) for i in request.affected_indices)
+                     if len(request.affected_indices) > 1 else ""))
     elif family == "grassed":
-        length = float(scalar("placement__buffer_length_m"))
-        area = float(scalar("placement__buffer_area_ha"))
-        portion = float(scalar("placement__portion_treated"))
-        if len(treated) != 1 or any(not math.isfinite(v) or v < 0 for v in (length, area, portion)):
+        length = request.buffer_length_m
+        area = request.buffer_area_ha
+        portion = request.portion_treated
+        if len(treated) != 1:
             raise ValueError("BMI grassed waterway design is invalid")
         if portion != treated[0][1]:
             raise ValueError("BMI grassed waterway portion and treatment fraction disagree")
@@ -152,15 +95,12 @@ def placement_from_arrays(values: Mapping[str, np.ndarray], ctx) -> RealizedBMPP
     else:
         raise ValueError(f"Unsupported BMI placement practice family {family!r}")
 
-    recovery = np.asarray(values["placement__recorded_recovery_gains"], dtype=float)
-    if recovery.ndim != 1 or not np.all(np.isfinite(recovery)) or np.any(recovery < 0) or np.any(recovery > 1):
-        raise ValueError("BMI recorded AFO recovery gains must lie in [0, 1]")
     # A replayed placement already has the complete cost and recovery-gain
     # record; cost is transferred after response through a separate variable.
     return RealizedBMPPlacement(
         choice=PlacementChoice(idx, str(ctx.parcel_ids[idx]), cps),
-        design=BMPDesign(family, metadata, treated, cost_quantity),
-        efficiency_by_pollutant=eff_rows, failed=bool(failed),
-        recovery_effect_scale=scale,
-        recovery_gains=tuple(float(v) for v in recovery) if len(recovery) else None,
+        design=BMPDesign(family, metadata, treated, request.cost_quantity_ha),
+        efficiency_by_pollutant=eff_rows, failed=request.failed,
+        recovery_effect_scale=request.recovery_effect_scale,
+        recovery_gains=request.recorded_recovery_gains or None,
     )

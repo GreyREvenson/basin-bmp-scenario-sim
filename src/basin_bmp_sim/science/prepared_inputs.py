@@ -5,6 +5,8 @@ worker payload. It deliberately does not schedule Monte Carlo workers, write
 outputs or instantiate BMI components. Native Model inherits its behavior.
 """
 from __future__ import annotations
+from basin_bmp_sim.bmp.sampling.selection import _get_bmp_selection_probs
+
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -12,7 +14,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 
-from basin_bmp_sim.science.model_context import ModelContextServices
+from basin_bmp_sim.scenarios.sampling_context import SamplingContext
 from basin_bmp_sim.science.formulations.formulation_registry import validate_formulation_selection
 from basin_bmp_sim.common.logging import log_scope
 from basin_bmp_sim.domain.constants import (
@@ -27,15 +29,14 @@ from basin_bmp_sim.domain.constants import (
     COL_POLLUTANT, COL_PATHWAY, LOAD_MODE_PLET_RUSLE,
 )
 
-class PreparedModelInputs(ModelContextServices):
+class PreparedModelInputs(SamplingContext):
     """Reusable validated model-input preparation, independent of the driver.
 
-    The model prepares data, binds helper methods, runs one or more scenarios,
-    and writes the output files consumed by summary and plotting workflows.
+    Builds validated lookup tables and worker inputs; does not execute scenarios.
     """
 
     def __init__(self, cfg: Dict[str, Any], data: Dict[str, Any], logger: logging.Logger) -> None:
-        """Initialize the model and bind helper methods.
+        """Initialize the prepared input state.
 
         Parameters
         ----------
@@ -224,7 +225,7 @@ class PreparedModelInputs(ModelContextServices):
 
 
             # BMP selection probabilities (possibly via costs or explicit table)
-            bmp_probs = self._get_bmp_selection_probs(self.cfg.get(CFG_BMP_SEL))
+            bmp_probs = _get_bmp_selection_probs(self, self.cfg.get(CFG_BMP_SEL))
             self.bmp_cps = bmp_probs["cps"].astype(int).tolist()
             self.bmp_selection_probs = bmp_probs["probability"].astype(float).to_numpy()
 

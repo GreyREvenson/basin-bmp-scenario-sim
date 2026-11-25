@@ -11,7 +11,7 @@ from basin_bmp_sim.domain.constants import (
     COL_PID,
     COL_POLLUTANT,
 )
-from basin_bmp_sim.config.validation.statistics import validate_stats_rows, validate_unique_rows
+from basin_bmp_sim.domain.statistics_validation import validate_stats_rows, validate_unique_rows
 
 
 def validate_statistical_efficiency_coverage(

@@ -9,7 +9,7 @@ import pytest
 import basin_bmp_sim.scenarios.sampling as sampling
 from basin_bmp_sim.config.statistical_loading import _expand_pollutant_load_rate_defaults
 from basin_bmp_sim.config.plet_loading import _load_plet_hydrology_lookup, _load_plet_parameter_table
-from basin_bmp_sim.config.validation.statistics import validate_numeric_distribution_rows
+from basin_bmp_sim.domain.statistics_validation import validate_numeric_distribution_rows
 from basin_bmp_sim.domain.constants import PLET_HSG_VALUES, PLET_LAND_COVERS
 from basin_bmp_sim.science.plet_sampling import _sample_parameter_table, _sample_plet_hydrology
 from basin_bmp_sim.science.plet_initialization import initialize_plet_rusle_state

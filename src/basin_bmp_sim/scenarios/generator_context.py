@@ -13,23 +13,11 @@ from copy import deepcopy
 import numpy as np
 
 from basin_bmp_sim.domain.constants import DATA_BMP_COST, DATA_AVG_AREA_HA, DATA_AVG_PERIM_M
-from basin_bmp_sim.scenarios.sampling import _sample_from_stats, _piecewise_quantile_sample, _trunc_normal
-from basin_bmp_sim.domain.parcel import _sample_parcel_index
-from basin_bmp_sim.bmp.sampling.efficiency import _sample_efficiency_map
-from basin_bmp_sim.scenarios.costs import _get_bmp_cost
+from basin_bmp_sim.scenarios.sampling_context import SamplingContext
 
 
-class GeneratorModelContext:
+class GeneratorModelContext(SamplingContext):
     """Independent stochastic-placement state, limited to generator inputs."""
-
-    # Only sampling/placement services; do not depend on a watershed-model
-    # context or bind unused scientific-response/routing methods.
-    _sample_from_stats = _sample_from_stats
-    _piecewise_quantile_sample = _piecewise_quantile_sample
-    _trunc_normal = _trunc_normal
-    _sample_parcel_index = _sample_parcel_index
-    _sample_efficiency_map = _sample_efficiency_map
-    _get_bmp_cost = _get_bmp_cost
 
     _FIELDS = (
         "parcel_ids", "pid_to_index", "parcel_area_ha", "parcel_perim_m",

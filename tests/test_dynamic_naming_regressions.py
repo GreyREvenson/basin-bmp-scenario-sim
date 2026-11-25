@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import MethodType, SimpleNamespace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -31,9 +31,6 @@ def _bmp_ctx() -> SimpleNamespace:
         current_untreated_groundwater_load_rates=np.zeros((1, 1), dtype=float),
         logger=_Logger(),
     )
-    ctx._get_pathway_load_rates = MethodType(_get_pathway_load_rates, ctx)
-    ctx._get_current_total_load_rate = MethodType(_get_current_total_load_rate, ctx)
-    ctx._apply_pathway_reduction = MethodType(_apply_pathway_reduction, ctx)
     return ctx
 
 

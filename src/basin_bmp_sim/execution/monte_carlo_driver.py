@@ -44,7 +44,7 @@ from basin_bmp_sim.scenarios.sampling import _piecewise_quantile_sample, _sample
 from basin_bmp_sim.results.bmp_summary import BMPSummaryCollector
 from basin_bmp_sim.execution.bmi_coupling import AnnualBmiScenarioCoupler, get_bmi_value
 from basin_bmp_sim.results.trajectory_output_manager import collect_and_write_trajectories
-from basin_bmp_sim.science.model_context import ModelContextServices, ScenarioModelContext
+from basin_bmp_sim.science.model_context import ScenarioModelContext
 from basin_bmp_sim.science.prepared_inputs import PreparedModelInputs
 from basin_bmp_sim.science.assemblies.annual_model_realization import AnnualModelRealization
 from basin_bmp_sim.science.accounting.afo_accounting import (

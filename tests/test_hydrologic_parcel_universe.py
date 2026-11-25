@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from basin_bmp_sim.bmp.wetland.response.plet_pathway_efficiency import _simulate_wetland
+from basin_bmp_sim.bmp.grassed_waterway.response.plet_pathway_efficiency import _simulate_grassed
+
 import logging
 from types import SimpleNamespace
 
@@ -117,7 +120,7 @@ def test_wetland_treats_nonselectable_upstream_parcels() -> None:
         OUTPUT_REMOVED: np.zeros(1, dtype=float),
     }
 
-    ctx._simulate_wetland(
+    _simulate_wetland(ctx,
         2,
         [{"surface": 0.5}],
         load_rates,
@@ -145,7 +148,7 @@ def test_deterministic_wetland_design_uses_only_selected_parcel() -> None:
         OUTPUT_REMOVED: np.zeros(1, dtype=float),
     }
 
-    ctx._simulate_wetland(2, [{"surface": 0.5}], load_rates, record, outputs)
+    _simulate_wetland(ctx, 2, [{"surface": 0.5}], load_rates, record, outputs)
 
     assert record[OUTPUT_WETLAND_AREA] == pytest.approx(0.4)
     assert record[OUTPUT_CATCHMENT_RATIO] == pytest.approx(4.0)
@@ -189,7 +192,7 @@ def test_grassed_design_respects_config(
         OUTPUT_REMOVED: np.zeros(1, dtype=float),
     }
 
-    ctx._simulate_grassed(2, [{"surface": 0.5}], load_rates, record, outputs)
+    _simulate_grassed(ctx, 2, [{"surface": 0.5}], load_rates, record, outputs)
 
     assert len(sampled) == len(draws)
     assert record[OUTPUT_LINEAR_LENGTH] == pytest.approx(100.0 * length_fraction)

@@ -456,8 +456,8 @@ def test_merge_accounting_includes_induced_manure_receiving_parcels():
         pid_to_index={"P1": 0, "P2": 1},
         parcel_area_ha=np.asarray([1.0, 1.0]),
         pollutants=["TN"],
-        _get_parcel_out_oids=lambda idx: [["O1"], ["O2"]][idx],
-        _delivery_coeffs=lambda pid, oid: ratios[(pid, oid)],
+        parcel_out_oids=[["O1"], ["O2"]],
+        delivery_coeffs=ratios,
     )
     before = np.asarray([[10.0], [10.0]])
     after = np.asarray([[8.0], [11.0]])  # 2 kg removed, 1 kg induced
@@ -490,11 +490,10 @@ def test_merge_wetland_reductions_use_upstream_parcel_delivery_factors():
         pid_to_index={"P1": 0, "P2": 1, "P3": 2},
         parcel_area_ha=np.ones(3),
         pollutants=["TN"],
-        _get_parcel_out_oids=lambda idx: ["O1"],
-        _delivery_coeffs=lambda pid, oid: dict(
-            ndr_f_to_s=coeffs[(pid, oid)], ndr_s_to_o=1.0,
-            sdr_f_to_s=coeffs[(pid, oid)], sdr_s_to_o=1.0,
-        ),
+        parcel_out_oids=[["O1"]] * 3,
+        delivery_coeffs={key: dict(ndr_f_to_s=value, ndr_s_to_o=1.0,
+                                    sdr_f_to_s=value, sdr_s_to_o=1.0)
+                         for key, value in coeffs.items()},
     )
     before = np.asarray([[10.0], [10.0], [10.0]])
     after = np.asarray([[5.0], [5.8], [6.8]])

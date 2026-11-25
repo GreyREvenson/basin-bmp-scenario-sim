@@ -20,7 +20,7 @@ from basin_bmp_sim.domain.constants import (
 )
 from basin_bmp_sim.common.io import read_csv_table
 from basin_bmp_sim.common.utils import ci_get, normalize_columns
-from basin_bmp_sim.config.validation.statistics import (
+from basin_bmp_sim.domain.statistics_validation import (
     require_columns,
     validate_stats_rows,
     validate_unique_rows,

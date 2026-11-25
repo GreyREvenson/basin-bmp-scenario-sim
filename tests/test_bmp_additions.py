@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from types import MethodType, SimpleNamespace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -14,9 +14,6 @@ def _make_model() -> SimpleNamespace:
         current_pathway_load_rates=np.array([[[0.0, 0.0, 0.0]]], dtype=float),
         pathway_names=["surface", "shallow subsurface", "deep subsurface"],
     )
-    model._get_pathway_load_rates = MethodType(_get_pathway_load_rates, model)
-    model._get_current_total_load_rate = MethodType(_get_current_total_load_rate, model)
-    model._apply_pathway_reduction = MethodType(_apply_pathway_reduction, model)
     return model
 
 
@@ -34,7 +31,7 @@ def test_apply_pathway_reduction_zero_treatment_fraction_leaves_loads_unchanged(
     model = _make_model()
     _set_current_pathways(model, surface=10.0, shallow=20.0, deep=30.0)
 
-    removed = model._apply_pathway_reduction(
+    removed = _apply_pathway_reduction(model,
         0,
         0,
         0.0,
@@ -53,7 +50,7 @@ def test_apply_pathway_reduction_zero_efficiencies_leave_loads_unchanged() -> No
     model = _make_model()
     _set_current_pathways(model, surface=12.0, shallow=8.0, deep=5.0)
 
-    removed = model._apply_pathway_reduction(
+    removed = _apply_pathway_reduction(model,
         0,
         0,
         1.0,
@@ -72,7 +69,7 @@ def test_apply_pathway_reduction_full_treatment_fraction_applies_per_pathway_sca
     model = _make_model()
     _set_current_pathways(model, surface=50.0, shallow=30.0, deep=20.0)
 
-    removed = model._apply_pathway_reduction(
+    removed = _apply_pathway_reduction(model,
         0,
         0,
         1.0,
@@ -94,7 +91,7 @@ def test_apply_pathway_reduction_partial_treatment_fraction_scales_removed_amoun
     model = _make_model()
     _set_current_pathways(model, surface=40.0, shallow=20.0, deep=10.0)
 
-    removed = model._apply_pathway_reduction(
+    removed = _apply_pathway_reduction(model,
         0,
         0,
         0.25,
@@ -116,7 +113,7 @@ def test_apply_pathway_reduction_negative_efficiency_increases_only_targeted_pat
     model = _make_model()
     _set_current_pathways(model, surface=10.0, shallow=5.0, deep=1.0)
 
-    removed = model._apply_pathway_reduction(
+    removed = _apply_pathway_reduction(model,
         0,
         0,
         0.5,
@@ -139,7 +136,7 @@ def test_apply_pathway_reduction_missing_pathway_key_raises_keyerror() -> None:
     _set_current_pathways(model, surface=30.0, shallow=20.0, deep=10.0)
 
     with pytest.raises(KeyError, match="shallow subsurface"):
-        model._apply_pathway_reduction(
+        _apply_pathway_reduction(model,
             0,
             0,
             1.0,
@@ -154,7 +151,7 @@ def test_apply_pathway_reduction_ignores_extra_efficiency_keys_not_in_active_pat
     model = _make_model()
     _set_current_pathways(model, surface=10.0, shallow=10.0, deep=10.0)
 
-    removed = model._apply_pathway_reduction(
+    removed = _apply_pathway_reduction(model,
         0,
         0,
         1.0,
@@ -177,8 +174,8 @@ def test_apply_pathway_reduction_preserves_mass_balance_relative_to_total_load()
     model = _make_model()
     _set_current_pathways(model, surface=25.0, shallow=15.0, deep=10.0)
 
-    before = model._get_current_total_load_rate(0, 0, 999.0)
-    removed = model._apply_pathway_reduction(
+    before = _get_current_total_load_rate(model, 0, 0, 999.0)
+    removed = _apply_pathway_reduction(model,
         0,
         0,
         0.5,
@@ -188,7 +185,7 @@ def test_apply_pathway_reduction_preserves_mass_balance_relative_to_total_load()
             "deep subsurface": 0.60,
         },
     )
-    after = model._get_current_total_load_rate(0, 0, 999.0)
+    after = _get_current_total_load_rate(model, 0, 0, 999.0)
 
     assert before == pytest.approx(50.0)
     assert after == pytest.approx(before - removed)
@@ -198,8 +195,8 @@ def test_apply_pathway_reduction_with_adverse_effect_produces_negative_removed_m
     model = _make_model()
     _set_current_pathways(model, surface=20.0, shallow=0.0, deep=0.0)
 
-    before = model._get_current_total_load_rate(0, 0, 999.0)
-    removed = model._apply_pathway_reduction(
+    before = _get_current_total_load_rate(model, 0, 0, 999.0)
+    removed = _apply_pathway_reduction(model,
         0,
         0,
         1.0,
@@ -209,7 +206,7 @@ def test_apply_pathway_reduction_with_adverse_effect_produces_negative_removed_m
             "deep subsurface": 0.0,
         },
     )
-    after = model._get_current_total_load_rate(0, 0, 999.0)
+    after = _get_current_total_load_rate(model, 0, 0, 999.0)
 
     assert removed == pytest.approx(-5.0)
     assert after == pytest.approx(25.0)
@@ -220,7 +217,7 @@ def test_get_pathway_load_rates_returns_live_pathway_mapping() -> None:
     model = _make_model()
     _set_current_pathways(model, surface=4.0, shallow=5.5, deep=6.25)
 
-    mapping = model._get_pathway_load_rates(0, 0, 999.0)
+    mapping = _get_pathway_load_rates(model, 0, 0, 999.0)
 
     assert mapping == {
         "surface": pytest.approx(4.0),
@@ -233,7 +230,7 @@ def test_get_current_total_load_rate_sums_tracked_pathways_not_fallback_total() 
     model = _make_model()
     _set_current_pathways(model, surface=1.25, shallow=2.50, deep=3.75)
 
-    total = model._get_current_total_load_rate(0, 0, 999.0)
+    total = _get_current_total_load_rate(model, 0, 0, 999.0)
 
     assert math.isclose(total, 7.5, rel_tol=0.0, abs_tol=1e-12)
 
@@ -242,7 +239,7 @@ def test_apply_pathway_reduction_can_zero_out_all_pathways() -> None:
     model = _make_model()
     _set_current_pathways(model, surface=3.0, shallow=4.0, deep=5.0)
 
-    removed = model._apply_pathway_reduction(
+    removed = _apply_pathway_reduction(model,
         0,
         0,
         1.0,

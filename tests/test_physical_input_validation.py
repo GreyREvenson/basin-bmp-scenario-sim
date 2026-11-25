@@ -21,7 +21,7 @@ from basin_bmp_sim.domain.constants import (
     LOAD_CONCENTRATIONS,
 )
 from basin_bmp_sim.config.validation.configuration import validate_config
-from basin_bmp_sim.config.validation.statistics import validate_stats_rows
+from basin_bmp_sim.domain.statistics_validation import validate_stats_rows
 from basin_bmp_sim.science.hydrology.runoff_plet_curve_number import plet_runoff_depth_in
 from basin_bmp_sim.science.sediment.soil_loss_rusle import rusle_sediment_load_rate_kg_ha_yr
 from basin_bmp_sim.scenarios import sampling

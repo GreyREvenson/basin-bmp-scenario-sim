@@ -5,6 +5,10 @@ how a practice changes scientific model state, without embedding CPS branches
 in the watershed model or allowing arbitrary method mixing.
 """
 from __future__ import annotations
+from basin_bmp_sim.bmp.wetland.response.plet_pathway_efficiency import _simulate_wetland
+from basin_bmp_sim.bmp.grassed_waterway.response.plet_pathway_efficiency import _simulate_grassed
+from basin_bmp_sim.bmp.infield.response.plet_pathway_efficiency import _simulate_infield
+
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
@@ -12,16 +16,16 @@ from basin_bmp_sim.bmp.practice_registry import response_family
 
 
 def _plet_wetland(ctx, parcel_idx, efficiencies, loads, record, mass_rates, design):
-    ctx._simulate_wetland(parcel_idx, efficiencies, loads, record, mass_rates, design=design)
+    _simulate_wetland(ctx, parcel_idx, efficiencies, loads, record, mass_rates, design=design)
 
 
 def _plet_grassed(ctx, parcel_idx, efficiencies, loads, record, mass_rates, design):
-    ctx._simulate_grassed(parcel_idx, efficiencies, loads, record, mass_rates, design=design)
+    _simulate_grassed(ctx, parcel_idx, efficiencies, loads, record, mass_rates, design=design)
 
 
 def _plet_infield(ctx, parcel_idx, efficiencies, loads, record, mass_rates, design):
     # The legacy in-field scientific method has no separate design argument.
-    ctx._simulate_infield(parcel_idx, efficiencies, loads, record, mass_rates)
+    _simulate_infield(ctx, parcel_idx, efficiencies, loads, record, mass_rates)
 
 
 @dataclass(frozen=True)

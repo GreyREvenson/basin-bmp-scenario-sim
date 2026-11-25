@@ -9,6 +9,8 @@ simulation outputs.
 
 from __future__ import annotations
 
+from basin_bmp_sim.bmp.pathways.plet_pathway_efficiency import _apply_pathway_reduction, _get_current_total_load_rate, _get_pathway_load_rates
+
 import pandas as pd
 import numpy as np
 from typing import Any, Callable, Dict, List, Sequence, Union
@@ -78,7 +80,7 @@ def _simulate_wetland(
 
             for pol_idx, pollutant in enumerate(self.pollutants):
                 load_rate = float(load_rates[p_idx, pol_idx])
-                pathway_load_rates_by_name = self._get_pathway_load_rates(p_idx, pol_idx, load_rate)
+                pathway_load_rates_by_name = _get_pathway_load_rates(self, p_idx, pol_idx, load_rate)
                 efficiency_by_pathway = eff_maps[pol_idx]
 
                 treated_baseline_mass_rate_kg_per_yr = sum(pathway_load_rates_by_name.values()) * (parcel_area_ha * treated_area_fraction)
@@ -86,12 +88,12 @@ def _simulate_wetland(
                     pathway_load_rates_by_name[path] * efficiency_by_pathway[path]
                     for path in _active_pathways(self)
                 )
-                self._apply_pathway_reduction(p_idx, pol_idx, treated_area_fraction, efficiency_by_pathway)
+                _apply_pathway_reduction(self, p_idx, pol_idx, treated_area_fraction, efficiency_by_pathway)
 
                 bmp_mass_rate_outputs[OUTPUT_TREATED][pol_idx] += treated_baseline_mass_rate_kg_per_yr
                 bmp_mass_rate_outputs[OUTPUT_REMOVED][pol_idx] += removed_mass_rate_kg_per_yr
                 updated_load_rate = (
-                    self._get_current_total_load_rate(p_idx, pol_idx, load_rate)
+                    _get_current_total_load_rate(self, p_idx, pol_idx, load_rate)
                     if getattr(self, "current_pathway_load_rates", None) is not None
                     else (load_rate - removed_mass_rate_kg_per_yr / parcel_area_ha)
                 )

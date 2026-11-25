@@ -6,6 +6,8 @@ or stochastic BMP placement policy; the driver coordinates those concerns.
 This is a native Python model contract, not yet a CSDMS BMI implementation.
 """
 from __future__ import annotations
+from basin_bmp_sim.bmp.sampling.selection import _get_bmp_name
+
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
@@ -79,7 +81,7 @@ class AnnualModelRealization:
         bmp_rec: Dict[str, Any] = dict(
             scenario=sid,
             cps=cps,
-            cps_name=ctx._get_bmp_name(cps),
+            cps_name=_get_bmp_name(ctx, cps),
             pid=str(pid),
             **{
                 OUTPUT_IMPACTED_PIDS: "",

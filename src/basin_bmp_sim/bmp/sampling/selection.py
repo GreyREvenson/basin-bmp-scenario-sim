@@ -9,6 +9,8 @@ simulation outputs.
 
 from __future__ import annotations
 
+from basin_bmp_sim.scenarios.costs import _estimate_costs_for_probabilities
+
 import pandas as pd
 import numpy as np
 from typing import Any, Callable, List, Optional, Union
@@ -34,7 +36,7 @@ def _select_bmp_type(self: Any) -> int:
     """
     idx = self.rng.choice(len(self.bmp_cps), p=self.bmp_selection_probs)
     cps = int(self.bmp_cps[idx])
-    self.logger.verbose(f"selected bmp {cps} ({self._get_bmp_name(cps)})")
+    self.logger.verbose(f"selected bmp {cps} ({_get_bmp_name(self, cps)})")
     return cps
 
 
@@ -93,7 +95,7 @@ def _get_bmp_selection_probs(self: Any, bmp_sel_path: Optional[str]) -> pd.DataF
         est_via_costs = self.cfg["bmp_sel_prob_via_costs"]
         if est_via_costs and self.data[DATA_BMP_COST] is not None:
             self.logger.info("estimating BMP selection probabilities via cost heuristics")
-            df = self._estimate_costs_for_probabilities()
+            df = _estimate_costs_for_probabilities(self)
             return df[[COL_CPS, COL_PROBABILITY]]
         else:
             probs = np.full(len(self.data[DATA_CPS]), 1.0 / len(self.data[DATA_CPS]))

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from basin_bmp_sim.bmp.wetland.response.plet_pathway_efficiency import _simulate_wetland
+
 import logging
 
 import numpy as np
@@ -36,7 +38,7 @@ def _wetland_run(model, *, wet_area=1.0, catchment_ratio=2.0):
         OUTPUT_TREATED: np.zeros(1),
         OUTPUT_REMOVED: np.zeros(1),
     }
-    ctx._simulate_wetland(2, [{"surface": .5}], load_rates, record, outputs)
+    _simulate_wetland(ctx, 2, [{"surface": .5}], load_rates, record, outputs)
     return load_rates, record, outputs
 
 
